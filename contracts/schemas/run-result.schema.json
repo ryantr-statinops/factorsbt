@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/run-result.schema.json",
+  "title": "FactorsBT successful run result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "run_id", "status", "scenario_id", "output_mode", "simulation_start", "simulation_end", "finished_at", "initial_cash", "total_fees", "counts", "portfolio", "provenance", "evidence"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "run_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+    "status": { "const": "succeeded" },
+    "scenario_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+    "output_mode": { "enum": ["scores", "targets", "order_intents"] },
+    "simulation_start": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "simulation_end": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "finished_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "initial_cash": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+    "total_fees": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_steps", "admissions", "orders", "fills", "settlements", "ledger_postings", "risk_events"],
+      "properties": {
+        "decision_steps": { "type": "integer", "minimum": 0 },
+        "admissions": { "type": "integer", "minimum": 0 },
+        "orders": { "type": "integer", "minimum": 0 },
+        "fills": { "type": "integer", "minimum": 0 },
+        "settlements": { "type": "integer", "minimum": 0 },
+        "ledger_postings": { "type": "integer", "minimum": 0 },
+        "risk_events": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "portfolio": { "$ref": "snapshot.schema.json#/properties/portfolio" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data_fixtures", "model_invocation"],
+      "properties": {
+        "data_fixtures": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["fixture_id", "fixture_version"],
+            "properties": {
+              "fixture_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+              "fixture_version": { "$ref": "common.schema.json#/$defs/Identifier" }
+            }
+          }
+        },
+        "model_invocation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "model_id", "model_version", "inference_count"],
+          "properties": {
+            "mode": { "enum": ["fresh_inference", "recorded_response_replay"] },
+            "model_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+            "model_version": { "$ref": "common.schema.json#/$defs/Identifier" },
+            "inference_count": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/EvidenceArtifactRef" }
+    }
+  },
+  "$defs": {
+    "EvidenceArtifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "kind", "relative_path", "content_type", "sha256", "size_bytes", "created_at"],
+      "properties": {
+        "artifact_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+        "kind": { "enum": ["run_manifest", "configuration", "observation", "snapshot", "model_request", "model_response", "decision_admission", "order", "fill", "settlement", "ledger", "risk", "summary"] },
+        "relative_path": { "type": "string", "pattern": "^evidence/[^/]+(?:/[^/]+)*$" },
+        "content_type": { "type": "string", "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "created_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" }
+      }
+    }
+  }
+}

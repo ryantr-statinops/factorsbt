@@ -65,7 +65,7 @@ The lifecycle is `queued → running → succeeded | failed`. `started_at` and `
 
 ### Successful result response
 
-`GET /v1/runs/{run_id}/results` returns a `RunResults` document containing the run summary, the configured single output mode, final portfolio state, and evidence references for snapshots, model responses, decisions, orders, fills, settlements, and risk events. Exact result and evidence fields are defined by the Stage 01 result schemas. The endpoint does not return fabricated fill data or silently replace unavailable evidence.
+`GET /v1/runs/{run_id}/results` returns a `RunResult` document containing the run summary, the configured single output mode, final portfolio state, and evidence references for snapshots, model responses, decisions, orders, fills, settlements, and risk events. The result and evidence shape is specified in [MVP results and evidence references](results-evidence.md). The endpoint does not return fabricated fill data or silently replace unavailable evidence.
 
 ## Client behavior and storage boundary
 

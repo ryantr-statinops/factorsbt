@@ -1,0 +1,9 @@
+{
+  "artifact_id": "c4d1363b-e894-429e-86ac-cac270ce17c1",
+  "kind": "configuration",
+  "relative_path": "evidence/../secrets.txt",
+  "content_type": "application/json",
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "size_bytes": 512,
+  "created_at": "2026-01-05T09:00:00Z"
+}

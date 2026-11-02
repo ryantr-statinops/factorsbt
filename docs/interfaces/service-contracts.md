@@ -14,6 +14,8 @@ The correlated inference request and three response modes are specified in [MVP 
 
 Internal engine outputs are event records specified in [MVP engine outcomes](engine-outcomes.md), keeping admission, orders, fills, settlements, ledger postings, and risk actions independently traceable.
 
+Successful run summaries, provenance, and local artifact references are specified in [MVP results and evidence](results-evidence.md). Failed or incomplete runs remain operational status outcomes, not successful results.
+
 ## SDK and backend
 
 The SDK should let a user configure an experiment, submit work, inspect progress, and retrieve results. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.

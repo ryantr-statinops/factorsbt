@@ -1,0 +1,132 @@
+{
+  "contract_version": "1.0.0",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "status": "succeeded",
+  "scenario_id": "baseline",
+  "output_mode": "scores",
+  "simulation_start": "2026-01-05T16:00:00Z",
+  "simulation_end": "2026-01-09T16:00:00Z",
+  "finished_at": "2026-01-09T16:00:03Z",
+  "initial_cash": "100000",
+  "total_fees": "0",
+  "counts": {
+    "decision_steps": 5,
+    "admissions": 5,
+    "orders": 1,
+    "fills": 1,
+    "settlements": 0,
+    "ledger_postings": 1,
+    "risk_events": 0
+  },
+  "portfolio": {
+    "cash": "50000.04",
+    "nav": "99751.24",
+    "positions": [
+      {
+        "instrument_id": "SPOT_A",
+        "quantity": "497.512",
+        "mark": "100",
+        "market_value": "49751.2"
+      }
+    ],
+    "reserved_cash": "0",
+    "reserved_underlying": [],
+    "initial_margin_requirement": "0",
+    "maintenance_margin_requirement": "0",
+    "free_buying_power": "50000.04"
+  },
+  "provenance": {
+    "data_fixtures": [
+      { "fixture_id": "mvp-synthetic-daily", "fixture_version": "v1" }
+    ],
+    "model_invocation": {
+      "mode": "fresh_inference",
+      "model_id": "synthetic-model",
+      "model_version": "v1",
+      "inference_count": 5
+    }
+  },
+  "evidence": [
+    {
+      "artifact_id": "c4d1363b-e894-429e-86ac-cac270ce17c1",
+      "kind": "configuration",
+      "relative_path": "evidence/configuration.json",
+      "content_type": "application/json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size_bytes": 512,
+      "created_at": "2026-01-05T09:00:00Z"
+    },
+    {
+      "artifact_id": "c3b60dc3-3aeb-4b9a-a085-589d6fd8570e",
+      "kind": "observation",
+      "relative_path": "evidence/observations.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size_bytes": 4096,
+      "created_at": "2026-01-05T16:00:00Z"
+    },
+    {
+      "artifact_id": "5dc3570a-85c9-479e-8339-e4a3455f6d74",
+      "kind": "snapshot",
+      "relative_path": "evidence/snapshots/all.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size_bytes": 8192,
+      "created_at": "2026-01-09T16:00:01Z"
+    },
+    {
+      "artifact_id": "ddd6c544-5898-4139-aad1-4552e2a9f195",
+      "kind": "model_request",
+      "relative_path": "evidence/model/requests.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "size_bytes": 8192,
+      "created_at": "2026-01-09T16:00:02Z"
+    },
+    {
+      "artifact_id": "e3b2d149-07de-445b-a619-bf37df4df81c",
+      "kind": "model_response",
+      "relative_path": "evidence/model/responses.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size_bytes": 2048,
+      "created_at": "2026-01-09T16:00:02Z"
+    },
+    {
+      "artifact_id": "1364aac2-cc9a-4ebd-a7dd-4b684db30171",
+      "kind": "decision_admission",
+      "relative_path": "evidence/decisions/admissions.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "size_bytes": 2048,
+      "created_at": "2026-01-09T16:00:02Z"
+    },
+    {
+      "artifact_id": "ea4bddfa-84d5-41ba-9951-84b886581cd4",
+      "kind": "order",
+      "relative_path": "evidence/orders/orders.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size_bytes": 1024,
+      "created_at": "2026-01-05T16:00:02Z"
+    },
+    {
+      "artifact_id": "639913a9-6e74-498d-9dfd-0019e083514f",
+      "kind": "fill",
+      "relative_path": "evidence/fills/fills.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "size_bytes": 512,
+      "created_at": "2026-01-06T09:00:01Z"
+    },
+    {
+      "artifact_id": "4c1403e4-9bc1-488f-b42b-e34246e3bf25",
+      "kind": "ledger",
+      "relative_path": "evidence/ledger/ledger.jsonl",
+      "content_type": "application/x-ndjson",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "size_bytes": 1024,
+      "created_at": "2026-01-06T09:00:01Z"
+    }
+  ]
+}
