@@ -64,3 +64,24 @@ Evidence should associate input snapshots, configuration, model identity/version
 - Whether service latency is ignored by simulated time, modeled explicitly, or evaluated as a separate scenario.
 
 Do not silently skip a failure, replace data, or generate a trading action. Select and record the needed behavior for the [first implementation slice](../roadmap.md).
+
+## Accepted MVP 1 synthetic daily ordering
+
+**Status:** Accepted for the synthetic MVP only. This is not a real exchange calendar, market-data convention, or execution guarantee.
+
+The fixture has one session per calendar day from 09:00 to 16:00 UTC, with a 09:00 open event and a 16:00 close event. There are no holidays or daylight-saving changes. Bar and option quote fields for the interval are available at 16:00 UTC; the open-price field is available at the 09:00 open. A close-time decision cannot consume close data before 16:00 or fill at that session's open.
+
+At each open, apply a previously scheduled whole-portfolio liquidation before other queued fills. If liquidation is scheduled, cancel other pending orders and do not admit new orders at that open. Otherwise fill eligible market orders at the fixture open price using the configured fees and slippage. If a required open execution price is missing, do not invent a fill; fail the run and retain its last valid state.
+
+At each close, apply this fixed sequence:
+
+1. Admit the completed bar, close marks, and source observations whose availability is no later than this close. A revision becomes eligible at its own availability time; a later revision does not replace an earlier snapshot retroactively.
+2. Settle each open future against its current daily settlement mark, using its previous settlement mark or entry price on its first session.
+3. Apply the expiry and explicit American exercise/assignment events scheduled for this close. European options settle for cash intrinsic value at expiry. American physical delivery updates underlying quantities and cash atomically; reject an event if the account cannot settle it.
+4. Refresh delivery reservations and test maintenance margin against post-settlement state. On breach, record a risk event, cancel pending orders, and schedule liquidation at the next open. Do not call the model or admit fresh orders during the breached close.
+5. If the account remains valid, create a snapshot from eligible close data and post-event portfolio state. Invoke the model once for the run's selected output type and evaluate the complete response group against that snapshot.
+6. Convert admitted proposals into market orders for a later open. Record rejected or reduced proposals and their reasons. A model proposal is not a fill.
+
+If a liquidation's next-open prices are available, close all remaining positions at that open and apply fees/slippage. Resume daily decision cycles only if the resulting cash, positions, and delivery obligations are valid. If any position cannot be liquidated or the resulting account remains insolvent, fail the run with its last ledger and error. At configured run end, cancel unfilled orders, report remaining positions and reservations, and make no forced end-of-run trade.
+
+An event published after a close is invisible to the model until a later close that is at or after its `availability_time`. Processing time records the actual wall-clock handling and never advances the synthetic clock. Unavailable, stale, or malformed observations remain distinguishable from valid empty content; MVP 1 has no implicit carry-forward policy.
