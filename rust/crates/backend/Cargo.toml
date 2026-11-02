@@ -1,0 +1,10 @@
+[package]
+name = "factorsbt-backend"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+axum = { workspace = true }
+factorsbt-contracts = { path = "../contracts" }
+tokio = { workspace = true }
