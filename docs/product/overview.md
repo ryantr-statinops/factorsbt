@@ -1,6 +1,6 @@
 # Product overview
 
-**Status:** Accepted product direction; implementation and MVP details remain open.
+**Status:** Accepted product direction and [MVP 1 synthetic scope](mvp-scope.md); runtime behavior remains unimplemented.
 
 FactorsBT is API-first infrastructure for multi-asset backtesting, synchronized data, and multi-model decision research.
 
@@ -53,4 +53,6 @@ These directions are Proposed. There is no accepted RL environment API, training
 
 The initial scope is historical simulation infrastructure. Live trading, model hosting/training, hosted data distribution, and a managed cloud product are not accepted implementation commitments.
 
-Before defining an executable MVP, choose the initial market, asset class, data provider, data types, and model-output contract. A candidate first slice is multiple assets sharing capital, price bars plus one event source, one model service, and inspectable results. See the [roadmap](../roadmap.md).
+Real-market coverage, source providers, and model-output contracts remain open beyond the accepted synthetic first slice. The [roadmap](../roadmap.md) distinguishes the bounded MVP from later provider and service decisions.
+
+For the accepted first implementation slice, those choices are intentionally bounded to configured synthetic instruments, controlled historical bars/quotes, a stateless local model fixture, and inspectable run evidence. See the [MVP 1 scope](mvp-scope.md) and its [acceptance cases](../examples/mvp/acceptance-cases.md). This acceptance defines an implementation target; it does not mean any part of that target is implemented.

@@ -56,6 +56,8 @@ The backend handles transport failures; the engine applies declared financial be
 
 Detailed semantics belong in the [simulation lifecycle](simulation-lifecycle.md). Conceptual exchanges belong in [service contracts](../interfaces/service-contracts.md).
 
+The accepted [MVP 1 synthetic scope](../product/mvp-scope.md) defines the first configured instruments, local model fixture, and execution/accounting target. See the [instrument model](instrument-model.md), [decision policies](decision-policies.md), [synthetic accounting](synthetic-accounting.md), [margin risk](margin-risk.md), and [option valuation](options-valuation.md) for the rules accepted for this slice. These documents do not claim that the runtime is implemented.
+
 ## Open infrastructure decisions
 
 - Self-hosted versus managed deployment, and the first supported operating environment.

@@ -18,6 +18,6 @@ Read the [simulation lifecycle](../../docs/architecture/simulation-lifecycle.md)
 
 ## Open decisions and handoff
 
-Instrument conventions, numeric representation, corporate actions, fees, slippage, fills, and execution latency remain open. Obtain explicit definitions for the subset required by a task; document unsupported behavior.
+For MVP 1, see the accepted [synthetic instrument model](../../docs/architecture/instrument-model.md), [accounting](../../docs/architecture/synthetic-accounting.md), [margin and delivery rules](../../docs/architecture/margin-risk.md), and [option valuation](../../docs/architecture/options-valuation.md). These synthetic assumptions do not select real-market conventions. Other instruments/calendars, corporate actions, and execution behavior remain open; obtain an explicit definition for the subset required by later work and document unsupported behavior.
 
 Report the state transitions changed, financial assumptions, cross-scenario isolation implications, checks performed, and any limits on replay. Coordinate external inference and persistence requirements with the backend role.

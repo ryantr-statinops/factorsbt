@@ -60,3 +60,5 @@ MVP 1 is accepted for release planning when a local Python client can submit a r
 ## Decision record
 
 The product owner accepted this scope in the Phase A planning discussion. Instrument and simulation semantics are detailed in the linked architecture documents and must remain consistent with this scope. A change to scope requires an explicit update to this document and affected contracts before implementation depends on it.
+
+For implementation details, see the [instrument model](../architecture/instrument-model.md), [simulation ordering](../architecture/simulation-lifecycle.md#accepted-mvp-1-synthetic-daily-ordering), [decision policies](../architecture/decision-policies.md), [accounting](../architecture/synthetic-accounting.md), [collateral and liquidation](../architecture/margin-risk.md), [option valuation](../architecture/options-valuation.md), and [controlled acceptance fixtures](../examples/mvp/acceptance-cases.md).

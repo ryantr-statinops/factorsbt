@@ -50,3 +50,10 @@ Implement `N(x)=0.5×(1+erf(x/√2))` using Abramowitz–Stegun formula 7.1.26: 
 Acceptance references at `S=100`, `K=100`, `r=0.05`, `σ=0.2`, and `τ=1` year are European Black–Scholes call `10.45058357` and put `5.57352602` (absolute tolerance `0.00005`). With 256 CRR steps, European call `10.44277600`, European put `5.56571845`, American call `10.44277600`, and American put `6.08725833` (absolute tolerance `0.00000002` for tree values). Additional tests cover zero-time intrinsic limits, put-call parity at zero dividends, spot monotonicity, volatility monotonicity, probability bounds, deterministic repeated inputs on the same supported platform, and rejection of missing/future inputs. These are future Phase B checks, not code tests run in Phase A.
 
 Option-price outputs are analytical approximations, not broker quotes, return forecasts, or guaranteed exit proceeds. Market quotes remain the fixture execution prices.
+
+## References
+
+- Black and Scholes, *The Pricing of Options and Corporate Liabilities* (1973), [Journal of Political Economy](https://www.journals.uchicago.edu/doi/pdf/10.1086/260062).
+- Cox, Ross, and Rubinstein, *Option Pricing: A Simplified Approach* (1979), [working paper](https://bpb-us-w2.wpmucdn.com/u.osu.edu/dist/7/36891/files/2017/07/CRR79-1yy8av8.pdf).
+- Abramowitz and Stegun, *Handbook of Mathematical Functions*, NBS Applied Mathematics Series 55 (1964), [NIST record](https://www.nist.gov/mathematics-statistics/handbook-mathematical-functions-abramowitz-and-stegun).
+- Rust [`f64` documentation](https://doc.rust-lang.org/std/primitive.f64.html) for the host's standard floating-point methods and their precision guarantees.

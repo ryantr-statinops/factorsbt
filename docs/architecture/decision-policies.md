@@ -10,14 +10,14 @@ The [MVP scope](../product/mvp-scope.md) defines which output types exist. This 
 
 ## Scores
 
-1. The run supplies an integer `top_k` greater than zero.
+1. The run supplies an integer `top_k` from 1 through the configured instrument count.
 2. At a decision step the eligible universe contains configured instruments that have valid close marks and are not expired or otherwise unavailable for new exposure at this time.
 3. A response must supply exactly one finite score for each eligible instrument and no score for an unknown or ineligible ID. Zero and negative scores are ineligible.
 4. Order eligible instruments by score descending, then by `instrument_id` ascending. Select the first `min(top_k, count(positive_scores))`; an empty selection is valid.
 5. Each selected spot has target weight `1/top_k` of the pre-decision NAV. If fewer than `top_k` instruments are positive, unused weight remains in cash. Each selected derivative has the target contract quantity configured for that instrument in the run; that value can be signed. Unselected instruments target zero.
 6. The resulting full target is admitted as one decision group. If no score is positive, the full target is zero and closes existing positions as execution rules permit.
 
-`top_k` may exceed the number of eligible instruments; available positive instruments are selected and the remaining budget is cash. Scores rank instruments. They do not change the configured derivative contract size or imply a probability.
+`top_k` may be less than the number of eligible instruments; the remaining positive instruments are unselected and target zero. If fewer than `top_k` instruments have positive scores, unused spot weight is cash. Scores rank instruments. They do not change the configured derivative contract size or imply a probability.
 
 ## Targets
 
@@ -33,7 +33,7 @@ Evaluate the entire response from a single pre-application portfolio and cash sn
 
 For targets, derive position changes from current to desired quantity. For order intents, use signed requested quantity. For scores, derive changes from the complete generated target above. Partition changes into risk-reducing closes and risk-increasing opens. Compute fees, cash use, futures initial margin, written-option margin, delivery reserves, and available buying power using the configured instrument rules.
 
-Always admit valid risk-reducing closes before funding increases. Find one shared scale factor `λ` from 0 to 1 for all risk-increasing changes, using deterministic fixed-count search over the finite lot/contract quantities. Round each scaled increase toward zero to its configured quantity increment, then recompute buying power, fees, margins, and reserves for the resulting whole group. If the rounded group still exceeds available capital, step down one lot at a time in stable instrument-ID order and recheck until it fits. Do not change the admission order based on input-map or asset iteration order.
+Always admit valid risk-reducing closes before funding increases. Find one shared scale factor `λ` for all risk-increasing changes using exactly 60 binary-search iterations with `λ` represented to 18 decimal places. For each feasibility check, round every scaled increase toward zero to its configured quantity increment, then calculate the full group's resulting buying power, fees, margins, and delivery reserves. Feasibility is monotone in `λ`; retain the highest tested feasible candidate and recompute that candidate once at the end before acceptance. If no risk-increase candidate is feasible, accept valid closes and no increases. Do not change admission based on input-map or asset iteration order.
 
 Record requested and admitted quantities/targets, `λ`, per-instrument rounding or reduction, the funding constraint, and final state. A rejected instrument or whole response group is not an order or a fill. This rule manages synthetic capital feasibility only; it is not a risk guarantee.
 

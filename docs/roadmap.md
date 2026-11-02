@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** Proposed sequence. Stages describe intended outcomes, not implemented features or delivery dates.
+**Status:** Proposed sequence. Stages describe intended outcomes, not implemented features or delivery dates. The first synthetic scope within Stage 1 has been accepted in the [MVP 1 scope](product/mvp-scope.md); the rest of Stage 1 remains contingent on verified implementation and any choices explicitly left Open.
 
 There are no performance targets, provider guarantees, or release promises attached to these stages. The language/API direction is recorded in [ADR 0001](decisions/0001-python-sdk-rust-backend.md).
 
@@ -12,9 +12,11 @@ Exit criteria: the documents are substantive and linked, accepted choices are se
 
 ## Stage 1: First complete backtest path
 
-Proposed scope: multiple assets sharing capital, price bars plus one event source, one external model service, Python SDK submission, a Rust backend/engine, and inspectable results.
+The accepted first implementation slice is defined in [MVP 1 scope](product/mvp-scope.md): configurable synthetic spot/futures/options, controlled daily bars and quotes, one stateless HTTP model fixture, a Python SDK, a local Rust backend, and inspectable results. It tests temporal visibility, grouped shared-capital admission, order/fill separation, financial transitions, and replayable evidence within controlled assumptions.
 
-Before implementation, select the market/instrument subset, data source and availability assumptions, model-output representation, decision trigger, capital/risk admission, execution/accounting conventions, and required service tooling. Use synthetic or controlled fixtures for correctness checks alongside any selected provider.
+The initial service runtime is local only. Real provider/model integrations, deployment, and exchange-specific financial behavior remain extensions rather than prerequisites for this slice.
+
+The synthetic instrument, event-order, model-output, admission, accounting, pricing, collateral, and liquidation assumptions for this slice have been accepted in the linked scope and architecture documents. Before extending beyond it, select the relevant market/provider conventions, stateful-model behavior, network access controls, or deployment needs explicitly. The synthetic suite remains the reference for implementation correctness.
 
 Exit criteria: one end-to-end experiment runs under documented assumptions; results connect model inputs and outputs to orders, fills, and portfolio changes. Checks cover unavailable future data, competing decisions, adapter failure, duplicate effects, and the declared execution rules. Setup commands must correspond to actual tooling.
 
