@@ -7,6 +7,7 @@ ADRs capture decisions that shape component boundaries, simulation semantics, in
 | ADR | Status | Decision |
 | --- | --- | --- |
 | [0001](0001-python-sdk-rust-backend.md) | Accepted | Pure Python SDK, Rust backend/engine, initial HTTP/JSON communication |
+| [0002](0002-phase-a-tooling.md) | Accepted | Phase A Rust/Python module layout and local tooling boundary; native Windows build prerequisite remains unmet |
 
 ## When to write an ADR
 
@@ -24,4 +25,4 @@ An agent must not label a new architecture choice Accepted merely because it aut
 
 ## Current boundary
 
-Only the technology and communication direction in ADR 0001 is accepted here. Frameworks, deployment, data/model contracts, financial rules, and infrastructure choices remain open in the [architecture](../architecture/overview.md), [contracts](../interfaces/service-contracts.md), and [simulation lifecycle](../architecture/simulation-lifecycle.md).
+Tooling and module choices for the Phase A health slice are recorded in ADR 0002. Deployment, persistence, authentication, provider integrations, and later infrastructure choices remain open in the [architecture](../architecture/overview.md), [contracts](../interfaces/service-contracts.md), and [simulation lifecycle](../architecture/simulation-lifecycle.md).

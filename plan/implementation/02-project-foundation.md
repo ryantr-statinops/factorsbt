@@ -1,6 +1,6 @@
 # Stage 02 — Nền tảng dự án và công cụ phát triển
 
-**Status:** Proposed
+**Status:** Proposed — implementation incomplete; local native build prerequisite is missing.
 
 **Phase:** A — Chốt thiết kế MVP
 
@@ -10,10 +10,11 @@ Tạo nền tảng chạy và phát triển tối thiểu cho SDK Python và bac
 
 ## Phạm vi và đầu ra
 
-- Thiết lập manifests và cấu trúc mã nguồn tách SDK, orchestration, adapters và engine theo trách nhiệm.
-- Chọn dependency, runtime/toolchain và công cụ kiểm tra cần thiết sau khi chốt yêu cầu; ghi rõ phiên bản hỗ trợ có bằng chứng.
-- Thiết lập đường chạy tối thiểu, fixture dùng chung và cách cấu hình cục bộ không chứa secret thật.
-- Cập nhật development workflow với prerequisite và lệnh đã chạy thành công; CI chỉ được thêm khi phạm vi triển khai tương lai cho phép.
+- Thiết lập Cargo workspace `rust/` với contracts, engine, backend và Python package `python-sdk/src/factorsbt/`.
+- Dùng Python standard library cho SDK; Rust dùng Axum/Tokio/Serde cho API health và JSON.
+- Ghi bằng chứng toolchain preflight; không tự cài MSVC/Windows SDK và không báo compile/run thành công khi thiếu linker.
+- Thiết lập health check, shared fixtures và Python-to-Rust smoke test; không thêm simulation, database, queue hay CI.
+- Chỉ ghi lệnh setup/format/lint/test sau khi xác minh thực tế; chưa công bố supported-version range khi chưa có bằng chứng.
 
 ## Phụ thuộc
 
@@ -21,31 +22,45 @@ Tạo nền tảng chạy và phát triển tối thiểu cho SDK Python và bac
 - [Stage 01](01-contracts.md): hợp đồng ban đầu để cấu trúc module phục vụ đúng nhu cầu.
 - Không có build/test/lint command được thiết lập ở thời điểm viết kế hoạch này.
 
-## Quyết định cần chốt — Open
+## Quyết định đã chốt cho lát cắt Phase A
 
-- Rust framework, Python HTTP client, package layout, công cụ quản lý dependency và toolchain.
-- Chạy nội bộ hay triển khai dịch vụ, storage tối thiểu và yêu cầu truy cập; queue không được mặc định là cần thiết.
-- Công cụ định dạng, phân tích, test; phạm vi CI nếu được lựa chọn và khả năng chạy trong môi trường hỗ trợ.
+- Rust workspace gồm contracts/engine/backend; API local dùng Axum/Tokio/Serde.
+- Python SDK dùng standard library, synchronous HTTP client và `unittest`; không embed Rust.
+- Không có database, queue, auth, restart recovery, remote deployment hoặc CI trong Phase A.
+- Engine crate chỉ là skeleton, chưa chứa backtest/pricer.
+
+## Prerequisite môi trường hiện tại
+
+Preflight ghi nhận Python 3.13.13, Rust/Cargo 1.99.1 và target `x86_64-pc-windows-msvc`. Không tìm thấy MSVC C++ linker/toolset hoặc Windows SDK. Cần cài đặt/cấp môi trường tương thích trước khi chạy backend binary và integration smoke. Không tự cài công cụ hệ thống trong stage này.
 
 ## Task → Commit
 
 | Thứ tự | Task và phạm vi commit | Commit dự kiến |
 | --- | --- | --- |
-| 1 | Ghi quyết định công cụ và cấu trúc triển khai; ADR khi đáng kể | `docs(architecture): record MVP tooling choices` |
-| 2 | Tạo manifests và skeleton Python/Rust tối thiểu | `chore(project): initialize Python and Rust foundations` |
-| 3 | Thiết lập kiểm tra đã chọn, fixture và hướng dẫn chạy đã xác minh | `chore(dev): establish verified development checks` |
+| 1 | ADR công cụ, boundaries và ghi nhận prerequisite thật của môi trường | `docs(architecture): record Phase A tooling choices` |
+| 2 | Cargo workspace và engine crate tối thiểu | `chore(rust): initialize backend engine workspace` |
+| 3 | Contracts crate với ID, timestamp và decimal wire primitives | `feat(contracts): add shared Rust wire primitives` |
+| 4 | Rust instrument types và model exchanges | `feat(contracts): add instrument and decision wire types` |
+| 5 | Rust run operations, outcomes và evidence types | `feat(contracts): add run and result wire types` |
+| 6 | Python package, dataclasses/decimal parsing và checks liên quan | `chore(python): initialize standard-library SDK package` |
+| 7 | Backend loopback health endpoint và response check | `feat(backend): add local health endpoint` |
+| 8 | SDK transport, `Client.health()` và lỗi kết nối/timeout | `feat(sdk): add standard-library health client` |
+| 9 | Kiểm tra contract examples dùng chung qua schema, Rust và Python | `test(contracts): verify cross-language contract examples` |
+| 10 | Smoke test khởi chạy Rust backend, gọi SDK và cleanup | `test(integration): verify Python-to-Rust health flow` |
+| 11 | Hướng dẫn prerequisite và lệnh đã thực sự xác minh | `docs(dev): document verified Phase A commands` |
+| 12 | Cập nhật bằng chứng, trạng thái và graph Phase A sau khi qua cổng | `docs(plan): record verified Phase A completion` |
 
 ## Kiểm chứng dự kiến
 
-- Cài đặt và chạy đường tối thiểu từ môi trường sạch thuộc phạm vi hỗ trợ đã chọn.
-- Xác minh SDK không cần nhúng Rust engine; module engine không phụ thuộc chính sách HTTP retry.
-- Chạy các kiểm tra thật sự tồn tại sau khi thiết lập; ghi lệnh, kết quả và giới hạn môi trường.
+- Chạy `cargo fmt`, compile/check/test Rust, Python `unittest`, schema/contract checks và integration smoke khi prerequisite đủ.
+- Xác minh SDK không nhúng Rust engine; engine không phụ thuộc HTTP retry policy.
+- Ghi riêng checks có thể chạy không cần linker với checks yêu cầu binary; nếu prerequisite thiếu thì giữ Stage Proposed và không push/không ghi Implemented.
 
 ## Điều kiện hoàn thành
 
-- Python/Rust có cấu trúc và công cụ chạy được, ranh giới thành phần rõ ràng.
-- Development workflow phản ánh đúng lệnh đã kiểm chứng, không chứa lệnh suy đoán hoặc credentials.
-- Các stage sau có thể thêm hành vi mà không phải chọn lại nền tảng thiết yếu.
+- Python/Rust skeleton được build/check; SDK gọi được health endpoint của Rust backend.
+- Shared contract examples qua được kiểm chứng; Python-to-Rust smoke cleanup hoàn tất.
+- Development workflow chỉ ghi lệnh và prerequisite đã xác minh. Thiếu linker/SDK đồng nghĩa stage chưa hoàn thành.
 
 ## Tài liệu liên quan
 

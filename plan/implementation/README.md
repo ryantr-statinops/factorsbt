@@ -23,7 +23,7 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | --- | --- | --- | --- | --- |
 | A | [00 — Quyết định MVP](00-mvp-decisions.md) | Accepted | Có | [Scope](../../docs/product/mvp-scope.md), [fixture và acceptance cases](../../docs/examples/mvp/acceptance-cases.md) |
 | A | [01 — Contracts](01-contracts.md) | Accepted | Có | [OpenAPI](../../contracts/openapi.json), [run schema](../../contracts/schemas/run-configuration.schema.json), [shared example](../../contracts/examples/instruments/minimal-valid-spot-run.json), [contract docs](../../docs/interfaces/service-contracts.md) |
-| A | [02 — Nền tảng dự án](02-project-foundation.md) | Proposed | Chưa | Chưa có |
+| A | [02 — Nền tảng dự án](02-project-foundation.md) | Proposed | Chưa | [Preflight](../../docs/decisions/0002-phase-a-tooling.md#environment-preflight): thiếu MSVC linker và Windows SDK |
 | B | [03 — Data snapshots](03-data-snapshots.md) | Proposed | Chưa | Chưa có |
 | B | [04 — Simulation engine](04-simulation-engine.md) | Proposed | Chưa | Chưa có |
 | B | [05 — Model orchestration](05-model-orchestration.md) | Proposed | Chưa | Chưa có |
