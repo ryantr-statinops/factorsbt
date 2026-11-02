@@ -18,7 +18,7 @@ Read the [architecture](../../docs/architecture/overview.md), [service contracts
 
 ## Contract and tooling discipline
 
-Framework, storage, queue, authentication, deployment topology, exact endpoints, and wire schemas are open. Document a proposal before introducing a choice that affects other components. Keep Python SDK and service expectations aligned.
+The MVP endpoints, wire schemas, status codes, retry rules, and compatibility policy are selected in the [service contract set](../../docs/interfaces/service-contracts.md). They remain unimplemented until code and verification exist. Framework, persistent storage, queue, authentication, and deployment topology remain open. Keep Python SDK and service behavior aligned with the shared OpenAPI and schema examples.
 
 ## Verification and handoff
 

@@ -1,6 +1,6 @@
 # MVP 1 submission identity and failures
 
-**Status:** Proposed API behavior for the in-process MVP backend. It does not promise persistence, cross-process deduplication, or exactly-once execution.
+**Status:** Accepted MVP 1 contract behavior for the in-process backend. It does not promise persistence, cross-process deduplication, or exactly-once execution.
 
 ## Submission identity
 
@@ -24,7 +24,7 @@ The SDK must not automatically retry `POST /v1/runs`. If the connection ends bef
 
 1. Query `GET /v1/submissions/{submission_id}` using the same idempotency key.
 2. If found, use the returned run ID and status; do not submit again.
-3. If not found in the still-running backend process, the caller may explicitly repeat the exact same body with the same key. The deduplication rule prevents a second run if the original request was accepted but its record could not be read during the lookup.
+3. If not found in the still-running backend process, the caller may explicitly repeat the exact same body with the same key. The backend performs key lookup and record creation atomically, so concurrent copies in that process map to the same run. This protection does not survive restart.
 4. A different body must use a new key. Reusing a recorded key with changed content returns `SUBMISSION_ID_REUSED`.
 
 Transport retries for safe `GET` requests are separate from run submission. A Python client's local wait timeout only ends that client's wait; it does not cancel or retry the run. Model inference is also not retried automatically in MVP 1. A timeout or invalid model output fails the run with the affected run, scenario, step, and snapshot identities when known.
@@ -40,7 +40,7 @@ Non-success HTTP responses use this envelope:
     "message": "This submission ID is already bound to a different configuration.",
     "request_id": "2f809a3a-c871-4ad1-8985-4bd8685fc0a4",
     "details": [
-      { "path": "$.run.output_mode", "reason": "differs from the recorded configuration" }
+      { "path": "$.decision_policy.output_mode", "reason": "differs from the recorded configuration" }
     ]
   }
 }
@@ -63,6 +63,7 @@ The request's `request_id` identifies one HTTP exchange. It is distinct from sub
 | 409 | `RUN_NOT_SUCCEEDED` | Results were requested before successful completion. |
 | 409 | `RUN_FAILED` | Results were requested for a failed run; use the run-status resource for failure and last-valid-state details. |
 | 422 | `SCHEMA_VALIDATION_FAILED` | JSON is valid but violates the declared wire schema. |
+| 422 | `CONTRACT_VERSION_UNSUPPORTED` | The request names a contract version this backend does not support. |
 | 422 | `RUN_CONFIGURATION_INVALID` | Schema-valid configuration violates a cross-field or domain rule. |
 | 500 | `INTERNAL_ERROR` | Unexpected request-processing failure; no success is implied. |
 | 503 | `BACKEND_UNAVAILABLE` | The local service cannot accept or inspect work at this time. |
@@ -71,8 +72,8 @@ Run failures are recorded in the run-status resource rather than returned as a s
 
 ## Examples
 
-Two requests that differ only in JSON object member order and use the same key map to one run. Changing `run.output_mode` while retaining that key returns `409 SUBMISSION_ID_REUSED`. Sending the changed configuration with a new key creates a separate run if it is otherwise valid.
+Two requests that differ only in JSON object member order and use the same key map to one run. Changing `decision_policy.output_mode` while retaining that key returns `409 SUBMISSION_ID_REUSED`. Sending the changed configuration with a new key creates a separate run if it is otherwise valid.
 
-If `targets` contains a negative spot weight, the payload can be structurally valid JSON but fails schema/domain validation as defined by the corresponding contract. The error response includes a safe field path; it does not create a submission. If a model reply has the wrong `step_id`, the backend fails that run rather than applying the reply to another step.
+If `targets` contains a negative spot weight, the JSON body is syntactically valid but fails schema validation with `SCHEMA_VALIDATION_FAILED`; it does not create a submission. If a model reply has the wrong `step_id`, the backend fails that run rather than applying the reply to another step.
 
 See the [MVP HTTP API proposal](mvp-http-api.md) for operation paths and the [service contract overview](service-contracts.md) for component responsibilities.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.factorsbt.invalid/run-result.schema.json",
+  "$id": "https://schemas.factorsbt.invalid/v1/run-result.schema.json",
   "title": "FactorsBT successful run result",
   "type": "object",
   "additionalProperties": false,

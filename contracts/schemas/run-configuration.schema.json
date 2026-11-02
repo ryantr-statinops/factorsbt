@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.factorsbt.invalid/run-configuration.schema.json",
+  "$id": "https://schemas.factorsbt.invalid/v1/run-configuration.schema.json",
   "title": "FactorsBT MVP run configuration",
   "type": "object",
   "additionalProperties": false,

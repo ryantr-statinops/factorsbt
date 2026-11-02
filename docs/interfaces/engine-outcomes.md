@@ -1,6 +1,6 @@
 # MVP 1 engine outcome events
 
-**Status:** Proposed internal Rust contract. The schema describes event shape; event references, arithmetic, ordering, atomicity, and portfolio invariants require engine validation.
+**Status:** Accepted MVP 1 internal Rust contract design. The schema describes event shape; event references, arithmetic, ordering, atomicity, and portfolio invariants require engine validation.
 
 The canonical [engine event schema](../../contracts/schemas/engine-outcome.schema.json) covers decision admission, order creation/cancellation, fills, ledger postings, settlements, and risk events. These are separate records linked by stable IDs. A model response is only a proposal; a fill is a distinct execution outcome.
 

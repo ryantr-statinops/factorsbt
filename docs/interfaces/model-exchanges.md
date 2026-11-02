@@ -1,6 +1,6 @@
 # MVP 1 model requests and responses
 
-**Status:** Proposed correlated exchange contract for a stateless local HTTP fixture. It does not implement inference, external credentials, automatic retries, or model fallback.
+**Status:** Accepted MVP 1 correlated exchange design for a stateless local HTTP fixture. It does not implement inference, external credentials, automatic retries, or model fallback.
 
 The canonical schemas are [inference request](../../contracts/schemas/model-request.schema.json) and [model response](../../contracts/schemas/model-response.schema.json). Both use the shared [common definitions](../../contracts/schemas/common.schema.json), [instrument configuration](../../contracts/schemas/instrument.schema.json), and [snapshot](../../contracts/schemas/snapshot.schema.json).
 
@@ -35,4 +35,4 @@ There is one request per decision step and no automatic inference retry. A timeo
 - [Missing snapshot identity](../../contracts/examples/model/response-missing-snapshot.schema-invalid.json) fails with run error `MODEL_RESPONSE_SCHEMA_INVALID` at `$.snapshot_id`.
 - [Mismatched step](../../contracts/examples/model/response-mismatched-step.semantic-invalid.json) is schema-valid but fails with `MODEL_RESPONSE_CORRELATION_MISMATCH`; it cannot be applied to `step-0001`.
 
-These errors fail the run; they are not HTTP error responses to the SDK. Submission errors are defined in [submission identity and failures](mvp-submissions.md). The exchange remains a contract proposal until its producer and consumer share verified fixtures.
+These errors fail the run; they are not HTTP error responses to the SDK. Submission errors are defined in [submission identity and failures](mvp-submissions.md). Producer/consumer verification is still pending.

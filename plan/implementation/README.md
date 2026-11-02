@@ -22,7 +22,7 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | Phase | Stage / mục | Trạng thái thiết kế | Đạt điều kiện hoàn thành | Bằng chứng |
 | --- | --- | --- | --- | --- |
 | A | [00 — Quyết định MVP](00-mvp-decisions.md) | Accepted | Có | [Scope](../../docs/product/mvp-scope.md), [fixture và acceptance cases](../../docs/examples/mvp/acceptance-cases.md) |
-| A | [01 — Contracts](01-contracts.md) | Proposed | Chưa | Chưa có |
+| A | [01 — Contracts](01-contracts.md) | Accepted | Có | [OpenAPI](../../contracts/openapi.json), [run schema](../../contracts/schemas/run-configuration.schema.json), [shared example](../../contracts/examples/instruments/minimal-valid-spot-run.json), [contract docs](../../docs/interfaces/service-contracts.md) |
 | A | [02 — Nền tảng dự án](02-project-foundation.md) | Proposed | Chưa | Chưa có |
 | B | [03 — Data snapshots](03-data-snapshots.md) | Proposed | Chưa | Chưa có |
 | B | [04 — Simulation engine](04-simulation-engine.md) | Proposed | Chưa | Chưa có |
@@ -35,7 +35,7 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | D | [11 — RL interface](11-rl-interface.md) | Proposed | Chưa | Chưa có |
 | E | [12 — Ý tưởng CLI / console application](12-cli-console-ideas.md) | Proposed — brainstorm | Không áp dụng | Chưa chốt triển khai |
 
-Hiện có **1/12 stage đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **1/8**. Stage 00 hoàn thành ở mức quyết định và acceptance fixtures; chưa có engine hoặc MVP runtime Implemented. Đây là số stage đạt cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
+Hiện có **2/12 stage đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **2/8**. Stage 00 hoàn tất quyết định/fixtures; Stage 01 hoàn tất thiết kế OpenAPI/schemas/examples. Chưa có engine hoặc API run-time Implemented. Đây là số stage đạt cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
 
 Trạng thái thiết kế dùng đúng từ vựng của [documentation index](../../docs/README.md#status-vocabulary): Accepted, Proposed, Open và Implemented. Cột hoàn thành là theo dõi công việc riêng. Stage thiết kế có thể hoàn thành bằng quyết định được Accepted và tài liệu đã kiểm tra; điều đó không làm tính năng thành Implemented. Chỉ mô tả hành vi là Implemented khi có code và kiểm chứng phù hợp.
 
@@ -50,8 +50,8 @@ flowchart TD
     NOW["Hiện tại: tài liệu nền tảng<br/>Chưa có SDK/backend/engine"]
     NOW --> A0
 
-    subgraph A["Phase A — Thiết kế MVP · 1/3"]
-        A0["00 · Chốt MVP — Accepted"] --> A1["01 · Contracts"]
+    subgraph A["Phase A — Thiết kế MVP · 2/3"]
+        A0["00 · Chốt MVP — Accepted"] --> A1["01 · Contracts — Accepted"]
         A1 --> A2["02 · Nền tảng dự án"]
     end
 

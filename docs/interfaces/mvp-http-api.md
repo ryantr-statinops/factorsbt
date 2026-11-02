@@ -1,8 +1,8 @@
 # MVP 1 HTTP API
 
-**Status:** Proposed interface specification. The endpoint and payload choices below are approved for Phase A contract work, but no server implementation or stability guarantee exists yet.
+**Status:** Accepted MVP 1 contract design. The run operations are not implemented and no public API stability guarantee exists yet.
 
-This is the initial loopback HTTP/JSON surface for the Python SDK. The Rust backend coordinates runs; the engine owns simulation state and financial outcomes. API work in Phase A implements only `GET /healthz`. The run operations remain specifications until their later implementation stages.
+This is the initial loopback HTTP/JSON surface for the Python SDK. The Rust backend coordinates runs; the engine owns simulation state and financial outcomes. Phase A scopes implementation to `GET /healthz`; the endpoint itself is not implemented yet. The run operations remain specifications until their later implementation stages.
 
 ## Operations
 
@@ -73,10 +73,10 @@ The lifecycle is `queued → running → succeeded | failed`. `started_at` and `
 - There is no cancellation or streaming endpoint in MVP 1. A client wait deadline does not cancel backend work.
 - Run metadata and the submission deduplication map are in memory in the backend process. Evidence artifacts are written under a local run directory. Database storage, process-restart recovery, resumption, remote deployment, and cross-process deduplication are outside this contract.
 - The first run is local and loopback-only. No authentication mechanism is selected by this API specification.
-- The API does not expose a backtest execution endpoint as implemented during Phase A; only the health endpoint is built in Stage 02.
+- Phase A does not implement a backtest execution endpoint. The planned Stage 02 health endpoint is the only runtime API in scope and remains unimplemented until its Rust service and Python client checks pass.
 
-Error bodies, submission retry rules, and error codes are specified in [submission identity and failures](mvp-submissions.md). Later Stage 01 decisions add shared JSON Schemas and an OpenAPI description.
+Error bodies, submission retry rules, and error codes are specified in [submission identity and failures](mvp-submissions.md). The shared schemas, OpenAPI document, and compatibility rules are collected in [contract compatibility](mvp-contract-compatibility.md).
 
 ## Status and implementation boundary
 
-These operation definitions are Proposed contracts for MVP 1. A schema or API document is not evidence that an endpoint is executable. The health operation becomes Implemented only after the Rust service and Python health client pass the Phase A checks. The four run operations remain Proposed until their corresponding implementation and verification exist.
+These operation definitions are Accepted contracts for MVP 1. A schema or API document is not evidence that an endpoint is executable. The health operation becomes Implemented only after the Rust service and Python health client pass the Phase A checks. The four run operations remain unimplemented until their corresponding implementation and verification exist.

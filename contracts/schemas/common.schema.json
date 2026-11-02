@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.factorsbt.invalid/common.schema.json",
+  "$id": "https://schemas.factorsbt.invalid/v1/common.schema.json",
   "title": "FactorsBT shared wire definitions",
   "$defs": {
     "Uuid": {

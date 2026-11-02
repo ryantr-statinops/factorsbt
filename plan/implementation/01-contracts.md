@@ -1,6 +1,6 @@
 # Stage 01 — Hợp đồng giữa các thành phần
 
-**Status:** Proposed
+**Status:** Accepted design complete; runtime contracts remain unimplemented.
 
 **Phase:** A — Chốt thiết kế MVP
 
@@ -10,45 +10,61 @@ Làm rõ các trao đổi cần cho MVP để SDK, backend, adapters và engine 
 
 ## Phạm vi và đầu ra
 
-- Đặc tả thao tác gửi run, kiểm tra tiến trình, báo lỗi và truy xuất kết quả cho lát cắt đã chọn.
-- Đặc tả dữ liệu chuẩn hóa, snapshot, model request/response và giao tiếp nội bộ orchestrator/engine.
-- Quy định liên kết run, scenario, step, snapshot, decision group, order và fill; lưu provenance của cấu hình, dữ liệu và phản hồi.
-- Ghi tác động tới caller, adapter và kết quả lưu trữ khi thay đổi hợp đồng; đánh dấu ví dụ là conceptual cho tới khi chạy được.
+- Mô tả các endpoint MVP, asynchronous submission, polling, lifecycle, lỗi và quy tắc gửi lại.
+- Định nghĩa JSON Schema Draft 2020-12 cho cấu hình, observations/snapshots, model exchanges, engine outcomes và results/evidence.
+- Ghép OpenAPI 3.1.0 tới cùng các schema; cố định version, timestamp UTC, decimal string và quy tắc thay đổi tương thích.
+- Liên kết request/response bằng run, scenario, step, snapshot, inference, decision, order, fill, settlement và event IDs.
+- Có ví dụ JSON hợp lệ, schema-invalid và schema-valid nhưng sai ngữ nghĩa để dùng làm fixture chung.
 
 ## Phụ thuộc
 
 - [Stage 00](00-mvp-decisions.md): phạm vi, tài chính, thời gian và đầu ra mô hình đã được chốt cho MVP.
 - HTTP/JSON là hướng Accepted; không suy ra rằng giao tiếp nội bộ Rust phải là HTTP.
 
-## Quyết định cần chốt — Open
+## Quyết định đã chốt cho MVP 1
 
-- Endpoint, schema, validation, timestamp encoding, đơn vị, lỗi và operational lifecycle của run.
-- Submission identity/deduplication, tương quan phản hồi, retry ownership và trạng thái khi mất phản hồi HTTP.
-- Đồng bộ/bất đồng bộ, polling/streaming, cancellation có nằm trong MVP hay được để sau.
-- Payload inline hay snapshot reference; quyền truy cập, lifetime, bảo vệ secret và cách thông báo bằng chứng thiếu.
-- Kiểu nội bộ engine, ranh giới cập nhật trạng thái, định dạng kết quả và chính sách version/compatibility cho phạm vi cần dùng.
+- `GET /healthz`, `POST /v1/runs`, `GET /v1/submissions/{submission_id}`, `GET /v1/runs/{run_id}`, và `GET /v1/runs/{run_id}/results`; chỉ health được triển khai ở Stage 02.
+- Submit bất đồng bộ, lifecycle `queued → running → succeeded | failed`, Python client đồng bộ với polling; MVP không có cancellation hoặc streaming.
+- `Idempotency-Key` UUID, equality theo parsed JSON (key object không quan trọng; thứ tự array và scalar values quan trọng), lookup sau khi mất acknowledgment, không tự retry POST/inference; dedup chỉ trong process backend.
+- Snapshot inline; correlation theo inference/run/scenario/step/snapshot. Observation có event/availability time riêng; processing time không thay thế simulation time.
+- Một output mode mỗi run: scores, targets hoặc market order intents. Response là proposal; admission, orders, fills, settlement, ledger và risk là các event riêng.
+- Error envelope/code, local evidence references, OpenAPI/JSON Schema versioning và failure visibility theo các tài liệu liên quan.
+
+## Open ngoài phạm vi Stage 01
+
+- Authentication/authorization, hosted deployment, persistent database/queue, process-restart recovery, remote artifact retrieval và retention.
+- Provider-specific adapters, real-market timestamps/terms, multi-currency data và các giao diện hủy/stream.
+- Nội bộ Rust có thể dùng type/API trực tiếp; schema event không yêu cầu một HTTP hop giữa orchestrator và engine.
 
 ## Task → Commit
 
 | Thứ tự | Task và phạm vi commit | Commit dự kiến |
 | --- | --- | --- |
-| 1 | Đặc tả giao tiếp SDK/backend và lifecycle, lỗi, gửi lại | `docs(contracts): specify MVP run operations` |
-| 2 | Đặc tả snapshot, data/model adapter và ranh giới engine | `docs(contracts): specify MVP simulation exchanges` |
-| 3 | Định nghĩa evidence, versioning cần thiết và ví dụ đối chiếu hai phía | `docs(contracts): define MVP evidence and compatibility` |
+| 1 | Endpoint run, polling và lifecycle | `docs(api): specify run operations and lifecycle` |
+| 2 | Submission identity, mất acknowledgment, retry ownership và lỗi | `docs(api): specify submission identity and failures` |
+| 3 | Instrument/run configuration schemas và constraints theo loại | `feat(contracts): define instrument configuration schemas` |
+| 4 | Observation revisions, availability, snapshot và portfolio view | `feat(contracts): define temporal data and snapshot schemas` |
+| 5 | Correlated model request và ba response variants | `feat(contracts): define correlated model exchanges` |
+| 6 | Admission, order, fill, settlement, ledger và risk events | `feat(contracts): define engine outcome schemas` |
+| 7 | Result summary, provenance và evidence references | `feat(contracts): define result and evidence schemas` |
+| 8 | OpenAPI, versioning, compatibility, index và closeout | `docs(contracts): publish MVP contract compatibility rules` |
 
 ## Kiểm chứng dự kiến
 
-- Đối chiếu producer/consumer trên các mẫu hợp lệ, không hợp lệ và phản hồi sai step/snapshot.
-- Mô tả rõ trường hợp mất submission acknowledgment, phản hồi trễ/trùng và thay đổi schema của kết quả.
-- Kiểm tra hợp đồng không biến timeout vận hành thành hành động giao dịch hoặc hứa exactly-once khi chưa có bằng chứng.
+- Kiểm tra JSON syntax, local `$ref`, link Markdown, fences, status, và các mẫu có kết quả số có thể tính độc lập.
+- Đối chiếu rõ behavior producer/consumer trên mẫu schema-valid, schema-invalid và lỗi ngữ nghĩa; Stage 02 commit 25 thực hiện kiểm tra examples dùng chung qua JSON Schema, Rust và Python.
+- Phân biệt timeout/retry vận hành khỏi hành động tài chính; không hứa exactly-once hoặc persistence khi chưa có bằng chứng.
+- OpenAPI chỉ reference schema nguồn một lần; endpoint backtest không được gắn nhãn Implemented.
 
 ## Điều kiện hoàn thành
 
-- Hai phía của mỗi ranh giới có cùng định nghĩa I/O, định danh, lỗi và retry ownership cho MVP.
-- Có ví dụ làm đầu vào kiểm chứng triển khai; phần chưa chọn được giữ Open, ngoài phạm vi cần thực thi.
-- Đặc tả chưa được mô tả là API ổn định hay Implemented chỉ vì đã viết xong.
+- API, SDK, adapter và engine có cùng field shape, ID, timestamp, lỗi và retry ownership cho MVP 1.
+- OpenAPI/JSON Schema và ví dụ dùng chung khớp nhau; các kiểm tra fixture cross-language còn lại có điểm thực hiện riêng ở Stage 02.
+- Tài liệu và schemas ở trạng thái Accepted về thiết kế; chưa mô tả API chạy được hoặc ổn định chỉ vì đã đặc tả xong.
 
 ## Tài liệu liên quan
 
 - [Service contracts](../../docs/interfaces/service-contracts.md)
+- [OpenAPI](../../contracts/openapi.json)
+- [Compatibility rules](../../docs/interfaces/mvp-contract-compatibility.md)
 - [Architecture overview](../../docs/architecture/overview.md)

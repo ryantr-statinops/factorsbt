@@ -1,0 +1,14 @@
+{
+  "observation_id": "PRICING-EU-CALL-20260105",
+  "kind": "option_pricing_input",
+  "instrument_id": "EU_CALL_A",
+  "source_id": "synthetic-pricing-inputs",
+  "source_version": "v1",
+  "revision": 1,
+  "event_time": "2026-01-05T16:00:00Z",
+  "available_at": "2026-01-05T16:00:00Z",
+  "payload": {
+    "risk_free_rate": "0",
+    "annualized_volatility": "0.2"
+  }
+}

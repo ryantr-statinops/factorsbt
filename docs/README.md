@@ -13,12 +13,13 @@ The accepted technology direction is a pure Python SDK and a Rust backend/engine
 1. [Product overview](product/overview.md): the problem, intended users, examples, and boundaries.
 2. [Architecture overview](architecture/overview.md): components and ownership.
 3. [Simulation lifecycle](architecture/simulation-lifecycle.md): data visibility, decisions, execution, and replay.
-4. [Service contracts](interfaces/service-contracts.md): conceptual exchanges and unresolved contract choices.
+4. [Service contracts](interfaces/service-contracts.md): MVP component boundaries, operations, schemas, and remaining open infrastructure choices.
 5. [Roadmap](roadmap.md): staged goals and exit criteria.
 6. [Development workflow](development/workflow.md): how to propose, implement, and verify changes.
 7. [Architecture decisions](decisions/README.md): accepted choices and their rationale.
 8. [MVP 1 scope](product/mvp-scope.md): accepted first synthetic implementation slice and its explicit limits.
 9. [MVP 1 acceptance fixtures](examples/mvp/acceptance-cases.md): controlled expected behaviors used to check implementations.
+10. [MVP 1 OpenAPI and compatibility rules](interfaces/mvp-contract-compatibility.md): shared [OpenAPI](../contracts/openapi.json), JSON Schemas, examples, and version policy.
 
 Contributors should also read [AGENTS.md](../AGENTS.md). Agent-specific responsibilities live in [.agents](../.agents/README.md).
 
@@ -37,7 +38,7 @@ Documents state the status of their content where relevant. Moving a statement t
 
 - Product goals and users belong in the product overview.
 - Component boundaries belong in the architecture overview; simulation semantics belong in the lifecycle.
-- Exchanges across boundaries belong in service contracts. Endpoint/schema specifications will be added when decided.
+- Exchanges across boundaries belong in service contracts. MVP 1 operations and schema documents are linked from [the service contract overview](interfaces/service-contracts.md); unresolved provider and deployment decisions stay there as Open.
 - Durable architecture choices belong in ADRs. Planned work and its dependencies belong in the roadmap.
 - Accepted synthetic instrument and accounting rules live in the owning architecture documents linked from the [MVP 1 scope](product/mvp-scope.md). Real-market behavior remains open unless separately accepted.
 - The sequence and progress evidence for implementation phases live in the [implementation plan](../plan/implementation/README.md).

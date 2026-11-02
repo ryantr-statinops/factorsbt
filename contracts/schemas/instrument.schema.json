@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.factorsbt.invalid/instrument.schema.json",
+  "$id": "https://schemas.factorsbt.invalid/v1/instrument.schema.json",
   "title": "FactorsBT MVP instrument",
   "$defs": {
     "Common": {
@@ -51,24 +51,20 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["pricer", "risk_free_rate", "volatility", "day_count"],
+          "required": ["pricer", "day_count"],
           "properties": {
             "pricer": { "const": "black_scholes" },
-            "risk_free_rate": { "$ref": "common.schema.json#/$defs/Decimal" },
-            "volatility": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
             "day_count": { "const": "ACT/365F" }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["pricer", "risk_free_rate", "volatility", "day_count", "crr_steps"],
+          "required": ["pricer", "day_count", "crr_steps"],
           "properties": {
             "pricer": { "const": "crr" },
-            "risk_free_rate": { "$ref": "common.schema.json#/$defs/Decimal" },
-            "volatility": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
             "day_count": { "const": "ACT/365F" },
-            "crr_steps": { "type": "integer", "minimum": 1 }
+            "crr_steps": { "type": "integer", "minimum": 2, "maximum": 4096 }
           }
         }
       ]

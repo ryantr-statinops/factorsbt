@@ -13,7 +13,7 @@ Read the [architecture](../../docs/architecture/overview.md), [service contracts
 - Keep run submission distinct from waiting for completion. Specify cancellation and timeout semantics before exposing them.
 - Treat a client timeout as an unknown outcome until the backend can establish whether an operation was accepted. Retrying submission must not silently duplicate a run.
 - Keep transport retries separate from simulation retries. Do not change financial behavior in response to network failures.
-- Select sync/async behavior, client dependencies, and compatibility policy through documented decisions rather than undocumented defaults.
+- MVP client behavior is synchronous with polling after asynchronous submission; cancellation and streaming are not part of the current contract. Follow the shared [OpenAPI and compatibility rules](../../docs/interfaces/mvp-contract-compatibility.md) rather than adding retry or compatibility behavior on the client.
 
 ## Verification and handoff
 

@@ -1,20 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.factorsbt.invalid/observation.schema.json",
+  "$id": "https://schemas.factorsbt.invalid/v1/observation.schema.json",
   "title": "FactorsBT normalized data observation",
   "type": "object",
   "additionalProperties": false,
   "required": ["observation_id", "kind", "source_id", "source_version", "revision", "event_time", "available_at", "payload"],
   "properties": {
     "observation_id": { "$ref": "common.schema.json#/$defs/Identifier" },
-    "kind": { "enum": ["bar", "quote", "news"] },
+    "kind": { "enum": ["bar", "quote", "news", "option_pricing_input"] },
     "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
     "source_id": { "$ref": "common.schema.json#/$defs/Identifier" },
     "source_version": { "$ref": "common.schema.json#/$defs/Identifier" },
     "revision": { "type": "integer", "minimum": 1 },
     "event_time": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
     "available_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
-    "payload": { "oneOf": [{ "$ref": "#/$defs/Bar" }, { "$ref": "#/$defs/Quote" }, { "$ref": "#/$defs/News" }] }
+    "payload": { "oneOf": [{ "$ref": "#/$defs/Bar" }, { "$ref": "#/$defs/Quote" }, { "$ref": "#/$defs/News" }, { "$ref": "#/$defs/OptionPricingInput" }] }
   },
   "allOf": [
     {
@@ -28,6 +28,10 @@
     {
       "if": { "properties": { "kind": { "const": "news" } }, "required": ["kind"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/News" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "option_pricing_input" } }, "required": ["kind"] },
+      "then": { "required": ["instrument_id"], "properties": { "payload": { "$ref": "#/$defs/OptionPricingInput" } } }
     }
   ],
   "$defs": {
@@ -62,6 +66,15 @@
       "properties": {
         "headline": { "type": "string", "minLength": 1, "maxLength": 512 },
         "body": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      }
+    },
+    "OptionPricingInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_free_rate", "annualized_volatility"],
+      "properties": {
+        "risk_free_rate": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "annualized_volatility": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
       }
     }
   }

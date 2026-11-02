@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.factorsbt.invalid/engine-outcome.schema.json",
+  "$id": "https://schemas.factorsbt.invalid/v1/engine-outcome.schema.json",
   "title": "FactorsBT engine event",
   "$defs": {
     "Base": {
