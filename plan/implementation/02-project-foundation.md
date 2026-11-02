@@ -48,7 +48,7 @@ Preflight ghi nhận Python 3.13.13, Rust/Cargo 1.99.1 và target `x86_64-pc-win
 | 9 | Kiểm tra contract examples dùng chung qua schema, Rust và Python | `test(contracts): verify cross-language contract examples` |
 | 10 | Smoke test khởi chạy Rust backend, gọi SDK và cleanup | `test(integration): verify Python-to-Rust health flow` |
 | 11 | Hướng dẫn prerequisite và lệnh đã thực sự xác minh | `docs(dev): document verified Phase A commands` |
-| 12 | Cập nhật bằng chứng, trạng thái và graph Phase A sau khi qua cổng | `docs(plan): record verified Phase A completion` |
+| 12 | Ghi nhận bằng chứng và graph Phase A; chỉ đánh dấu hoàn tất sau khi qua mọi cổng | `docs(plan): record Phase A verification status` |
 
 ## Kiểm chứng dự kiến
 
