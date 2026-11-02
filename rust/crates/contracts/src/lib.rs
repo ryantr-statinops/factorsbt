@@ -74,6 +74,14 @@ string_contract_type!(
     "expected an RFC 3339 UTC timestamp ending in Z"
 );
 
+pub mod instruments;
+pub mod model;
+
+pub use instruments::{
+    Currency, Instrument, LinearFutureInstrument, OptionInstrument, SpotInstrument,
+};
+pub use model::{ModelRequest, ModelResponse, OutputMode};
+
 fn is_uuid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(index, byte)| {
