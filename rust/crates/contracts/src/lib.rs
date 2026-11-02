@@ -76,11 +76,13 @@ string_contract_type!(
 
 pub mod instruments;
 pub mod model;
+pub mod outcomes;
 
 pub use instruments::{
     Currency, Instrument, LinearFutureInstrument, OptionInstrument, SpotInstrument,
 };
 pub use model::{ModelRequest, ModelResponse, OutputMode};
+pub use outcomes::{EngineEvent, HealthResponse, RunResult, RunStatus};
 
 fn is_uuid(value: &str) -> bool {
     value.len() == 36
