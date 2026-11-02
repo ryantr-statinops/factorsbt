@@ -1,3 +1,7 @@
 [workspace]
-members = ["crates/engine"]
+members = ["crates/contracts", "crates/engine"]
 resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
