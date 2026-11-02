@@ -4,6 +4,8 @@
 
 This document defines the information and responsibilities that interfaces must cover. Entries below are semantic requirements for design, not executable request/response specifications.
 
+The [MVP 1 HTTP API proposal](mvp-http-api.md) now selects the initial operation paths and run lifecycle for contract work. Payload schemas, error codes, and compatibility rules are being defined in Stage 01. These proposals do not make the run endpoints implemented or stable.
+
 ## SDK and backend
 
 The SDK should let a user configure an experiment, submit work, inspect progress, and retrieve results. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.
