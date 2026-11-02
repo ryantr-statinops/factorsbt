@@ -1,0 +1,47 @@
+{
+  "contract_version": "1.0.0",
+  "simulation": {
+    "start_at": "2026-01-05T16:00:00Z",
+    "end_at": "2026-01-09T16:00:00Z",
+    "calendar_id": "synthetic-daily-utc-v1"
+  },
+  "initial_portfolio": {
+    "cash": "100000",
+    "positions": []
+  },
+  "instruments": [
+    {
+      "instrument_id": "FUT_A",
+      "instrument_type": "linear_future",
+      "quote_currency": "USD",
+      "price_tick": "0.01",
+      "quantity_step": "1",
+      "contract_multiplier": "1",
+      "fee_bps": "0",
+      "fee_per_unit": "0",
+      "slippage_bps": "0",
+      "underlying_id": "SPOT_MISSING",
+      "expiry_at": "2026-01-09T16:00:00Z",
+      "initial_margin_per_contract": "1000",
+      "maintenance_margin_per_contract": "800"
+    }
+  ],
+  "data": {
+    "fixture_id": "mvp-synthetic-daily",
+    "fixture_version": "v1"
+  },
+  "model": {
+    "adapter": "http_fixture",
+    "endpoint": "http://127.0.0.1:8787/model",
+    "timeout_ms": 5000
+  },
+  "decision_policy": {
+    "output_mode": "scores",
+    "score_policy": {
+      "top_k": 1,
+      "derivative_score_targets": [
+        { "instrument_id": "FUT_A", "contracts": 1 }
+      ]
+    }
+  }
+}

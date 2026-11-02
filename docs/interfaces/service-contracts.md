@@ -6,6 +6,8 @@ This document defines the information and responsibilities that interfaces must 
 
 The [MVP 1 HTTP API proposal](mvp-http-api.md) now selects the initial operation paths and run lifecycle for contract work. Payload schemas, error codes, and compatibility rules are being defined in Stage 01. These proposals do not make the run endpoints implemented or stable.
 
+The current request shape and type-specific instrument requirements are summarized in [MVP run and instrument configuration](instrument-configuration.md); the JSON Schema files under `contracts/schemas/` are the wire-shape authority.
+
 ## SDK and backend
 
 The SDK should let a user configure an experiment, submit work, inspect progress, and retrieve results. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.

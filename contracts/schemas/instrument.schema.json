@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/instrument.schema.json",
+  "title": "FactorsBT MVP instrument",
+  "$defs": {
+    "Common": {
+      "type": "object",
+      "required": ["instrument_id", "instrument_type", "quote_currency", "price_tick", "quantity_step", "contract_multiplier", "fee_bps", "fee_per_unit", "slippage_bps"],
+      "properties": {
+        "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+        "instrument_type": { "enum": ["spot", "linear_future", "option"] },
+        "quote_currency": { "$ref": "common.schema.json#/$defs/Currency" },
+        "price_tick": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "quantity_step": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "contract_multiplier": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "fee_bps": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "fee_per_unit": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "slippage_bps": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
+      }
+    },
+    "Spot": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "properties": { "instrument_type": { "const": "spot" } }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "LinearFuture": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["underlying_id", "expiry_at", "initial_margin_per_contract", "maintenance_margin_per_contract"],
+          "properties": {
+            "instrument_type": { "const": "linear_future" },
+            "quantity_step": { "const": "1" },
+            "underlying_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+            "expiry_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+            "initial_margin_per_contract": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "maintenance_margin_per_contract": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "OptionValuationInputs": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pricer", "risk_free_rate", "volatility", "day_count"],
+          "properties": {
+            "pricer": { "const": "black_scholes" },
+            "risk_free_rate": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "volatility": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "day_count": { "const": "ACT/365F" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pricer", "risk_free_rate", "volatility", "day_count", "crr_steps"],
+          "properties": {
+            "pricer": { "const": "crr" },
+            "risk_free_rate": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "volatility": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "day_count": { "const": "ACT/365F" },
+            "crr_steps": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "Option": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["underlying_id", "option_type", "strike", "expiry_at", "exercise_style", "settlement_style", "valuation_mode", "initial_margin_per_contract", "maintenance_margin_per_contract"],
+          "properties": {
+            "instrument_type": { "const": "option" },
+            "quantity_step": { "const": "1" },
+            "underlying_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+            "option_type": { "enum": ["call", "put"] },
+            "strike": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "expiry_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+            "exercise_style": { "enum": ["european", "american"] },
+            "settlement_style": { "enum": ["cash", "physical"] },
+            "valuation_mode": { "enum": ["quote", "theoretical"] },
+            "valuation_inputs": { "$ref": "#/$defs/OptionValuationInputs" },
+            "initial_margin_per_contract": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "maintenance_margin_per_contract": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "valuation_mode": { "const": "theoretical" } }, "required": ["valuation_mode"] },
+              "then": { "required": ["valuation_inputs"] },
+              "else": { "not": { "required": ["valuation_inputs"] } }
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Instrument": {
+      "oneOf": [
+        { "$ref": "#/$defs/Spot" },
+        { "$ref": "#/$defs/LinearFuture" },
+        { "$ref": "#/$defs/Option" }
+      ]
+    }
+  },
+  "$ref": "#/$defs/Instrument"
+}

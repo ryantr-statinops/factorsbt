@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/run-configuration.schema.json",
+  "title": "FactorsBT MVP run configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "simulation", "initial_portfolio", "instruments", "data", "model", "decision_policy"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "simulation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_at", "end_at", "calendar_id"],
+      "properties": {
+        "start_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+        "end_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+        "calendar_id": { "const": "synthetic-daily-utc-v1" }
+      }
+    },
+    "initial_portfolio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cash", "positions"],
+      "properties": {
+        "cash": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["instrument_id", "quantity"],
+            "properties": {
+              "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+              "quantity": { "$ref": "common.schema.json#/$defs/Decimal" }
+            }
+          }
+        }
+      }
+    },
+    "instruments": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "instrument.schema.json" }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixture_id", "fixture_version"],
+      "properties": {
+        "fixture_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "fixture_version": { "$ref": "common.schema.json#/$defs/Identifier" }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "endpoint", "timeout_ms"],
+      "properties": {
+        "adapter": { "const": "http_fixture" },
+        "endpoint": { "type": "string", "format": "uri" },
+        "timeout_ms": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "decision_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output_mode"],
+      "properties": {
+        "output_mode": { "enum": ["scores", "targets", "order_intents"] },
+        "score_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["top_k", "derivative_score_targets"],
+          "properties": {
+            "top_k": { "type": "integer", "minimum": 1 },
+            "derivative_score_targets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["instrument_id", "contracts"],
+                "properties": {
+                  "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+                  "contracts": { "type": "integer" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "output_mode": { "const": "scores" } }, "required": ["output_mode"] },
+          "then": { "required": ["score_policy"] },
+          "else": { "not": { "required": ["score_policy"] } }
+        }
+      ]
+    }
+  }
+}

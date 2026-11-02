@@ -14,7 +14,7 @@ This is the initial loopback HTTP/JSON surface for the Python SDK. The Rust back
 | `GET /v1/runs/{run_id}` | Inspect run lifecycle, progress context, and terminal failure when present. | `200 OK` with current run status. |
 | `GET /v1/runs/{run_id}/results` | Retrieve a successful run's summary and evidence references. | `200 OK` after the run reaches `succeeded`. |
 
-The submission body is the versioned `RunConfiguration` contract assembled in the schemas and OpenAPI specification. Malformed JSON is rejected before enqueue. Schema-invalid or semantically invalid configuration is rejected without creating a run. Semantic checks include resolving instrument references, verifying output constraints, and checking portfolio feasibility where that check belongs to run admission.
+The submission body is the versioned `RunConfiguration` contract assembled in the schemas and OpenAPI specification. Its current shape is described in [MVP run and instrument configuration](instrument-configuration.md). Malformed JSON is rejected before enqueue. Schema-invalid or semantically invalid configuration is rejected without creating a run. Semantic checks include resolving instrument references, verifying output constraints, and checking portfolio feasibility where that check belongs to run admission.
 
 ### Health response
 

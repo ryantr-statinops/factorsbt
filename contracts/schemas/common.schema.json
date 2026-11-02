@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/common.schema.json",
+  "title": "FactorsBT shared wire definitions",
+  "$defs": {
+    "Uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "InstrumentId": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_-]{0,31}$"
+    },
+    "Decimal": {
+      "type": "string",
+      "maxLength": 48,
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,18})?$",
+      "description": "Base-10 decimal string without exponent notation. Semantic validation enforces at most 28 significant digits, range, positivity, and no negative zero."
+    },
+    "NonNegativeDecimal": {
+      "type": "string",
+      "maxLength": 48,
+      "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,18})?$",
+      "description": "Base-10 decimal string. Semantic validation enforces at most 28 significant digits and any field-specific range."
+    },
+    "UtcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$",
+      "description": "RFC 3339 timestamp normalized to UTC with a trailing Z. Validators must assert the date-time format."
+    },
+    "Currency": { "const": "USD" },
+    "ValidationDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "reason"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ApiErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "request_id"],
+          "properties": {
+            "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$" },
+            "message": { "type": "string", "minLength": 1 },
+            "request_id": { "$ref": "#/$defs/Uuid" },
+            "details": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ValidationDetail" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

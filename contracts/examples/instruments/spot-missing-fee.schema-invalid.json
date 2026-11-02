@@ -1,0 +1,10 @@
+{
+  "instrument_id": "SPOT_A",
+  "instrument_type": "spot",
+  "quote_currency": "USD",
+  "price_tick": "0.01",
+  "quantity_step": "0.001",
+  "contract_multiplier": "1",
+  "fee_per_unit": "0",
+  "slippage_bps": "0"
+}
