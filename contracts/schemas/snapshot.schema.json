@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/snapshot.schema.json",
+  "title": "FactorsBT decision snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["snapshot_id", "run_id", "scenario_id", "step_id", "simulation_time", "assembled_at", "observations", "portfolio"],
+  "properties": {
+    "snapshot_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+    "run_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+    "scenario_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+    "step_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+    "simulation_time": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "assembled_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "observations": {
+      "type": "array",
+      "items": { "$ref": "observation.schema.json" }
+    },
+    "portfolio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cash", "nav", "positions", "reserved_cash", "reserved_underlying", "initial_margin_requirement", "maintenance_margin_requirement", "free_buying_power"],
+      "properties": {
+        "cash": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "nav": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["instrument_id", "quantity", "mark", "market_value"],
+            "properties": {
+              "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+              "quantity": { "$ref": "common.schema.json#/$defs/Decimal" },
+              "mark": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+              "market_value": { "$ref": "common.schema.json#/$defs/Decimal" }
+            }
+          }
+        },
+        "reserved_cash": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "reserved_underlying": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["instrument_id", "quantity"],
+            "properties": {
+              "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+              "quantity": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
+            }
+          }
+        },
+        "initial_margin_requirement": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "maintenance_margin_requirement": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "free_buying_power": { "$ref": "common.schema.json#/$defs/Decimal" }
+      }
+    }
+  }
+}

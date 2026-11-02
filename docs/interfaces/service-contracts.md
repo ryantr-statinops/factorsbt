@@ -8,6 +8,8 @@ The [MVP 1 HTTP API proposal](mvp-http-api.md) now selects the initial operation
 
 The current request shape and type-specific instrument requirements are summarized in [MVP run and instrument configuration](instrument-configuration.md); the JSON Schema files under `contracts/schemas/` are the wire-shape authority.
 
+Data observations and inline, point-in-time snapshots are specified in [MVP observations and decision snapshots](temporal-snapshots.md). Their availability and portfolio-consistency checks are semantic validation, not properties guaranteed by JSON Schema alone.
+
 ## SDK and backend
 
 The SDK should let a user configure an experiment, submit work, inspect progress, and retrieve results. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.

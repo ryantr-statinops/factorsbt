@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/observation.schema.json",
+  "title": "FactorsBT normalized data observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["observation_id", "kind", "source_id", "source_version", "revision", "event_time", "available_at", "payload"],
+  "properties": {
+    "observation_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+    "kind": { "enum": ["bar", "quote", "news"] },
+    "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+    "source_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+    "source_version": { "$ref": "common.schema.json#/$defs/Identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "event_time": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "available_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "payload": { "oneOf": [{ "$ref": "#/$defs/Bar" }, { "$ref": "#/$defs/Quote" }, { "$ref": "#/$defs/News" }] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "bar" } }, "required": ["kind"] },
+      "then": { "required": ["instrument_id"], "properties": { "payload": { "$ref": "#/$defs/Bar" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "quote" } }, "required": ["kind"] },
+      "then": { "required": ["instrument_id"], "properties": { "payload": { "$ref": "#/$defs/Quote" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "news" } }, "required": ["kind"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/News" } } }
+    }
+  ],
+  "$defs": {
+    "Bar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interval_start", "interval_end", "open", "high", "low", "close"],
+      "properties": {
+        "interval_start": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+        "interval_end": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+        "open": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "high": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "low": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "close": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "volume": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
+      }
+    },
+    "Quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bid", "ask", "mark"],
+      "properties": {
+        "bid": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "ask": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+        "mark": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
+      }
+    },
+    "News": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["headline", "body"],
+      "properties": {
+        "headline": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      }
+    }
+  }
+}

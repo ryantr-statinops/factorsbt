@@ -1,0 +1,33 @@
+{
+  "snapshot_id": "4fe68f00-0ddb-4e72-ad9b-7bc09d84d5aa",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0002",
+  "simulation_time": "2026-01-06T16:00:00Z",
+  "assembled_at": "2026-01-06T16:00:01Z",
+  "observations": [
+    {
+      "observation_id": "NEWS-01",
+      "kind": "news",
+      "source_id": "synthetic-news",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-06T15:00:00Z",
+      "available_at": "2026-01-06T17:00:00Z",
+      "payload": {
+        "headline": "Synthetic scheduled report",
+        "body": "Controlled fixture content only."
+      }
+    }
+  ],
+  "portfolio": {
+    "cash": "100000",
+    "nav": "100000",
+    "positions": [],
+    "reserved_cash": "0",
+    "reserved_underlying": [],
+    "initial_margin_requirement": "0",
+    "maintenance_margin_requirement": "0",
+    "free_buying_power": "100000"
+  }
+}
