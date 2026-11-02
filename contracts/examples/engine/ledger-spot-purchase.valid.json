@@ -1,0 +1,19 @@
+{
+  "event_id": "0cd74418-8d41-47e4-9561-26e324f018c8",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0002",
+  "sequence": 4,
+  "simulation_time": "2026-01-06T09:00:00Z",
+  "event_type": "ledger_posting",
+  "posting_id": "35c8868c-e27a-4ce0-8f68-c3dff77c7760",
+  "source_event_id": "5c744923-98c3-498f-80ba-e4a21121d95d",
+  "posting_type": "spot_trade",
+  "instrument_id": "SPOT_A",
+  "cash_before": "100000",
+  "cash_delta": "-49999.96",
+  "cash_after": "50000.04",
+  "position_quantity_before": "0",
+  "position_quantity_delta": "497.512",
+  "position_quantity_after": "497.512"
+}

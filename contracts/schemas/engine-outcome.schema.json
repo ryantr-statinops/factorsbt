@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/engine-outcome.schema.json",
+  "title": "FactorsBT engine event",
+  "$defs": {
+    "Base": {
+      "type": "object",
+      "required": ["event_id", "run_id", "scenario_id", "step_id", "sequence", "simulation_time"],
+      "properties": {
+        "event_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+        "run_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+        "scenario_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "step_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "simulation_time": { "$ref": "common.schema.json#/$defs/UtcTimestamp" }
+      }
+    },
+    "AdmissionEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instrument_id", "unit", "requested_value", "admitted_value", "adjustment"],
+      "properties": {
+        "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+        "unit": { "enum": ["spot_weight", "quantity", "contracts"] },
+        "requested_value": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "admitted_value": { "$ref": "common.schema.json#/$defs/Decimal" },
+        "adjustment": { "enum": ["none", "lot_rounding", "capital_scale", "policy_rejection"] }
+      }
+    },
+    "DecisionAdmission": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["event_type", "decision_id", "inference_id", "snapshot_id", "response_type", "status", "scale_factor", "funding_constraint", "entries"],
+          "properties": {
+            "event_type": { "const": "decision_admission" },
+            "decision_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "inference_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "snapshot_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "response_type": { "enum": ["scores", "targets", "order_intents"] },
+            "status": { "enum": ["accepted", "adjusted", "rejected"] },
+            "scale_factor": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "funding_constraint": { "enum": ["none", "spot_cash", "initial_margin", "option_margin", "delivery_cash", "delivery_underlying", "fees"] },
+            "entries": { "type": "array", "items": { "$ref": "#/$defs/AdmissionEntry" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "OrderCreated": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["event_type", "order_id", "decision_id", "instrument_id", "order_type", "signed_quantity"],
+          "properties": {
+            "event_type": { "const": "order_created" },
+            "order_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "decision_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+            "order_type": { "const": "market" },
+            "signed_quantity": { "$ref": "common.schema.json#/$defs/Decimal" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "OrderCanceled": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["event_type", "order_id", "cancel_reason"],
+          "properties": {
+            "event_type": { "const": "order_canceled" },
+            "order_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "cancel_reason": { "enum": ["end_of_run", "maintenance_breach", "liquidation_replaced"] }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Fill": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["event_type", "fill_id", "order_id", "instrument_id", "signed_quantity", "fill_price", "fee", "source_observation_id", "source_revision"],
+          "properties": {
+            "event_type": { "const": "fill" },
+            "fill_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "order_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+            "signed_quantity": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "fill_price": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "fee": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "source_observation_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+            "source_revision": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "LedgerPosting": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["event_type", "posting_id", "source_event_id", "posting_type", "instrument_id", "cash_before", "cash_delta", "cash_after", "position_quantity_before", "position_quantity_delta", "position_quantity_after"],
+          "properties": {
+            "event_type": { "const": "ledger_posting" },
+            "posting_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "source_event_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "posting_type": { "enum": ["spot_trade", "option_trade", "futures_variation", "futures_close_realized_variation", "futures_expiry_settlement", "option_cash_expiry", "option_delivery", "fee"] },
+            "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+            "cash_before": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "cash_delta": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "cash_after": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "position_quantity_before": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "position_quantity_delta": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "position_quantity_after": { "$ref": "common.schema.json#/$defs/Decimal" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Settlement": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["event_type", "settlement_id", "instrument_id", "settlement_kind", "contracts", "settlement_cash_amount", "underlying_delivery_quantity"],
+          "properties": {
+            "event_type": { "const": "settlement" },
+            "settlement_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+            "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+            "settlement_kind": { "enum": ["futures_variation", "futures_expiry", "european_cash_expiry", "american_exercise", "american_assignment", "american_expiry_worthless"] },
+            "contracts": { "type": "integer" },
+            "fixture_event_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+            "underlying_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+            "settlement_cash_amount": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "underlying_delivery_quantity": { "$ref": "common.schema.json#/$defs/Decimal" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "RiskEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["event_type", "risk_code", "severity", "action", "causing_event_ids"],
+          "properties": {
+            "event_type": { "const": "risk" },
+            "risk_code": { "enum": ["maintenance_breach", "forced_liquidation_scheduled", "forced_liquidation_completed", "forced_liquidation_failed", "collateral_shortfall"] },
+            "severity": { "enum": ["info", "warning", "error"] },
+            "action": { "enum": ["reject_exposure", "cancel_orders_and_liquidate", "continue_run", "fail_run"] },
+            "effective_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+            "cash": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "nav": { "$ref": "common.schema.json#/$defs/Decimal" },
+            "maintenance_requirement": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" },
+            "causing_event_ids": {
+              "type": "array",
+              "items": { "$ref": "common.schema.json#/$defs/Uuid" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/DecisionAdmission" },
+    { "$ref": "#/$defs/OrderCreated" },
+    { "$ref": "#/$defs/OrderCanceled" },
+    { "$ref": "#/$defs/Fill" },
+    { "$ref": "#/$defs/LedgerPosting" },
+    { "$ref": "#/$defs/Settlement" },
+    { "$ref": "#/$defs/RiskEvent" }
+  ]
+}

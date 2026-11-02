@@ -1,0 +1,19 @@
+{
+  "event_id": "e1af49b6-167d-4df9-b835-2696210b8ab4",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0001",
+  "sequence": 1,
+  "simulation_time": "2026-01-05T16:00:00Z",
+  "event_type": "decision_admission",
+  "decision_id": "ac42db5c-51f6-47de-8583-5d52c0301de1",
+  "inference_id": "de87564a-ae4a-4768-bb05-97bc1d816d8f",
+  "snapshot_id": "4fe68f00-0ddb-4e72-ad9b-7bc09d84d5aa",
+  "response_type": "targets",
+  "status": "adjusted",
+  "scale_factor": "0.5",
+  "funding_constraint": "spot_cash",
+  "entries": [
+    { "instrument_id": "SPOT_A", "unit": "spot_weight", "requested_value": "1", "admitted_value": "0.5", "adjustment": "capital_scale" }
+  ]
+}

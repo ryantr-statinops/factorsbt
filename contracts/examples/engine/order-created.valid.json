@@ -1,0 +1,14 @@
+{
+  "event_id": "d0a78454-07c9-47a5-bae7-4fa741fe2d29",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0001",
+  "sequence": 2,
+  "simulation_time": "2026-01-05T16:00:00Z",
+  "event_type": "order_created",
+  "order_id": "e7d5e474-9d11-4d85-8235-e7824f047468",
+  "decision_id": "ac42db5c-51f6-47de-8583-5d52c0301de1",
+  "instrument_id": "SPOT_A",
+  "order_type": "market",
+  "signed_quantity": "497.512"
+}

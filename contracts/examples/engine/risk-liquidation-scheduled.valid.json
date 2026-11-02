@@ -1,0 +1,17 @@
+{
+  "event_id": "88fe7b65-654c-4141-a1a1-56df537e06d1",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0003",
+  "sequence": 5,
+  "simulation_time": "2026-01-07T16:00:00Z",
+  "event_type": "risk",
+  "risk_code": "forced_liquidation_scheduled",
+  "severity": "error",
+  "action": "cancel_orders_and_liquidate",
+  "effective_at": "2026-01-08T09:00:00Z",
+  "cash": "-100000",
+  "nav": "-100000",
+  "maintenance_requirement": "80000",
+  "causing_event_ids": ["5a6a91a3-065d-4fca-87b3-fd54fb31bed6"]
+}

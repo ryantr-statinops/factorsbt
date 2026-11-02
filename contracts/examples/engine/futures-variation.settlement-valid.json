@@ -1,0 +1,15 @@
+{
+  "event_id": "7bc7f04e-b994-4a7f-a0dc-894989cf6ca3",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0003",
+  "sequence": 3,
+  "simulation_time": "2026-01-07T16:00:00Z",
+  "event_type": "settlement",
+  "settlement_id": "a147a2ec-9d48-4f6d-814d-4f87da180fa5",
+  "instrument_id": "FUT_A",
+  "settlement_kind": "futures_variation",
+  "contracts": 100,
+  "settlement_cash_amount": "-200000",
+  "underlying_delivery_quantity": "0"
+}

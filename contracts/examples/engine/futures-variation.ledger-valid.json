@@ -1,0 +1,19 @@
+{
+  "event_id": "5a6a91a3-065d-4fca-87b3-fd54fb31bed6",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0003",
+  "sequence": 4,
+  "simulation_time": "2026-01-07T16:00:00Z",
+  "event_type": "ledger_posting",
+  "posting_id": "97beb985-c46a-4b41-8834-41164173de9a",
+  "source_event_id": "7bc7f04e-b994-4a7f-a0dc-894989cf6ca3",
+  "posting_type": "futures_variation",
+  "instrument_id": "FUT_A",
+  "cash_before": "100000",
+  "cash_delta": "-200000",
+  "cash_after": "-100000",
+  "position_quantity_before": "100",
+  "position_quantity_delta": "0",
+  "position_quantity_after": "100"
+}

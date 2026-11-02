@@ -1,0 +1,17 @@
+{
+  "event_id": "5c744923-98c3-498f-80ba-e4a21121d95d",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0002",
+  "sequence": 3,
+  "simulation_time": "2026-01-06T09:00:00Z",
+  "event_type": "fill",
+  "fill_id": "b1756c84-eac2-4e0e-9bba-05b25b69c86b",
+  "order_id": "e7d5e474-9d11-4d85-8235-e7824f047468",
+  "instrument_id": "SPOT_A",
+  "signed_quantity": "0",
+  "fill_price": "100.5",
+  "fee": "0",
+  "source_observation_id": "OPEN-SPOT-A-20260106",
+  "source_revision": 1
+}

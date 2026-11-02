@@ -12,6 +12,8 @@ Data observations and inline, point-in-time snapshots are specified in [MVP obse
 
 The correlated inference request and three response modes are specified in [MVP model exchanges](model-exchanges.md). A response is a proposal that still passes engine admission; it is not an order or fill.
 
+Internal engine outputs are event records specified in [MVP engine outcomes](engine-outcomes.md), keeping admission, orders, fills, settlements, ledger postings, and risk actions independently traceable.
+
 ## SDK and backend
 
 The SDK should let a user configure an experiment, submit work, inspect progress, and retrieve results. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.

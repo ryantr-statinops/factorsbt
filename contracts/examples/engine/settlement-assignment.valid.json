@@ -1,0 +1,17 @@
+{
+  "event_id": "7a34e09b-cc0d-4828-9ac3-e407c8237a33",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0003",
+  "sequence": 6,
+  "simulation_time": "2026-01-07T16:00:00Z",
+  "event_type": "settlement",
+  "settlement_id": "386cab9d-f9cf-4549-9d61-1c9126519c6a",
+  "instrument_id": "AM_CALL_A",
+  "settlement_kind": "american_assignment",
+  "contracts": -1,
+  "fixture_event_id": "ASSIGN-AM-CALL-01",
+  "underlying_id": "SPOT_A",
+  "settlement_cash_amount": "10000",
+  "underlying_delivery_quantity": "-100"
+}
