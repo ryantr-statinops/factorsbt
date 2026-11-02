@@ -75,7 +75,7 @@ The lifecycle is `queued → running → succeeded | failed`. `started_at` and `
 - The first run is local and loopback-only. No authentication mechanism is selected by this API specification.
 - The API does not expose a backtest execution endpoint as implemented during Phase A; only the health endpoint is built in Stage 02.
 
-The next Stage 01 decision specifies error bodies, submission retry rules, and error codes. Later Stage 01 decisions add shared JSON Schemas and an OpenAPI description.
+Error bodies, submission retry rules, and error codes are specified in [submission identity and failures](mvp-submissions.md). Later Stage 01 decisions add shared JSON Schemas and an OpenAPI description.
 
 ## Status and implementation boundary
 
