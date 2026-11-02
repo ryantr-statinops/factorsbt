@@ -32,6 +32,8 @@
   },
   "model": {
     "adapter": "http_fixture",
+    "model_id": "synthetic-model",
+    "model_version": "v1",
     "endpoint": "http://127.0.0.1:8787/model",
     "timeout_ms": 5000
   },

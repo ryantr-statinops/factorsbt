@@ -10,6 +10,8 @@ The current request shape and type-specific instrument requirements are summariz
 
 Data observations and inline, point-in-time snapshots are specified in [MVP observations and decision snapshots](temporal-snapshots.md). Their availability and portfolio-consistency checks are semantic validation, not properties guaranteed by JSON Schema alone.
 
+The correlated inference request and three response modes are specified in [MVP model exchanges](model-exchanges.md). A response is a proposal that still passes engine admission; it is not an order or fill.
+
 ## SDK and backend
 
 The SDK should let a user configure an experiment, submit work, inspect progress, and retrieve results. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.

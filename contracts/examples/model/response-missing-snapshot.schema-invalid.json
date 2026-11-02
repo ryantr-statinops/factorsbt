@@ -1,0 +1,12 @@
+{
+  "contract_version": "1.0.0",
+  "inference_id": "de87564a-ae4a-4768-bb05-97bc1d816d8f",
+  "run_id": "c827fcbc-c5fc-48a4-b4aa-21a63f64727e",
+  "scenario_id": "baseline",
+  "step_id": "step-0001",
+  "model_id": "synthetic-model",
+  "model_version": "v1",
+  "responded_at": "2026-01-05T16:00:02Z",
+  "response_type": "scores",
+  "outputs": { "scores": [] }
+}

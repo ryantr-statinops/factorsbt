@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/model-response.schema.json",
+  "title": "FactorsBT correlated model response",
+  "$defs": {
+    "Base": {
+      "type": "object",
+      "required": ["contract_version", "inference_id", "run_id", "scenario_id", "step_id", "snapshot_id", "model_id", "model_version", "responded_at"],
+      "properties": {
+        "contract_version": { "const": "1.0.0" },
+        "inference_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+        "run_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+        "scenario_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "step_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "snapshot_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+        "model_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "model_version": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "responded_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" }
+      }
+    },
+    "ScoresResponse": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["response_type", "outputs"],
+          "properties": {
+            "response_type": { "const": "scores" },
+            "outputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["scores"],
+              "properties": {
+                "scores": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["instrument_id", "score"],
+                    "properties": {
+                      "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+                      "score": { "$ref": "common.schema.json#/$defs/Decimal" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "TargetsResponse": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["response_type", "outputs"],
+          "properties": {
+            "response_type": { "const": "targets" },
+            "outputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["spot_weights", "derivative_contracts"],
+              "properties": {
+                "spot_weights": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["instrument_id", "weight"],
+                    "properties": {
+                      "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+                      "weight": { "$ref": "common.schema.json#/$defs/NonNegativeDecimal" }
+                    }
+                  }
+                },
+                "derivative_contracts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["instrument_id", "contracts"],
+                    "properties": {
+                      "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+                      "contracts": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "OrderIntentsResponse": {
+      "allOf": [
+        { "$ref": "#/$defs/Base" },
+        {
+          "type": "object",
+          "required": ["response_type", "outputs"],
+          "properties": {
+            "response_type": { "const": "order_intents" },
+            "outputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["orders"],
+              "properties": {
+                "orders": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["instrument_id", "order_type", "quantity"],
+                    "properties": {
+                      "instrument_id": { "$ref": "common.schema.json#/$defs/InstrumentId" },
+                      "order_type": { "const": "market" },
+                      "quantity": { "$ref": "common.schema.json#/$defs/Decimal" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/ScoresResponse" },
+    { "$ref": "#/$defs/TargetsResponse" },
+    { "$ref": "#/$defs/OrderIntentsResponse" }
+  ]
+}

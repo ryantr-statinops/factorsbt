@@ -15,7 +15,7 @@ Every instrument requires a stable ID, the `spot`, `linear_future`, or `option` 
 
 ## Run configuration
 
-The document requires a contract version, interval, synthetic calendar ID, initial USD cash and positions, configured instruments, data fixture identity/version, local HTTP fixture endpoint and timeout, and one output mode. Score runs also require `top_k` and configured derivative score targets. The schema intentionally does not add defaults; clients send every required value.
+The document requires a contract version, interval, synthetic calendar ID, initial USD cash and positions, configured instruments, data fixture identity/version, local HTTP fixture adapter with model ID/version, endpoint and timeout, and one output mode. Score runs also require `top_k` and configured derivative score targets. The schema intentionally does not add defaults; clients send every required value.
 
 ## Semantic validation beyond JSON Schema
 

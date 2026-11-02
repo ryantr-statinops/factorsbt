@@ -54,9 +54,11 @@
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["adapter", "endpoint", "timeout_ms"],
+      "required": ["adapter", "model_id", "model_version", "endpoint", "timeout_ms"],
       "properties": {
         "adapter": { "const": "http_fixture" },
+        "model_id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "model_version": { "$ref": "common.schema.json#/$defs/Identifier" },
         "endpoint": { "type": "string", "format": "uri" },
         "timeout_ms": { "type": "integer", "minimum": 1 }
       }

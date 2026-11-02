@@ -2,7 +2,7 @@
 
 **Status:** Accepted for the synthetic MVP only. Model invocation and portfolio transitions are not implemented yet.
 
-The [MVP scope](../product/mvp-scope.md) defines which output types exist. This document makes their selection and conversion behavior precise while preserving the rule that a proposal, order, and fill are separate events.
+The [MVP scope](../product/mvp-scope.md) defines which output types exist. This document makes their selection and conversion behavior precise while preserving the rule that a proposal, order, and fill are separate events. Wire shapes and correlation identity are specified in the [MVP model exchange](../interfaces/model-exchanges.md).
 
 ## One response type per run
 
