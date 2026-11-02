@@ -20,7 +20,7 @@ Tạo nền tảng chạy và phát triển tối thiểu cho SDK Python và bac
 
 - [Stage 00](00-mvp-decisions.md): môi trường chạy, phạm vi và ranh giới kiểm chứng.
 - [Stage 01](01-contracts.md): hợp đồng ban đầu để cấu trúc module phục vụ đúng nhu cầu.
-- Không có build/test/lint command được thiết lập ở thời điểm viết kế hoạch này.
+- Lệnh tooling và kết quả xác minh hiện tại được ghi tại [Phase A local development](../../docs/development/phase-a-local.md).
 
 ## Quyết định đã chốt cho lát cắt Phase A
 
@@ -31,7 +31,7 @@ Tạo nền tảng chạy và phát triển tối thiểu cho SDK Python và bac
 
 ## Prerequisite môi trường hiện tại
 
-Preflight ghi nhận Python 3.13.13, Rust/Cargo 1.99.1 và target `x86_64-pc-windows-msvc`. Không tìm thấy MSVC C++ linker/toolset hoặc Windows SDK. Cần cài đặt/cấp môi trường tương thích trước khi chạy backend binary và integration smoke. Không tự cài công cụ hệ thống trong stage này.
+Preflight ghi nhận Python 3.13.13, Rust/Cargo 1.99.1 và target `x86_64-pc-windows-msvc`. Không tìm thấy MSVC C++ linker/toolset hoặc Windows SDK. Python contract examples đã được kiểm tra bằng JSON Schema Draft 2020-12 trong virtualenv tạm với validator test-only. Cần môi trường MSVC/Windows SDK tương thích để build backend, chạy Rust tests và integration smoke. Không tự cài công cụ hệ thống trong stage này.
 
 ## Task → Commit
 

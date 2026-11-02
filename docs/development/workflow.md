@@ -26,9 +26,9 @@ This guide establishes no automatic commit, publication, deployment, or delegati
 
 ## Verify using repository evidence
 
-There are currently no source manifests, build/test commands, package versions, or CI workflows established for this repository. Do not present speculative commands as working setup instructions.
+The repository now has a Rust workspace and a standard-library Python SDK for the Phase A health slice. Use the [Phase A local development instructions](phase-a-local.md) for the commands that were run and their current prerequisites. A documented command is not evidence that an unverified Rust build or endpoint works.
 
-When tooling is introduced, document verified prerequisites and commands here. Add checks appropriate to observable behavior, concentrating on temporal visibility, portfolio transitions, scenario isolation, replay, and API failure semantics.
+When tooling changes, document verified prerequisites and commands. Add checks appropriate to observable behavior, concentrating on temporal visibility, portfolio transitions, scenario isolation, replay, and API failure semantics.
 
 For documentation-only work:
 

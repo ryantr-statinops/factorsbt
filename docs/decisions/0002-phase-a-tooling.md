@@ -25,7 +25,7 @@ The environment preflight ran before source-code changes. It found Python 3.13.1
 | Rust/Cargo | 1.99.1; host and installed target are `x86_64-pc-windows-msvc` |
 | Visual Studio C++ toolchain | No matching installation with the MSVC x64/x86 build tools was found by `vswhere`; `cl.exe`, `link.exe`, and `msbuild.exe` are not available. |
 | Windows SDK | Windows Kits library directories were not found. |
-| Python JSON Schema validator | No `jsonschema` module is installed. The SDK remains standard-library-only; the Stage 02 shared-example check must not silently skip JSON Schema validity. |
+| Python JSON Schema validator | No `jsonschema` module was present in the base environment. For the test-only shared-example check, `jsonschema==4.26.0` was installed in an isolated temporary virtualenv; all Python schema/example tests passed. The SDK runtime remains standard-library-only. |
 
 **Prerequisite:** provide a compatible MSVC C++ linker/toolset and Windows SDK, or run the final executable and Python-to-Rust smoke checks on a supported host that has them. Do not auto-install system build tools as part of this change. Until that prerequisite is met, compile/link, backend execution, integration smoke, and Phase A completion remain unverified.
 
@@ -33,11 +33,11 @@ The environment preflight ran before source-code changes. It found Python 3.13.1
 
 - Native Python bindings or an embedded Rust engine would add packaging and native-linking requirements to the SDK; they are outside the selected HTTP boundary.
 - A database or queue would add operational state not needed for the local health slice and is not selected.
-- A third-party Python runtime dependency would contradict the accepted SDK boundary. A schema-validation approach for cross-language test fixtures still needs to be verified without adding a Python runtime dependency.
+- A third-party Python runtime dependency would contradict the accepted SDK boundary. The Draft 2020-12 validator is limited to test setup and is not imported by the SDK runtime.
 
 ## Consequences
 
-The first executable path stays small and language boundaries remain explicit. Rust dependency versions and source commands can be verified only after manifests are created. The missing native linker and SDK prevent the planned final server smoke check in this environment; no implementation stage may be marked complete on the basis of static files alone.
+The first executable path stays small and language boundaries remain explicit. Cargo.lock records the resolved Rust dependencies. Formatting, metadata, and Python schema/example checks have been verified; the missing native linker and SDK prevent Rust compile/test and the final server smoke check in this environment. No implementation stage may be marked complete on the basis of static files alone.
 
 ## Related documents
 
