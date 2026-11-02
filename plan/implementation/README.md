@@ -1,0 +1,128 @@
+# Kế hoạch triển khai FactorsBT
+
+**Status:** Proposed — phân rã công việc, chưa phải các tính năng đã triển khai.
+
+**Mốc đối chiếu:** 2026-11-02. Repository có tài liệu nền tảng; chưa có SDK, backend, engine, executable API contract hoặc công cụ build/test được thiết lập.
+
+## Cách đọc và phạm vi
+
+Bộ kế hoạch gồm 12 stage triển khai (00–11) và mục brainstorm 12. Mỗi stage ghi mục tiêu, đầu ra, phụ thuộc, quyết định Open, Task → Commit, kiểm chứng dự kiến và điều kiện hoàn thành. Chỉ thực hiện code sau khi quyết định cần thiết của stage được chốt.
+
+Hướng Accepted là SDK thuần Python, backend/engine Rust, giao tiếp ban đầu HTTP/JSON. Các giả định sản phẩm/tài chính và công cụ còn Open không được coi là đã chọn chỉ vì xuất hiện trong kế hoạch.
+
+- Wave 1: Phase A–B, từ thiết kế MVP tới một backtest chạy xuyên suốt.
+- Wave 2: Phase C, thí nghiệm so sánh và recorded-response replay.
+- Wave 3: Phase D, hai hướng nghiên cứu độc lập reranking và RL, vẫn là Proposed.
+- Phase E: chỗ ghi nhớ ý tưởng ứng dụng, chưa đưa vào wave thực thi hay lịch triển khai.
+
+Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay thế số Stage 0–3 trong [roadmap gốc](../../docs/roadmap.md). Phase A–B phân rã roadmap Stage 1, Phase C tương ứng Stage 2, Phase D tương ứng Stage 3; Phase E là ý tưởng bổ sung chưa chốt. Tài liệu nền tảng của roadmap Stage 0 không được tính là engine hay MVP đã chạy được.
+
+## Danh mục và bảng theo dõi
+
+| Phase | Stage / mục | Trạng thái thiết kế | Đạt điều kiện hoàn thành | Bằng chứng |
+| --- | --- | --- | --- | --- |
+| A | [00 — Quyết định MVP](00-mvp-decisions.md) | Proposed | Chưa | Chưa có |
+| A | [01 — Contracts](01-contracts.md) | Proposed | Chưa | Chưa có |
+| A | [02 — Nền tảng dự án](02-project-foundation.md) | Proposed | Chưa | Chưa có |
+| B | [03 — Data snapshots](03-data-snapshots.md) | Proposed | Chưa | Chưa có |
+| B | [04 — Simulation engine](04-simulation-engine.md) | Proposed | Chưa | Chưa có |
+| B | [05 — Model orchestration](05-model-orchestration.md) | Proposed | Chưa | Chưa có |
+| B | [06 — Backend API](06-backend-api.md) | Proposed | Chưa | Chưa có |
+| B | [07 — Python SDK và nghiệm thu MVP](07-python-sdk-mvp.md) | Proposed | Chưa | Chưa có |
+| C | [08 — Scenario comparison](08-scenario-comparison.md) | Proposed | Chưa | Chưa có |
+| C | [09 — Recorded replay](09-recorded-replay.md) | Proposed | Chưa | Chưa có |
+| D | [10 — Reranking](10-reranking.md) | Proposed | Chưa | Chưa có |
+| D | [11 — RL interface](11-rl-interface.md) | Proposed | Chưa | Chưa có |
+| E | [12 — Ý tưởng CLI / console application](12-cli-console-ideas.md) | Proposed — brainstorm | Không áp dụng | Chưa chốt triển khai |
+
+Hiện có **0/12 stage đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **0/8**. Đây là số stage đạt cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
+
+Trạng thái thiết kế dùng đúng từ vựng của [documentation index](../../docs/README.md#status-vocabulary): Accepted, Proposed, Open và Implemented. Cột hoàn thành là theo dõi công việc riêng. Stage thiết kế có thể hoàn thành bằng quyết định được Accepted và tài liệu đã kiểm tra; điều đó không làm tính năng thành Implemented. Chỉ mô tả hành vi là Implemented khi có code và kiểm chứng phù hợp.
+
+Khi tiến độ thay đổi, cập nhật hàng stage, số đếm, graph và dẫn chứng cùng nhau. Dẫn chứng cần chỉ đến quyết định, commit triển khai, kết quả kiểm tra và giới hạn liên quan. Viết xong file kế hoạch không phải bằng chứng hoàn thành stage.
+
+## Graph tiến độ theo phase
+
+Mũi tên liền biểu thị trình tự triển khai chính được đề xuất; phụ thuộc chi tiết nằm trong từng file stage. Hai nhánh Phase D độc lập nhau. Nét đứt tới Phase E chỉ gợi liên hệ ý tưởng, không phải phụ thuộc hay thời hạn đã chốt.
+
+```mermaid
+flowchart TD
+    NOW["Hiện tại: tài liệu nền tảng<br/>Chưa có SDK/backend/engine"]
+    NOW --> A0
+
+    subgraph A["Phase A — Thiết kế MVP · 0/3"]
+        A0["00 · Chốt MVP"] --> A1["01 · Contracts"]
+        A1 --> A2["02 · Nền tảng dự án"]
+    end
+
+    subgraph B["Phase B — MVP xuyên suốt · 0/5"]
+        B0["03 · Data snapshots"] --> B1["04 · Engine"]
+        B1 --> B2["05 · Model orchestration"]
+        B2 --> B3["06 · Backend API"]
+        B3 --> B4["07 · Python SDK + MVP"]
+    end
+
+    subgraph C["Phase C — So sánh và replay · 0/2"]
+        C0["08 · Scenario comparison"] --> C1["09 · Recorded replay"]
+    end
+
+    subgraph D["Phase D — Nghiên cứu mở rộng · 0/2"]
+        D0["10 · Reranking"]
+        D1["11 · RL interface"]
+    end
+
+    subgraph E["Phase E — Brainstorm, chưa chốt"]
+        E0["12 · Ý tưởng CLI / console application"]
+    end
+
+    A2 --> B0
+    B4 --> C0
+    C1 --> D0
+    C1 --> D1
+    B4 -.-> E0
+
+    classDef current fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    classDef idea fill:#fff7ed,stroke:#c2410c,color:#7c2d12,stroke-dasharray:5 5
+    class NOW current
+    class E0 idea
+```
+
+Phase E không yêu cầu Phase D hoàn thành. Mục 12 chưa chọn tính năng, ngôn ngữ, giao diện, dependency triển khai hoặc thời điểm làm; nếu được theo đuổi sẽ cần một kế hoạch riêng.
+
+## Cổng hoàn thành theo phase
+
+| Phase | Đầu vào / phụ thuộc | Kiểm chứng và điều kiện ra |
+| --- | --- | --- |
+| A | Docs nền tảng và ADR 0001 | Quyết định MVP đủ dùng được chốt; hai phía hiểu cùng hợp đồng; công cụ tối thiểu chạy được và lệnh được xác minh. |
+| B | Phase A | Chạy từ SDK qua Rust backend, adapters và engine; evidence nối input tới portfolio; các ca temporal visibility, shared capital, execution và failure đúng quy tắc. |
+| C | MVP Phase B | Scenario cách ly mutable state, khác biệt có thể giải thích; recorded replay được kiểm tra trong phạm vi công bố và khác fresh inference. |
+| D | Comparison/replay Phase C và thiết kế nghiên cứu được chấp nhận | Mỗi nhánh có contract, ví dụ bounded và kiểm chứng với vốn, thời gian, isolation và replay; không cam kết model cải thiện. |
+| E | Chưa xác lập đầu vào thực thi | Chỉ brainstorm; không có cổng nghiệm thu ứng dụng hoặc yêu cầu hoàn thành để đóng MVP. |
+
+## Task, commit và kiểm chứng
+
+### Lần tạo bộ tài liệu này
+
+- Làm trực tiếp trên `main`; tạo stage 00–11, mục 12 rồi README, mỗi file một commit: 14 commit.
+- Commit stage có dạng `docs(plan): add stage 00 MVP decisions`; mục 12 là `docs(plan): record CLI console application ideas`; README là `docs(plan): add implementation overview and phase graph`.
+- Chỉ stage đường dẫn tường minh. Trước mỗi commit kiểm tra branch, working tree, index, staged diff và whitespace; sau commit kiểm tra file và summary.
+- Kiểm tra links, Markdown, thuật ngữ, status, dependencies, graph và diff của cả bộ; sau đó push lên `origin/main` theo phạm vi đã duyệt. Không thêm CI, dependency hoặc code sản phẩm.
+- Chưa triển khai hay chạy test code. Repository chưa có CI tại mốc đối chiếu; không báo CI passed khi không có run.
+
+### Những lần triển khai tương lai
+
+- Bảng Task → Commit trong từng stage là chuỗi công việc dự kiến cho code/docs sau này, khác với 14 commit soạn plan.
+- Khi bắt đầu mỗi phase, xác nhận nhánh, đích local/remote và ranh giới chạy test theo [commit-workflow](../../.agents/skills/commit-workflow/SKILL.md); lựa chọn `main`/push của lần soạn tài liệu không tự áp dụng cho mọi lần code.
+- Kiểm chứng trong từng file là các tình huống cần bao phủ, chưa phải test đã chạy. Ranh giới chạy theo task/phase cần được chốt trước triển khai; phương án kết hợp có thể được đề xuất khi có tooling.
+- Chỉ chọn lệnh theo manifests/công cụ thực có; cập nhật [development workflow](../../docs/development/workflow.md) khi xác minh được lệnh mới.
+- Chốt quyết định Open trước khi task phụ thuộc bắt đầu; cập nhật contracts hai phía và ảnh hưởng tới kết quả lưu trữ. Ghi ADR cho thay đổi kiến trúc đáng kể, không xóa lịch sử quyết định cũ.
+- Giữ các ranh giới: event/availability/processing time; decision/order/fill; mutable scenario state/immutable input; recorded replay/fresh inference.
+
+## Tài liệu gốc
+
+- [Documentation index](../../docs/README.md)
+- [Roadmap](../../docs/roadmap.md)
+- [Architecture overview](../../docs/architecture/overview.md)
+- [Simulation lifecycle](../../docs/architecture/simulation-lifecycle.md)
+- [Service contracts](../../docs/interfaces/service-contracts.md)
+- [ADR 0001](../../docs/decisions/0001-python-sdk-rust-backend.md)
