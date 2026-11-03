@@ -268,7 +268,7 @@ fn same_sign(left: Decimal, right: Decimal) -> bool {
         || (left < Decimal::ZERO && right < Decimal::ZERO)
 }
 
-fn magnitude(value: Decimal) -> Result<Decimal, EngineError> {
+pub(super) fn magnitude(value: Decimal) -> Result<Decimal, EngineError> {
     if value < Decimal::ZERO {
         Decimal::ZERO
             .checked_sub(value)
@@ -310,7 +310,7 @@ fn settlement_basis_after_trade(
     Ok(current_basis)
 }
 
-fn adverse_fill_price(
+pub(super) fn adverse_fill_price(
     quote: Decimal,
     signed_quantity: Decimal,
     tick: Decimal,
@@ -352,7 +352,7 @@ fn adverse_fill_price(
         .ok_or(EngineError::ArithmeticOverflow("tick rounding"))
 }
 
-fn calculate_fee(
+pub(super) fn calculate_fee(
     signed_quantity: Decimal,
     fill_price: Decimal,
     multiplier: Decimal,

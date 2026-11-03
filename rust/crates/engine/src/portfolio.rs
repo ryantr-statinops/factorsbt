@@ -25,6 +25,10 @@ pub enum EngineError {
     InvalidFutureTrade(String),
     NotFutureInstrument(String),
     FutureNotExpired(String),
+    NotOptionInstrument(String),
+    InvalidOptionTrade(String),
+    NotEuropeanCashOption(String),
+    OptionNotExpired(String),
     InvalidExecutionPrice,
     MissingPosition(String),
     InsufficientInitialMargin,
@@ -54,6 +58,12 @@ impl fmt::Display for EngineError {
             Self::InvalidFutureTrade(id) => write!(f, "invalid futures trade for {id}"),
             Self::NotFutureInstrument(id) => write!(f, "instrument {id} is not a future"),
             Self::FutureNotExpired(id) => write!(f, "future {id} has not reached expiry"),
+            Self::NotOptionInstrument(id) => write!(f, "instrument {id} is not an option"),
+            Self::InvalidOptionTrade(id) => write!(f, "invalid option trade for {id}"),
+            Self::NotEuropeanCashOption(id) => {
+                write!(f, "option {id} is not a European cash-settled contract")
+            }
+            Self::OptionNotExpired(id) => write!(f, "option {id} has not reached expiry"),
             Self::InvalidExecutionPrice => f.write_str("execution price must be positive"),
             Self::MissingPosition(id) => write!(f, "posting references unknown instrument {id}"),
             Self::InsufficientInitialMargin => {
