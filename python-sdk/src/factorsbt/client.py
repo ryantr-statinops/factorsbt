@@ -18,7 +18,7 @@ from .errors import (
     SubmissionAcknowledgementUnknown,
     TransportError,
 )
-from .responses import SubmissionAccepted
+from .responses import RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .types import validate_uuid
 
 
@@ -143,6 +143,61 @@ class Client:
         if accepted.submission_id != key:
             raise SubmissionAcknowledgementUnknown(key, "backend acknowledgment used a different submission ID")
         return accepted
+
+    def get_submission(self, submission_id: str) -> SubmissionStatus:
+        """Resolve an acknowledged or uncertain submission by its UUID key."""
+        key = validate_uuid(submission_id)
+        response = self._get_json(f"/v1/submissions/{key}")
+        result = SubmissionStatus.from_wire(response)
+        if result.submission_id != key:
+            raise ProtocolError("submission response identity does not match the requested ID")
+        return result
+
+    def get_run(self, run_id: str) -> RunStatus:
+        """Read one run's lifecycle and any recorded failure context."""
+        key = validate_uuid(run_id)
+        response = self._get_json(f"/v1/runs/{key}")
+        result = RunStatus.from_wire(response)
+        if result.run_id != key:
+            raise ProtocolError("run response identity does not match the requested ID")
+        return result
+
+    def get_results(self, run_id: str) -> RunResult:
+        """Read a successful result and its validated local evidence references."""
+        key = validate_uuid(run_id)
+        response = self._get_json(f"/v1/runs/{key}/results")
+        result = RunResult.from_wire(response)
+        if result.run_id != key:
+            raise ProtocolError("result response identity does not match the requested ID")
+        return result
+
+    def _get_json(self, path: str) -> object:
+        request = Request(
+            self.base_url.rstrip("/") + path,
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with build_opener(_NoRedirect()).open(request, timeout=self.timeout) as response:
+                status = response.getcode()
+                body = response.read()
+        except HTTPError as exc:
+            raise _http_status_error(exc.code, exc.read()) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise RequestTimeout("backend request timed out") from exc
+        except URLError as exc:
+            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+                raise RequestTimeout("backend request timed out") from exc
+            raise TransportError("could not connect to the FactorsBT backend") from exc
+        except OSError as exc:
+            raise TransportError("could not connect to the FactorsBT backend") from exc
+
+        if status != 200:
+            raise _http_status_error(status, body)
+        try:
+            return json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProtocolError("backend response is not valid JSON") from exc
 
 
 def _http_status_error(status: int, body: bytes) -> HttpStatusError:
