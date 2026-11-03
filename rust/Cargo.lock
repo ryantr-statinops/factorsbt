@@ -300,9 +300,12 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "factorsbt-contracts",
+ "factorsbt-data",
+ "factorsbt-engine",
  "reqwest",
  "rust_decimal",
  "serde_json",
+ "sha2",
  "tokio",
  "tower",
 ]

@@ -1,0 +1,948 @@
+//! Run-owned coordinator for point-in-time data, model calls, and engine state.
+
+use crate::{
+    inference_guard::InferenceGuard,
+    model_client::{ModelHttpClient, ModelServiceError},
+    model_validation::validate_model_response,
+};
+use factorsbt_contracts::{
+    compare_utc_timestamps,
+    instruments::{ExerciseStyle, Instrument, SettlementStyle},
+    model::ModelRequest,
+    temporal::{DecisionSnapshot, PortfolioSnapshot, PositionSnapshot, UnderlyingReservation},
+    Identifier, InstrumentId, RunConfiguration, UtcTimestamp, Uuid,
+};
+use factorsbt_data::{
+    assemble_snapshot, execution_prices_available_at, observations_available_at,
+    settlement_events_available_at, validate_run_coverage, Fixture, SnapshotContext,
+};
+use factorsbt_engine::{
+    admit_target_group, execute_liquidation_group, execute_pending_group, finalize_run_state,
+    queue_order_intents, queue_target_group, response_to_proposal, schedule_liquidation,
+    value_instruments, AdmissionResult, DecisionProposal, ExecutedOrderGroup, FinalRunStatus,
+    LiquidationOutcome, PendingOrderGroup, PortfolioState, RunFinalization, SimulationClock,
+    SimulationEventKind,
+};
+use rust_decimal::{Decimal, RoundingStrategy};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunIdentity {
+    pub run_id: Uuid,
+    pub scenario_id: Identifier,
+}
+
+#[derive(Debug, Clone)]
+pub struct DecisionCycleRecord {
+    pub snapshot: DecisionSnapshot,
+    pub request: ModelRequest,
+    pub request_body: Vec<u8>,
+    pub response: factorsbt_contracts::ModelResponse,
+    pub response_body: Vec<u8>,
+    pub proposal: DecisionProposal,
+    pub admission: Option<AdmissionResult>,
+    pub queued_order_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OrchestrationReport {
+    pub identity: RunIdentity,
+    pub fixture_id: String,
+    pub fixture_version: String,
+    pub fixture_digest_sha256: String,
+    pub cycles: Vec<DecisionCycleRecord>,
+    pub execution_events: Vec<Value>,
+    pub liquidation_events: Vec<Value>,
+    pub settlement_events: Vec<Value>,
+    pub risk_events: Vec<Value>,
+    pub finalization: RunFinalization,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrchestrationError {
+    pub stage: &'static str,
+    pub reason: String,
+}
+
+impl OrchestrationError {
+    fn at(stage: &'static str, error: impl fmt::Display) -> Self {
+        Self {
+            stage,
+            reason: error.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for OrchestrationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} failed: {}", self.stage, self.reason)
+    }
+}
+
+impl Error for OrchestrationError {}
+
+/// Run one isolated scenario. Fixture data is immutable and can be shared;
+/// every mutable engine, pending-order, inference, and trace value is local.
+pub async fn run_simulation(
+    client: &ModelHttpClient,
+    endpoint: &str,
+    timeout: Duration,
+    configuration: &RunConfiguration,
+    fixture: &Fixture,
+    identity: RunIdentity,
+) -> Result<OrchestrationReport, OrchestrationError> {
+    validate_run_coverage(&fixture.dataset, configuration)
+        .map_err(|issues| OrchestrationError::at("fixture coverage", format_issues(&issues)))?;
+    let mut portfolio = PortfolioState::initialize(configuration, fixture)
+        .map_err(|error| OrchestrationError::at("portfolio initialization", error))?;
+    let mut clock = SimulationClock::new(
+        &configuration.simulation.start_at,
+        &configuration.simulation.end_at,
+        &configuration.simulation.calendar_id,
+    )
+    .map_err(|error| OrchestrationError::at("simulation clock", error))?;
+    let schedule = std::iter::from_fn(|| clock.next_event()).collect::<Vec<_>>();
+
+    let mut pending_groups = Vec::<PendingOrderGroup>::new();
+    let mut liquidation_group = None::<PendingOrderGroup>;
+    let mut inference_guard = InferenceGuard::default();
+    let mut processed_settlement_ids = HashSet::<String>::new();
+    let mut cycles = Vec::new();
+    let mut execution_events = Vec::new();
+    let mut liquidation_events = Vec::new();
+    let mut settlement_events = Vec::new();
+    let mut risk_events = Vec::new();
+    let mut step_number = 0_u64;
+
+    for (event_index, event) in schedule.iter().enumerate() {
+        match event.kind {
+            SimulationEventKind::Open => {
+                let prices = execution_prices_available_at(&fixture.dataset, &event.at)
+                    .map_err(|error| OrchestrationError::at("execution inputs", error))?;
+                if let Some(group) = liquidation_group.take() {
+                    let outcome =
+                        execute_liquidation_group(&mut portfolio, &group, &event.at, &prices)
+                            .map_err(|error| OrchestrationError::at("forced liquidation", error))?;
+                    match &outcome {
+                        LiquidationOutcome::Completed { fills, .. } => {
+                            liquidation_events.push(json!({
+                                "type":"liquidation_completed",
+                                "step_id":group.step_id.as_str(),
+                                "execution_time":event.at.as_str(),
+                                "fills":fills.iter().map(fill_value).collect::<Vec<_>>(),
+                            }));
+                        }
+                        LiquidationOutcome::Failed { reason, .. } => {
+                            liquidation_events.push(json!({
+                                "type":"liquidation_failed",
+                                "step_id":group.step_id.as_str(),
+                                "execution_time":event.at.as_str(),
+                                "reason":reason,
+                            }));
+                            return Err(OrchestrationError::at("forced liquidation", reason));
+                        }
+                    }
+                } else {
+                    let mut due = Vec::new();
+                    let mut remaining = Vec::new();
+                    for group in pending_groups.drain(..) {
+                        if compare_utc_timestamps(&group.eligible_at, &event.at).is_eq() {
+                            due.push(group);
+                        } else {
+                            remaining.push(group);
+                        }
+                    }
+                    pending_groups = remaining;
+                    for group in due {
+                        let executed =
+                            execute_pending_group(&mut portfolio, &group, &event.at, &prices)
+                                .map_err(|error| {
+                                    OrchestrationError::at("next-open execution", error)
+                                })?;
+                        execution_events.push(execution_value(&executed));
+                    }
+                }
+            }
+            SimulationEventKind::Close => {
+                step_number = step_number.saturating_add(1);
+                let step_id = Identifier::new(format!("step-{step_number:04}"))
+                    .map_err(|error| OrchestrationError::at("step identity", error))?;
+                let observations = observations_available_at(&fixture.dataset, &event.at)
+                    .map_err(|error| OrchestrationError::at("snapshot data", error))?;
+                let marks = value_instruments(&configuration.instruments, &observations, &event.at)
+                    .map_err(|error| OrchestrationError::at("valuation", error))?;
+                portfolio
+                    .apply_valuation_marks(&marks)
+                    .map_err(|error| OrchestrationError::at("portfolio marks", error))?;
+                settle_close(
+                    configuration,
+                    fixture,
+                    &event.at,
+                    &marks,
+                    &mut portfolio,
+                    &mut processed_settlement_ids,
+                    &mut settlement_events,
+                )?;
+
+                if let Some(breach) =
+                    factorsbt_engine::enforce_maintenance(&portfolio, &mut pending_groups)
+                        .map_err(|error| OrchestrationError::at("maintenance check", error))?
+                {
+                    risk_events.push(maintenance_value(&event.at, &breach));
+                    let next_open = schedule
+                        .get(event_index + 1)
+                        .filter(|next| next.kind == SimulationEventKind::Open);
+                    let next_open = next_open.ok_or_else(|| {
+                        OrchestrationError::at(
+                            "maintenance liquidation",
+                            "no later session open is inside the configured run interval",
+                        )
+                    })?;
+                    liquidation_group = Some(
+                        schedule_liquidation(&portfolio, &step_id, &event.at, &next_open.at)
+                            .map_err(|error| {
+                                OrchestrationError::at("maintenance liquidation schedule", error)
+                            })?,
+                    );
+                    continue;
+                }
+
+                let assembled_at = system_utc_timestamp()
+                    .map_err(|error| OrchestrationError::at("processing timestamp", error))?;
+                let snapshot_id = derived_uuid(&identity, &step_id, "snapshot");
+                let snapshot = assemble_snapshot(
+                    &fixture.dataset,
+                    SnapshotContext {
+                        snapshot_id: snapshot_id.clone(),
+                        run_id: identity.run_id.clone(),
+                        scenario_id: identity.scenario_id.clone(),
+                        step_id: step_id.clone(),
+                        simulation_time: event.at.clone(),
+                        assembled_at: assembled_at.clone(),
+                    },
+                    portfolio_snapshot(&portfolio)
+                        .map_err(|error| OrchestrationError::at("portfolio snapshot", error))?,
+                )
+                .map_err(|error| OrchestrationError::at("snapshot assembly", error))?;
+                let mut instruments = configuration.instruments.clone();
+                instruments.sort_by(|left, right| instrument_id(left).cmp(instrument_id(right)));
+                let mut eligible_instrument_ids = configuration
+                    .instruments
+                    .iter()
+                    .map(|instrument| InstrumentId::new(instrument_id(instrument)))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| OrchestrationError::at("eligible instruments", error))?;
+                eligible_instrument_ids.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+                let request = ModelRequest {
+                    contract_version: configuration.contract_version.clone(),
+                    inference_id: derived_uuid(&identity, &step_id, "inference"),
+                    run_id: identity.run_id.clone(),
+                    scenario_id: identity.scenario_id.clone(),
+                    step_id: step_id.clone(),
+                    snapshot_id,
+                    model_id: configuration.model.model_id.clone(),
+                    model_version: configuration.model.model_version.clone(),
+                    requested_at: system_utc_timestamp()
+                        .map_err(|error| OrchestrationError::at("processing timestamp", error))?,
+                    simulation_time: event.at.clone(),
+                    decision_policy: configuration.decision_policy.clone(),
+                    eligible_instrument_ids,
+                    instruments,
+                    snapshot: snapshot.clone(),
+                };
+                let request_body = serde_json::to_vec(&request)
+                    .map_err(|error| OrchestrationError::at("model request encoding", error))?;
+                inference_guard.begin(&request).map_err(|error| {
+                    OrchestrationError::at("inference guard", format!("{error:?}"))
+                })?;
+                let exchange = client
+                    .infer(endpoint, timeout, &request)
+                    .await
+                    .map_err(|error| model_error("model request", error))?;
+                validate_model_response(&request, &exchange.response).map_err(|error| {
+                    OrchestrationError::at("model response validation", format!("{error:?}"))
+                })?;
+                inference_guard
+                    .complete(&exchange.response)
+                    .map_err(|error| {
+                        OrchestrationError::at("inference correlation", format!("{error:?}"))
+                    })?;
+                let proposal = response_to_proposal(
+                    &configuration.decision_policy,
+                    &exchange.response,
+                    &configuration.instruments,
+                    &portfolio,
+                    &event.at,
+                )
+                .map_err(|error| OrchestrationError::at("decision proposal", error))?;
+                let (admission, group) = queue_decision(
+                    &portfolio,
+                    &step_id,
+                    &event.at,
+                    &configuration.simulation.end_at,
+                    &proposal,
+                )?;
+                let queued_order_ids = group
+                    .as_ref()
+                    .map(|value| {
+                        value
+                            .orders
+                            .iter()
+                            .map(|order| order.order_id.as_str().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if let Some(group) = group {
+                    pending_groups.push(group);
+                }
+                cycles.push(DecisionCycleRecord {
+                    snapshot,
+                    request,
+                    request_body,
+                    response: exchange.response,
+                    response_body: exchange.response_body,
+                    proposal,
+                    admission,
+                    queued_order_ids,
+                });
+            }
+        }
+    }
+
+    let finalization = finalize_run_state(&portfolio, &mut pending_groups, None)
+        .map_err(|error| OrchestrationError::at("run finalization", error))?;
+    if finalization.status != FinalRunStatus::Succeeded {
+        return Err(OrchestrationError::at(
+            "run finalization",
+            finalization
+                .failure_reason
+                .as_deref()
+                .unwrap_or("run failed"),
+        ));
+    }
+    Ok(OrchestrationReport {
+        identity,
+        fixture_id: fixture.manifest.fixture_id.as_str().to_owned(),
+        fixture_version: fixture.manifest.fixture_version.as_str().to_owned(),
+        fixture_digest_sha256: fixture.digest_sha256.clone(),
+        cycles,
+        execution_events,
+        liquidation_events,
+        settlement_events,
+        risk_events,
+        finalization,
+    })
+}
+
+fn queue_decision(
+    portfolio: &PortfolioState,
+    step_id: &Identifier,
+    decision_time: &UtcTimestamp,
+    end_at: &UtcTimestamp,
+    proposal: &DecisionProposal,
+) -> Result<(Option<AdmissionResult>, Option<PendingOrderGroup>), OrchestrationError> {
+    let eligible_at = next_open(decision_time)
+        .map_err(|error| OrchestrationError::at("next-open timestamp", error))?;
+    if compare_utc_timestamps(&eligible_at, end_at).is_gt() {
+        return Ok((None, None));
+    }
+    if !proposal.target_positions.is_empty() {
+        let admission = admit_target_group(portfolio, &proposal.target_positions)
+            .map_err(|error| OrchestrationError::at("group admission", error))?;
+        let group = queue_target_group(portfolio, step_id, decision_time, &eligible_at, &admission)
+            .map_err(|error| OrchestrationError::at("target order queue", error))?;
+        let group = (!group.orders.is_empty()).then_some(group);
+        Ok((Some(admission), group))
+    } else if !proposal.order_intents.is_empty() {
+        let group = queue_order_intents(
+            step_id,
+            decision_time,
+            &eligible_at,
+            &proposal.order_intents,
+        )
+        .map_err(|error| OrchestrationError::at("intent order queue", error))?;
+        let group = (!group.orders.is_empty()).then_some(group);
+        Ok((None, group))
+    } else {
+        Ok((None, None))
+    }
+}
+
+fn settle_close(
+    configuration: &RunConfiguration,
+    fixture: &Fixture,
+    at: &UtcTimestamp,
+    marks: &[factorsbt_engine::ValuationMark],
+    portfolio: &mut PortfolioState,
+    processed_settlement_ids: &mut HashSet<String>,
+    settlement_trace: &mut Vec<Value>,
+) -> Result<(), OrchestrationError> {
+    let marks_by_id = marks
+        .iter()
+        .map(|mark| (mark.instrument_id.as_str(), mark))
+        .collect::<HashMap<_, _>>();
+    for instrument in &configuration.instruments {
+        let Instrument::LinearFuture(future) = instrument else {
+            continue;
+        };
+        let Some(position) = portfolio.position(future.instrument_id.as_str()) else {
+            continue;
+        };
+        if position.quantity.is_zero() {
+            continue;
+        }
+        let mark = marks_by_id
+            .get(future.instrument_id.as_str())
+            .ok_or_else(|| OrchestrationError::at("futures settlement", "missing future mark"))?;
+        let provenance = mark.provenance.first().ok_or_else(|| {
+            OrchestrationError::at("futures settlement", "future mark lacks source provenance")
+        })?;
+        let settlement_price = mark.mark;
+        let result = if compare_utc_timestamps(at, &future.expiry_at).is_ge() {
+            portfolio.settle_future_expiry(
+                future.instrument_id.as_str(),
+                at,
+                settlement_price,
+                &provenance.observation_id,
+                provenance.source_revision,
+            )
+        } else {
+            portfolio.settle_future_daily(
+                future.instrument_id.as_str(),
+                settlement_price,
+                &provenance.observation_id,
+                provenance.source_revision,
+            )
+        }
+        .map_err(|error| OrchestrationError::at("futures settlement", error))?;
+        settlement_trace.push(json!({
+            "type":"future_settlement",
+            "instrument_id":result.instrument_id.as_str(),
+            "settled_quantity":result.settled_quantity.to_string(),
+            "settlement_price":result.settlement_price.to_string(),
+            "variation_profit_loss":result.variation_profit_loss.to_string(),
+            "expired":result.expired,
+            "source_observation_id":result.source_observation_id,
+            "source_revision":result.source_revision,
+            "ledger_posting":posting_value(result.posting),
+        }));
+    }
+
+    let available_events = settlement_events_available_at(&fixture.dataset, at)
+        .map_err(|error| OrchestrationError::at("settlement event selection", error))?;
+    for event in &available_events {
+        let id = event.fixture_event_id.as_str().to_owned();
+        if processed_settlement_ids.contains(&id) {
+            continue;
+        }
+        let result = portfolio
+            .apply_american_settlement_event(event)
+            .map_err(|error| OrchestrationError::at("American option settlement", error))?;
+        processed_settlement_ids.insert(id);
+        settlement_trace.push(json!({
+            "type":"american_physical_settlement",
+            "fixture_event_id":result.fixture_event_id,
+            "instrument_id":result.instrument_id.as_str(),
+            "event_type":format!("{:?}", result.event_type),
+            "contracts":result.contracts,
+            "underlying_price":result.underlying_price.to_string(),
+            "cash_amount":result.cash_amount.to_string(),
+            "underlying_quantity_delta":result.underlying_quantity_delta.to_string(),
+            "event_time":result.event_time.as_str(),
+            "source_observation_id":result.source_observation_id,
+            "source_revision":result.source_revision,
+            "option_posting":posting_value(result.option_posting),
+            "underlying_posting":posting_value(result.underlying_posting),
+        }));
+    }
+
+    for instrument in &configuration.instruments {
+        let Instrument::Option(option) = instrument else {
+            continue;
+        };
+        if compare_utc_timestamps(at, &option.expiry_at).is_lt()
+            || portfolio
+                .position(option.instrument_id.as_str())
+                .is_none_or(|position| position.quantity.is_zero())
+        {
+            continue;
+        }
+        let underlying = marks_by_id
+            .get(option.underlying_id.as_str())
+            .ok_or_else(|| {
+                OrchestrationError::at("option expiry", "missing current underlying mark")
+            })?;
+        let provenance = underlying.provenance.first().ok_or_else(|| {
+            OrchestrationError::at("option expiry", "underlying mark lacks source provenance")
+        })?;
+        match (option.exercise_style, option.settlement_style) {
+            (ExerciseStyle::European, SettlementStyle::Cash) => {
+                let result = portfolio
+                    .settle_european_option_expiry(
+                        option.instrument_id.as_str(),
+                        at,
+                        underlying.mark,
+                        &provenance.observation_id,
+                        provenance.source_revision,
+                    )
+                    .map_err(|error| OrchestrationError::at("European option expiry", error))?;
+                settlement_trace.push(json!({
+                    "type":"european_cash_expiry",
+                    "instrument_id":result.instrument_id.as_str(),
+                    "settled_contracts":result.settled_contracts.to_string(),
+                    "underlying_price":result.underlying_price.to_string(),
+                    "intrinsic_value_per_unit":result.intrinsic_value_per_unit.to_string(),
+                    "cash_amount":result.cash_amount.to_string(),
+                    "source_observation_id":result.source_observation_id,
+                    "source_revision":result.source_revision,
+                    "ledger_posting":posting_value(result.posting),
+                }));
+            }
+            (ExerciseStyle::American, SettlementStyle::Physical) => {
+                let result = portfolio
+                    .expire_american_option_without_event(
+                        option.instrument_id.as_str(),
+                        at,
+                        underlying.mark,
+                        &provenance.observation_id,
+                        provenance.source_revision,
+                    )
+                    .map_err(|error| OrchestrationError::at("American option expiry", error))?;
+                settlement_trace.push(json!({
+                    "type":"american_worthless_expiry",
+                    "instrument_id":result.instrument_id.as_str(),
+                    "expired_contracts":result.expired_contracts.to_string(),
+                    "underlying_price":result.underlying_price.to_string(),
+                    "event_time":result.event_time.as_str(),
+                    "source_observation_id":result.source_observation_id,
+                    "source_revision":result.source_revision,
+                    "ledger_posting":posting_value(result.posting),
+                }));
+            }
+            _ => {
+                return Err(OrchestrationError::at(
+                    "option expiry",
+                    "unsupported option style and settlement pairing",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn portfolio_snapshot(portfolio: &PortfolioState) -> Result<PortfolioSnapshot, String> {
+    let mut positions = portfolio
+        .positions()
+        .iter()
+        .map(|(id, position)| {
+            Ok(PositionSnapshot {
+                instrument_id: InstrumentId::new(id).map_err(|error| error.to_string())?,
+                quantity: wire_decimal(position.quantity)?,
+                mark: wire_decimal(position.mark)?,
+                market_value: wire_decimal(
+                    portfolio
+                        .position_market_value(id)
+                        .map_err(|error| error.to_string())?,
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    positions.sort_by(|left, right| {
+        left.instrument_id
+            .as_str()
+            .cmp(right.instrument_id.as_str())
+    });
+    let mut reserved_underlying = portfolio
+        .reserved_underlying()
+        .iter()
+        .map(|(id, quantity)| {
+            Ok(UnderlyingReservation {
+                instrument_id: InstrumentId::new(id).map_err(|error| error.to_string())?,
+                quantity: wire_decimal(*quantity)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    reserved_underlying.sort_by(|left, right| {
+        left.instrument_id
+            .as_str()
+            .cmp(right.instrument_id.as_str())
+    });
+    let free_buying_power = portfolio
+        .cash()
+        .checked_sub(portfolio.cash_encumbrance())
+        .ok_or_else(|| "free buying power arithmetic overflow".to_owned())?;
+    Ok(PortfolioSnapshot {
+        cash: wire_decimal(portfolio.cash())?,
+        nav: wire_decimal(
+            portfolio
+                .net_asset_value()
+                .map_err(|error| error.to_string())?,
+        )?,
+        positions,
+        reserved_cash: wire_decimal(portfolio.reserved_cash())?,
+        reserved_underlying,
+        initial_margin_requirement: wire_decimal(portfolio.initial_margin_requirement())?,
+        maintenance_margin_requirement: wire_decimal(portfolio.maintenance_margin_requirement())?,
+        free_buying_power: wire_decimal(free_buying_power)?,
+    })
+}
+
+fn wire_decimal(value: Decimal) -> Result<factorsbt_contracts::DecimalString, String> {
+    let value = value.round_dp_with_strategy(18, RoundingStrategy::MidpointNearestEven);
+    factorsbt_contracts::DecimalString::new(value.normalize().to_string())
+        .map_err(|error| error.to_string())
+}
+
+fn maintenance_value(at: &UtcTimestamp, breach: &factorsbt_engine::MaintenanceBreach) -> Value {
+    json!({
+        "type":"maintenance_breach",
+        "simulation_time":at.as_str(),
+        "cash":breach.assessment.cash.to_string(),
+        "nav":breach.assessment.nav.to_string(),
+        "maintenance_requirement":breach.assessment.maintenance_requirement.to_string(),
+        "maintenance_cash_requirement":breach.assessment.maintenance_cash_requirement.to_string(),
+        "negative_cash":breach.assessment.negative_cash,
+        "cash_collateral_shortfall":breach.assessment.cash_collateral_shortfall,
+        "nav_shortfall":breach.assessment.nav_shortfall,
+        "underlying_shortfalls":breach.assessment.underlying_shortfalls.iter().map(|(id, required, available)| json!({
+            "instrument_id":id,
+            "required":required.to_string(),
+            "available":available.to_string(),
+        })).collect::<Vec<_>>(),
+        "canceled_order_ids":breach.canceled_order_ids,
+    })
+}
+
+fn execution_value(group: &ExecutedOrderGroup) -> Value {
+    json!({
+        "type":"executed_order_group",
+        "step_id":group.step_id.as_str(),
+        "execution_time":group.execution_time.as_str(),
+        "admission_adjustments":group.admission_adjustments.iter().map(|adjustment| json!({
+            "instrument_id":adjustment.instrument_id,
+            "requested_quantity":adjustment.requested_quantity.to_string(),
+            "admitted_quantity":adjustment.admitted_quantity.to_string(),
+            "common_scale":adjustment.common_scale.to_string(),
+            "scaled":adjustment.scaled,
+        })).collect::<Vec<_>>(),
+        "fills":group.fills.iter().map(fill_value).collect::<Vec<_>>(),
+    })
+}
+
+fn fill_value(fill: &factorsbt_engine::ExecutionFill) -> Value {
+    match fill {
+        factorsbt_engine::ExecutionFill::Spot(value) => json!({
+            "type":"spot",
+            "instrument_id":value.instrument_id.as_str(),
+            "signed_quantity":value.signed_quantity.to_string(),
+            "fill_price":value.fill_price.to_string(),
+            "fee":value.fee.to_string(),
+            "source_observation_id":value.source_observation_id,
+            "source_revision":value.source_revision,
+            "trade_posting":posting_value(value.trade_posting),
+            "fee_posting":posting_value(value.fee_posting),
+        }),
+        factorsbt_engine::ExecutionFill::Future(value) => json!({
+            "type":"future",
+            "instrument_id":value.instrument_id.as_str(),
+            "signed_quantity":value.signed_quantity.to_string(),
+            "fill_price":value.fill_price.to_string(),
+            "fee":value.fee.to_string(),
+            "realized_variation":value.realized_variation.to_string(),
+            "source_observation_id":value.source_observation_id,
+            "source_revision":value.source_revision,
+            "trade_posting":posting_value(value.trade_posting),
+            "fee_posting":posting_value(value.fee_posting),
+        }),
+        factorsbt_engine::ExecutionFill::Option(value) => json!({
+            "type":"option",
+            "instrument_id":value.instrument_id.as_str(),
+            "signed_contracts":value.signed_contracts.to_string(),
+            "fill_premium":value.fill_premium.to_string(),
+            "fee":value.fee.to_string(),
+            "source_observation_id":value.source_observation_id,
+            "source_revision":value.source_revision,
+            "premium_posting":posting_value(value.premium_posting),
+            "fee_posting":posting_value(value.fee_posting),
+        }),
+    }
+}
+
+fn posting_value(posting: factorsbt_engine::LedgerPosting) -> Value {
+    json!({
+        "cash_before":posting.cash_before.to_string(),
+        "cash_delta":posting.cash_delta.to_string(),
+        "cash_after":posting.cash_after.to_string(),
+        "quantity_before":posting.quantity_before.to_string(),
+        "quantity_delta":posting.quantity_delta.to_string(),
+        "quantity_after":posting.quantity_after.to_string(),
+    })
+}
+
+fn format_issues(issues: &[factorsbt_data::CoverageIssue]) -> String {
+    issues
+        .iter()
+        .map(|issue| issue.message.as_str())
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn instrument_id(instrument: &Instrument) -> &str {
+    match instrument {
+        Instrument::Spot(value) => value.instrument_id.as_str(),
+        Instrument::LinearFuture(value) => value.instrument_id.as_str(),
+        Instrument::Option(value) => value.instrument_id.as_str(),
+    }
+}
+
+fn model_error(stage: &'static str, error: ModelServiceError) -> OrchestrationError {
+    OrchestrationError::at(stage, error)
+}
+
+fn derived_uuid(identity: &RunIdentity, step_id: &Identifier, purpose: &str) -> Uuid {
+    let digest = Sha256::digest(
+        format!(
+            "{}:{}:{}:{}",
+            identity.run_id.as_str(),
+            identity.scenario_id.as_str(),
+            step_id.as_str(),
+            purpose
+        )
+        .as_bytes(),
+    );
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Uuid::new(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
+    .expect("derived hash has valid lowercase UUID wire form")
+}
+
+fn next_open(close: &UtcTimestamp) -> Result<UtcTimestamp, &'static str> {
+    if !close.as_str().ends_with("T16:00:00Z") {
+        return Err("decision timestamp must be a synthetic daily close");
+    }
+    let date = &close.as_str()[..10];
+    let mut parts = date.split('-');
+    let (Some(year), Some(month), Some(day)) = (parts.next(), parts.next(), parts.next()) else {
+        return Err("invalid synthetic date");
+    };
+    let (Ok(year), Ok(month), Ok(day)) = (
+        year.parse::<i64>(),
+        month.parse::<i64>(),
+        day.parse::<i64>(),
+    ) else {
+        return Err("invalid synthetic date");
+    };
+    let next = civil_from_days(days_from_civil(year, month, day) + 1);
+    UtcTimestamp::new(format!(
+        "{:04}-{:02}-{:02}T09:00:00Z",
+        next.0, next.1, next.2
+    ))
+    .map_err(|_| "next synthetic open is outside timestamp range")
+}
+
+fn system_utc_timestamp() -> Result<UtcTimestamp, &'static str> {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "system clock precedes Unix epoch")?
+        .as_secs();
+    let day_number = i64::try_from(seconds / 86_400).map_err(|_| "system time is out of range")?;
+    let seconds_of_day = seconds % 86_400;
+    let (year, month, day) = civil_from_days(day_number);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+    UtcTimestamp::new(format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
+    ))
+    .map_err(|_| "system clock does not produce a supported UTC timestamp")
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = adjusted_year.div_euclid(400);
+    let year_of_era = adjusted_year - era * 400;
+    let adjusted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * adjusted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+fn civil_from_days(day_number: i64) -> (i64, i64, i64) {
+    let shifted = day_number + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    (year, month, day)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model_fixture::HttpModelFixture;
+    use axum::Router;
+    use factorsbt_data::FixtureRegistry;
+    use serde_json::json;
+    use std::{net::SocketAddr, path::Path};
+    use tokio::net::TcpListener;
+
+    fn configuration() -> RunConfiguration {
+        let mut configuration: RunConfiguration = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/instruments/minimal-valid-spot-run.json"
+        ))
+        .unwrap();
+        configuration.simulation.end_at = UtcTimestamp::new("2026-01-06T16:00:00Z").unwrap();
+        configuration
+    }
+
+    fn fixture() -> Fixture {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        FixtureRegistry::load(root)
+            .unwrap()
+            .get_by("mvp-synthetic", "v1")
+            .unwrap()
+            .as_ref()
+            .clone()
+    }
+
+    async fn serve(router: Router) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address: SocketAddr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        (format!("http://{address}/infer"), task)
+    }
+
+    #[tokio::test]
+    async fn one_spot_decision_cycle_executes_at_next_open_and_keeps_provenance() {
+        let mut configuration = configuration();
+        configuration.decision_policy.output_mode = factorsbt_contracts::model::OutputMode::Scores;
+        let response_time = system_utc_timestamp().unwrap();
+        let fixture_service = HttpModelFixture::new(
+            "scores",
+            json!({"scores":[{"instrument_id":"SPOT_A","score":"2"}]}),
+            response_time,
+        );
+        let (endpoint, server) = serve(fixture_service.router()).await;
+        let report = run_simulation(
+            &ModelHttpClient::new().unwrap(),
+            &endpoint,
+            Duration::from_secs(2),
+            &configuration,
+            &fixture(),
+            RunIdentity {
+                run_id: Uuid::new("a1139f93-8119-4be6-8c84-b6835fb3647e").unwrap(),
+                scenario_id: Identifier::new("baseline").unwrap(),
+            },
+        )
+        .await
+        .unwrap();
+        server.abort();
+
+        assert_eq!(report.cycles.len(), 2);
+        assert_eq!(report.execution_events.len(), 1);
+        assert_eq!(
+            report.cycles[0].snapshot.simulation_time.as_str(),
+            "2026-01-05T16:00:00Z"
+        );
+        assert_eq!(
+            report.cycles[1].snapshot.simulation_time.as_str(),
+            "2026-01-06T16:00:00Z"
+        );
+        assert_eq!(
+            report.execution_events[0]["execution_time"],
+            "2026-01-06T09:00:00Z"
+        );
+        assert!(!report.cycles[0].response_body.is_empty());
+        assert_eq!(report.finalization.status, FinalRunStatus::Succeeded);
+        assert_eq!(report.finalization.open_positions.len(), 1);
+        assert_eq!(
+            report.finalization.open_positions[0].instrument_id,
+            "SPOT_A"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_model_mode_mismatch_fails_before_any_order_is_queued() {
+        let configuration = configuration();
+        let fixture_service = HttpModelFixture::new(
+            "targets",
+            json!({"spot_weights":[],"derivative_contracts":[]}),
+            system_utc_timestamp().unwrap(),
+        );
+        let (endpoint, server) = serve(fixture_service.router()).await;
+        let error = run_simulation(
+            &ModelHttpClient::new().unwrap(),
+            &endpoint,
+            Duration::from_secs(2),
+            &configuration,
+            &fixture(),
+            RunIdentity {
+                run_id: Uuid::new("a1139f93-8119-4be6-8c84-b6835fb3647e").unwrap(),
+                scenario_id: Identifier::new("baseline").unwrap(),
+            },
+        )
+        .await
+        .unwrap_err();
+        server.abort();
+        assert_eq!(error.stage, "model response validation");
+    }
+
+    #[test]
+    fn derived_ids_are_stable_and_processing_time_is_wall_clock_utc() {
+        let identity = RunIdentity {
+            run_id: Uuid::new("a1139f93-8119-4be6-8c84-b6835fb3647e").unwrap(),
+            scenario_id: Identifier::new("baseline").unwrap(),
+        };
+        let step = Identifier::new("step-0001").unwrap();
+        assert_eq!(
+            derived_uuid(&identity, &step, "snapshot"),
+            derived_uuid(&identity, &step, "snapshot")
+        );
+        assert_ne!(
+            derived_uuid(&identity, &step, "snapshot"),
+            derived_uuid(&identity, &step, "inference")
+        );
+        assert!(system_utc_timestamp().unwrap().as_str().ends_with('Z'));
+        assert!(matches!(
+            validate_model_response(
+                &serde_json::from_str::<ModelRequest>(include_str!(
+                    "../../../../contracts/examples/model/scores-request.inline-snapshot.json"
+                ))
+                .unwrap(),
+                &serde_json::from_str(include_str!(
+                    "../../../../contracts/examples/model/scores-response.valid.json"
+                ))
+                .unwrap()
+            ),
+            Ok(())
+        ));
+    }
+}

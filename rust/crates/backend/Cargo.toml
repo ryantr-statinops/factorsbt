@@ -7,9 +7,12 @@ publish = false
 [dependencies]
 axum = { workspace = true }
 factorsbt-contracts = { path = "../contracts" }
+factorsbt-data = { path = "../data" }
+factorsbt-engine = { path = "../engine" }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
