@@ -12,6 +12,7 @@ mod options;
 mod orders;
 mod portfolio;
 mod pricing;
+mod risk;
 
 pub use admission::{admit_target_group, AdmissionAdjustment, AdmissionError, AdmissionResult};
 pub use clock::{ClockError, ClockEvent, SimulationClock, SimulationEventKind};
@@ -34,3 +35,4 @@ pub use pricing::{
     black_scholes_european_value, crr_american_value, intrinsic_value, time_to_expiry_act_365f,
     validate_pricing_inputs, PricingError, ValidatedPricingInputs,
 };
+pub use risk::{enforce_maintenance, MaintenanceAssessment, MaintenanceBreach, RiskError};
