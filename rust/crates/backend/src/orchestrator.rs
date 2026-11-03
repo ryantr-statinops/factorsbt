@@ -984,11 +984,86 @@ fn civil_from_days(day_number: i64) -> (i64, i64, i64) {
 mod tests {
     use super::*;
     use crate::model_fixture::HttpModelFixture;
-    use axum::Router;
+    use axum::{extract::State, routing::post, Json, Router};
     use factorsbt_data::FixtureRegistry;
     use serde_json::json;
-    use std::{net::SocketAddr, path::Path};
+    use std::{
+        net::SocketAddr,
+        path::Path,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        time::{SystemTime, UNIX_EPOCH},
+    };
     use tokio::net::TcpListener;
+    use tokio::sync::{mpsc, Notify};
+
+    struct ConcurrentModelState {
+        failing_run_id: String,
+        requests: tokio::sync::Mutex<Vec<String>>,
+        responses: tokio::sync::Mutex<Vec<String>>,
+        request_seen: mpsc::UnboundedSender<String>,
+        both_requests: Notify,
+        slow_response_release: Notify,
+        slow_response_released: AtomicBool,
+    }
+
+    async fn concurrent_model_response(
+        State(state): State<Arc<ConcurrentModelState>>,
+        Json(request): Json<ModelRequest>,
+    ) -> Json<Value> {
+        let run_id = request.run_id.as_str().to_owned();
+        let is_failing_run = run_id == state.failing_run_id;
+        let count = {
+            let mut requests = state.requests.lock().await;
+            requests.push(run_id.clone());
+            requests.len()
+        };
+        let _ = state.request_seen.send(run_id.clone());
+        if count == 2 {
+            state.both_requests.notify_one();
+        }
+        loop {
+            let notified = state.both_requests.notified();
+            if state.requests.lock().await.len() >= 2 {
+                break;
+            }
+            notified.await;
+        }
+
+        if is_failing_run {
+            loop {
+                let notified = state.slow_response_release.notified();
+                if state.slow_response_released.load(Ordering::Acquire) {
+                    break;
+                }
+                notified.await;
+            }
+        }
+
+        let response_type = if is_failing_run { "targets" } else { "scores" };
+        let outputs = if is_failing_run {
+            json!({"spot_weights":[],"derivative_contracts":[]})
+        } else {
+            json!({"scores":[{"instrument_id":"SPOT_A","score":"2"}]})
+        };
+        let body = json!({
+            "contract_version":request.contract_version,
+            "inference_id":request.inference_id,
+            "run_id":request.run_id,
+            "scenario_id":request.scenario_id,
+            "step_id":request.step_id,
+            "snapshot_id":request.snapshot_id,
+            "model_id":request.model_id,
+            "model_version":request.model_version,
+            "responded_at":system_utc_timestamp().unwrap(),
+            "response_type":response_type,
+            "outputs":outputs,
+        });
+        state.responses.lock().await.push(run_id);
+        Json(body)
+    }
 
     fn configuration() -> RunConfiguration {
         let mut configuration: RunConfiguration = serde_json::from_str(include_str!(
@@ -1105,6 +1180,201 @@ mod tests {
             .response_body
             .as_ref()
             .is_some_and(|body| !body.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn concurrent_runs_keep_model_responses_portfolios_and_evidence_isolated() {
+        let failing_run_id = "b2139f93-8119-4be6-8c84-b6835fb3647e".to_owned();
+        let successful_run_id = "c3139f93-8119-4be6-8c84-b6835fb3647e".to_owned();
+        let (request_seen, mut request_receiver) = mpsc::unbounded_channel();
+        let state = Arc::new(ConcurrentModelState {
+            failing_run_id: failing_run_id.clone(),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+            responses: tokio::sync::Mutex::new(Vec::new()),
+            request_seen,
+            both_requests: Notify::new(),
+            slow_response_release: Notify::new(),
+            slow_response_released: AtomicBool::new(false),
+        });
+        let router = Router::new()
+            .route("/infer", post(concurrent_model_response))
+            .with_state(Arc::clone(&state));
+        let (endpoint, server) = serve(router).await;
+        let client = ModelHttpClient::new().unwrap();
+        let mut failing_configuration = configuration();
+        failing_configuration.decision_policy.output_mode =
+            factorsbt_contracts::model::OutputMode::Scores;
+        let successful_configuration = failing_configuration.clone();
+        let failing_fixture = fixture();
+        let successful_fixture = failing_fixture.clone();
+        let failing_endpoint = endpoint.clone();
+        let failing_client = client.clone();
+        let failing = tokio::spawn(async move {
+            run_simulation(
+                &failing_client,
+                &failing_endpoint,
+                Duration::from_secs(2),
+                &failing_configuration,
+                &failing_fixture,
+                RunIdentity {
+                    run_id: Uuid::new(failing_run_id).unwrap(),
+                    scenario_id: Identifier::new("slow-failure").unwrap(),
+                },
+            )
+            .await
+        });
+
+        assert_eq!(
+            request_receiver.recv().await.as_deref(),
+            Some("b2139f93-8119-4be6-8c84-b6835fb3647e")
+        );
+        let successful = tokio::spawn(async move {
+            run_simulation(
+                &client,
+                &endpoint,
+                Duration::from_secs(2),
+                &successful_configuration,
+                &successful_fixture,
+                RunIdentity {
+                    run_id: Uuid::new(successful_run_id).unwrap(),
+                    scenario_id: Identifier::new("fast-success").unwrap(),
+                },
+            )
+            .await
+        });
+        assert_eq!(
+            request_receiver.recv().await.as_deref(),
+            Some("c3139f93-8119-4be6-8c84-b6835fb3647e")
+        );
+        assert!(state.requests.lock().await.len() >= 2);
+
+        // Do not release the older failing response until the newer run has
+        // received all of its model responses and completed its portfolio.
+        let success_report = successful.await.unwrap().unwrap();
+        state.slow_response_released.store(true, Ordering::Release);
+        state.slow_response_release.notify_one();
+        let failure = failing.await.unwrap().unwrap_err();
+        server.abort();
+
+        let requests = state.requests.lock().await.clone();
+        let responses = state.responses.lock().await.clone();
+        assert_eq!(requests[0], "b2139f93-8119-4be6-8c84-b6835fb3647e");
+        assert!(requests.iter().all(|run_id| {
+            run_id == "b2139f93-8119-4be6-8c84-b6835fb3647e"
+                || run_id == "c3139f93-8119-4be6-8c84-b6835fb3647e"
+        }));
+        assert_eq!(
+            responses.last().map(String::as_str),
+            Some("b2139f93-8119-4be6-8c84-b6835fb3647e")
+        );
+        assert!(responses[..responses.len() - 1]
+            .iter()
+            .all(|run_id| run_id == "c3139f93-8119-4be6-8c84-b6835fb3647e"));
+
+        assert_eq!(
+            success_report.identity.run_id.as_str(),
+            "c3139f93-8119-4be6-8c84-b6835fb3647e"
+        );
+        assert_eq!(
+            success_report.finalization.status,
+            FinalRunStatus::Succeeded
+        );
+        assert_eq!(success_report.cycles.len(), 2);
+        assert_eq!(success_report.execution_events.len(), 1);
+        assert!(success_report
+            .cycles
+            .iter()
+            .all(|cycle| cycle.request.run_id.as_str() == "c3139f93-8119-4be6-8c84-b6835fb3647e"));
+        assert_eq!(
+            failure.identity.run_id.as_str(),
+            "b2139f93-8119-4be6-8c84-b6835fb3647e"
+        );
+        assert_eq!(failure.error.stage, "model response validation");
+        let failed_report = failure.partial_report.as_deref().unwrap();
+        assert_eq!(failed_report.finalization.status, FinalRunStatus::Failed);
+        assert_eq!(failed_report.execution_events.len(), 0);
+        assert!(failed_report.cycles.is_empty());
+        assert_eq!(
+            failure
+                .failed_inference
+                .as_deref()
+                .unwrap()
+                .request
+                .run_id
+                .as_str(),
+            "b2139f93-8119-4be6-8c84-b6835fb3647e"
+        );
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let evidence_root = std::env::temp_dir().join(format!(
+            "factorsbt-concurrent-evidence-{}-{nonce}",
+            std::process::id()
+        ));
+        let fixture = fixture();
+        let success_evidence = crate::evidence::write_successful_run(
+            &evidence_root,
+            &configuration(),
+            &fixture,
+            &success_report,
+        )
+        .unwrap();
+        let failure_evidence =
+            crate::evidence::write_failed_run(&evidence_root, &configuration(), &fixture, &failure)
+                .unwrap();
+        assert_ne!(
+            success_evidence.run_directory,
+            failure_evidence.run_directory
+        );
+        let success_manifest: Value = serde_json::from_slice(
+            &std::fs::read(
+                success_evidence
+                    .run_directory
+                    .join("evidence/run-manifest.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let failure_manifest: Value = serde_json::from_slice(
+            &std::fs::read(
+                failure_evidence
+                    .run_directory
+                    .join("evidence/run-manifest.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            success_manifest["run_id"],
+            "c3139f93-8119-4be6-8c84-b6835fb3647e"
+        );
+        assert_eq!(
+            failure_manifest["run_id"],
+            "b2139f93-8119-4be6-8c84-b6835fb3647e"
+        );
+        let success_orders: Value = serde_json::from_slice(
+            &std::fs::read(
+                success_evidence
+                    .run_directory
+                    .join("evidence/executions.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let failed_orders: Value = serde_json::from_slice(
+            &std::fs::read(
+                failure_evidence
+                    .run_directory
+                    .join("evidence/executions.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(success_orders.as_array().unwrap().len(), 1);
+        assert!(failed_orders.as_array().unwrap().is_empty());
+        std::fs::remove_dir_all(evidence_root).unwrap();
     }
 
     #[test]
