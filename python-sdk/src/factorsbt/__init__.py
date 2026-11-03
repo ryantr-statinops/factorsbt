@@ -10,7 +10,14 @@ from .types import (
     validate_uuid,
 )
 from .client import Client, HealthResponse
-from .errors import FactorsBTError, HttpStatusError, ProtocolError, RequestTimeout, TransportError
+from .errors import (
+    FactorsBTError,
+    HttpStatusError,
+    ProtocolError,
+    RequestTimeout,
+    SubmissionAcknowledgementUnknown,
+    TransportError,
+)
 from .instruments import LinearFutureInstrument, OptionInstrument, SpotInstrument
 from .configuration import (
     DataFixtureConfiguration,
@@ -74,6 +81,7 @@ __all__ = [
     "TransportError",
     "TargetsPolicy",
     "SubmissionAccepted",
+    "SubmissionAcknowledgementUnknown",
     "SubmissionStatus",
     "UnderlyingReservation",
     "SpotInstrument",

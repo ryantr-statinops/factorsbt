@@ -5,11 +5,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import socket
+from typing import Mapping
 from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from uuid import uuid4
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
 
-from .errors import HttpStatusError, ProtocolError, RequestTimeout, TransportError
+from .errors import (
+    HttpStatusError,
+    ProtocolError,
+    RequestTimeout,
+    SubmissionAcknowledgementUnknown,
+    TransportError,
+)
+from .responses import SubmissionAccepted
+from .types import validate_uuid
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """Prevent a run POST from being replayed by urllib redirect handling."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 @dataclass(frozen=True)
@@ -71,3 +88,95 @@ class Client:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ProtocolError("health response is not valid JSON") from exc
         return HealthResponse.from_wire(decoded)
+
+    def submit(
+        self,
+        config: object,
+        submission_id: str | None = None,
+    ) -> SubmissionAccepted:
+        """Submit once; an uncertain acknowledgment carries its lookup ID."""
+        key = str(uuid4()) if submission_id is None else validate_uuid(submission_id)
+        wire_config = config.to_wire() if hasattr(config, "to_wire") else config
+        if not isinstance(wire_config, Mapping):
+            raise TypeError("config must be a typed builder or mapping")
+        try:
+            body = json.dumps(
+                wire_config,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise TypeError("config must contain only JSON wire values") from exc
+
+        request = Request(
+            self.base_url.rstrip("/") + "/v1/runs",
+            data=body,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Idempotency-Key": key,
+            },
+            method="POST",
+        )
+        try:
+            with build_opener(_NoRedirect()).open(request, timeout=self.timeout) as response:
+                status = response.getcode()
+                response_body = response.read()
+        except HTTPError as exc:
+            raise _http_status_error(exc.code, exc.read()) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise SubmissionAcknowledgementUnknown(key, "request timed out") from exc
+        except URLError as exc:
+            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+                raise SubmissionAcknowledgementUnknown(key, "request timed out") from exc
+            raise SubmissionAcknowledgementUnknown(key, "connection ended before acknowledgment") from exc
+        except OSError as exc:
+            raise SubmissionAcknowledgementUnknown(key, "connection ended before acknowledgment") from exc
+
+        if status != 202:
+            raise _http_status_error(status, response_body)
+        try:
+            accepted = SubmissionAccepted.from_wire(json.loads(response_body))
+        except (UnicodeDecodeError, json.JSONDecodeError, ProtocolError) as exc:
+            raise SubmissionAcknowledgementUnknown(key, "backend returned an unusable acknowledgment") from exc
+        if accepted.submission_id != key:
+            raise SubmissionAcknowledgementUnknown(key, "backend acknowledgment used a different submission ID")
+        return accepted
+
+
+def _http_status_error(status: int, body: bytes) -> HttpStatusError:
+    try:
+        value = json.loads(body)
+        error = value["error"]
+        if not isinstance(error, dict):
+            raise ValueError("error envelope must contain an object")
+        code = error.get("code")
+        message = error.get("message")
+        request_id = error.get("request_id")
+        details_value = error.get("details", [])
+        if not isinstance(code, str) or not isinstance(message, str):
+            raise ValueError("error envelope fields are invalid")
+        if request_id is not None:
+            request_id = validate_uuid(request_id)
+        if not isinstance(details_value, list):
+            raise ValueError("error details must be an array")
+        details = []
+        for detail in details_value:
+            if (
+                not isinstance(detail, dict)
+                or set(detail) != {"path", "reason"}
+                or not isinstance(detail["path"], str)
+                or not isinstance(detail["reason"], str)
+            ):
+                raise ValueError("error detail is invalid")
+            details.append((detail["path"], detail["reason"]))
+        return HttpStatusError(
+            status,
+            code=code,
+            message=message,
+            request_id=request_id,
+            details=tuple(details),
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return HttpStatusError(status)
