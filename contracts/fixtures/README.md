@@ -1,6 +1,6 @@
 # Controlled MVP fixture datasets
 
-**Status:** Implemented fixture data format and datasets; loader/runtime use is implemented in the data stage.
+**Status:** Implemented fixture v1 data format, datasets, local registry, digest validation, and availability-aware selectors.
 
 Each folder under [`data`](data) contains a `manifest.json` and `dataset.json`. The manifest identifies fixture format, fixture ID/version, a relative dataset path, and SHA-256 of the exact dataset bytes. The dataset keeps decision observations separate from open execution prices, initial marks, and settlement events.
 
@@ -16,4 +16,4 @@ Each folder under [`data`](data) contains a `manifest.json` and `dataset.json`. 
 
 The baseline observations include two revisions of the delayed `TIME-01` news item. Its event time is Jan 6 at 15:00 UTC, revision 1 becomes available at 17:00 that day, and revision 2 becomes available Jan 7 at 17:00. Jan 6 execution opens are separate data rows; for example, `SPOT_A` opens at 100.50 and is not available to the Jan 5 close snapshot.
 
-The files contain only synthetic values. A manifest digest must be regenerated after any byte change to its dataset. The Python contract test verifies every manifest, dataset schema, identity pair, and digest.
+The files contain only synthetic values. A manifest digest must be regenerated after any byte change to its dataset. Python contract tests verify every manifest, dataset schema, identity pair, and digest; the Rust registry validates the same schemas offline and verifies each digest before registering a fixture.
