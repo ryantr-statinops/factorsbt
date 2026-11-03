@@ -12,18 +12,40 @@ from .types import (
 from .client import Client, HealthResponse
 from .errors import FactorsBTError, HttpStatusError, ProtocolError, RequestTimeout, TransportError
 from .instruments import LinearFutureInstrument, OptionInstrument, SpotInstrument
+from .configuration import (
+    DataFixtureConfiguration,
+    DerivativeScoreTarget,
+    InitialPortfolio,
+    InitialPosition,
+    ModelConfiguration,
+    OrderIntentsPolicy,
+    RunConfiguration,
+    ScoresPolicy,
+    SimulationConfiguration,
+    TargetsPolicy,
+)
 
 __all__ = [
     "Client",
     "ContractValueError",
+    "DataFixtureConfiguration",
+    "DerivativeScoreTarget",
     "FactorsBTError",
     "HealthResponse",
     "HttpStatusError",
     "LinearFutureInstrument",
+    "InitialPortfolio",
+    "InitialPosition",
+    "ModelConfiguration",
     "OptionInstrument",
+    "OrderIntentsPolicy",
     "ProtocolError",
     "RequestTimeout",
+    "RunConfiguration",
+    "ScoresPolicy",
+    "SimulationConfiguration",
     "TransportError",
+    "TargetsPolicy",
     "SpotInstrument",
     "UtcInstant",
     "WireDecimal",
