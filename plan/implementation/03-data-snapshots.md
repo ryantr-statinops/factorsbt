@@ -21,12 +21,13 @@ Cung cấp cho mô phỏng đúng dữ liệu có thể biết tại thời đi�
 - [Stage 00](00-mvp-decisions.md), [Stage 01](01-contracts.md): nguồn dữ liệu, semantics thời gian và hợp đồng snapshot.
 - [Stage 02](02-project-foundation.md): công cụ và nền tảng triển khai.
 
-## Quyết định cần chốt — Open
+## Quyết định đã Accepted cho Phase B
 
-- Mapping provider, chuẩn hóa công cụ/đơn vị, timestamp và lịch giao dịch trong tập dữ liệu MVP.
-- Fetch hay ingestion, storage/version identity, revision selection và trường hợp thiếu publication metadata.
-- Carry-forward, freshness, dữ liệu thiếu và bar completion; quy tắc nào thuộc snapshot, quy tắc nào thuộc trigger của orchestrator.
-- Phạm vi quyền truy cập và lưu dữ liệu; sử dụng secret reference theo cơ chế được chấp nhận, không chọn ngầm authentication.
+- Dùng fixture cục bộ versioned, đăng ký khi backend khởi động; MVP không gọi nhà cung cấp dữ liệu thật.
+- Mỗi observation giữ event time, availability time, nguồn, phiên bản và revision. Snapshot chỉ chọn revision khả dụng tại simulation time; snapshot đã tạo là bất biến.
+- Tin tức có thể không có observation. Giá hoặc pricing input bắt buộc nếu thiếu, quá cũ hoặc chỉ khả dụng trong tương lai thì run lỗi rõ ràng; không carry-forward ngầm.
+- Giá mở cửa để thực thi và sự kiện settlement là fixture inputs riêng, không đưa dữ liệu tương lai vào snapshot model.
+- Dùng hash nội dung fixture để nhận diện dữ liệu bất biến. Không thêm cơ chế xác thực hoặc lưu trữ ngoài máy cục bộ trong MVP.
 
 ## Task → Commit
 

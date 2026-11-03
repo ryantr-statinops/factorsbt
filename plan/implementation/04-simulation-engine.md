@@ -21,12 +21,13 @@ Triển khai engine Rust có chuyển trạng thái danh mục giải thích đ�
 - [Stage 00](00-mvp-decisions.md), [Stage 01](01-contracts.md): quy tắc tài chính, thời gian và giao tiếp nội bộ đã chốt.
 - [Stage 02](02-project-foundation.md), [Stage 03](03-data-snapshots.md): nền tảng Rust và đầu vào có identity/version.
 
-## Quyết định cần chốt — Open
+## Quyết định đã Accepted cho Phase B
 
-- Ordering khi market update, fill và model trigger cùng thời điểm; lệnh chờ khi kết thúc run.
-- Chính sách cạnh tranh vốn, loại lệnh, partial fill, buying power và công cụ không hỗ trợ.
-- Giá được phép khớp sau khi dùng bar, phí, slippage và độ trễ mô phỏng.
-- Numeric precision, rounding, định giá và kế toán; corporate actions hoặc sự kiện công cụ nào cần cho tập MVP.
+- Dùng event ordering và quy tắc kế toán trong [MVP 1 scope](../../docs/product/mvp-scope.md) cùng [acceptance fixtures](../../docs/examples/mvp/acceptance-cases.md). Quyết định ở close chỉ đủ điều kiện khớp từ open kế tiếp.
+- Chỉ có market orders và full liquidity. Giảm/đóng vị thế được xét trước; tăng exposure dùng một hệ số vốn chung, 60 vòng tìm kiếm nhị phân và làm tròn lot về zero.
+- Giá khớp lấy từ execution fixture, sau slippage, tick rounding và phí. Theoretical option marks không tạo execution price.
+- Ledger dùng decimal checked arithmetic, làm tròn USD theo half-even đến cent; quantity làm tròn về zero theo lot. BS/CRR dùng `f64` chỉ để tính mark rồi chuyển một lần sang decimal 12 chữ số.
+- Futures ban đầu lấy mark hợp lệ tại `start_at` làm settlement basis, không tạo fill hay P&L trước run. Không thêm partial fill, vay spot, FX, corporate actions hoặc netting.
 
 ## Task → Commit
 

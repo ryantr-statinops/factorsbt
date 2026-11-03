@@ -22,11 +22,13 @@
 - [Stage 06](06-backend-api.md) và các stage data/engine/orchestration phía dưới: đường chạy backend đầy đủ.
 - Tiêu chí MVP và ranh giới kiểm chứng đã được chốt từ [Stage 00](00-mvp-decisions.md).
 
-## Quyết định cần chốt — Open
+## Quyết định đã Accepted cho Phase B
 
-- Public Python interface, sync/async, timeout/wait semantics, cancellation nếu có và compatibility policy.
-- Kiểu cấu hình, lỗi, result access và metric summary cần thiết cho MVP; không tự thêm API ổn định hoặc feature ngoài scope.
-- Packaging, supported versions và cách phân phối trong môi trường đã chọn; chỉ công bố sau khi xác minh.
+- SDK tiếp tục dùng standard library và API đồng bộ; configuration và response được biểu diễn bằng typed builders/dataclasses.
+- `submit(config, submission_id=None)` tạo UUID trước khi gửi nếu caller không truyền ID; lỗi acknowledgment không tự gửi POST lại và phải giữ submission ID để tra cứu.
+- Cung cấp `get_submission`, `get_run`, `get_results` và `wait`. `wait` poll mỗi 0.25 giây, timeout cục bộ mặc định 60 giây bằng monotonic clock, không hủy run; run failure dùng typed exception.
+- Lấy result là thao tác riêng sau khi run thành công. Không thêm metric ngoài những gì result contract đã định nghĩa.
+- Phase B chỉ xác minh cách chạy package trong checkout/virtualenv; chưa công bố package hay thêm runtime dependency bên thứ ba.
 
 ## Task → Commit
 

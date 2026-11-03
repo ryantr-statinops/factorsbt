@@ -22,13 +22,13 @@ Nối snapshot, lời gọi mô hình và engine thành chu kỳ mô phỏng có
 - [Stage 03](03-data-snapshots.md), [Stage 04](04-simulation-engine.md): snapshot khả dụng và engine chuyển trạng thái.
 - Decision trigger và chính sách failure cần được chốt từ Stage 00 hoặc được bổ sung trước task liên quan.
 
-## Quyết định cần chốt — Open
+## Quyết định đã Accepted cho Phase B
 
-- Model service đầu tiên, output contract và cách xử lý đầu ra không hợp lệ/không đủ.
-- Timeout/retry limits, run failure behavior và quyền sở hữu thao tác gửi lại.
-- Stateful model có được dùng không; nếu có, cơ chế session/reset/isolation phải được định nghĩa và kiểm chứng.
-- Service latency bị bỏ qua bởi simulation clock, được mô hình hóa hay thành scenario riêng; không tự dùng thời gian chờ thực làm trading delay.
-- Cách giữ phản hồi, model version và tham chiếu snapshot mà không lộ secret hoặc dữ liệu hạn chế.
+- MVP gọi một HTTP model fixture stateless ở loopback; output phải khớp chính xác một trong ba response modes của contract v1.
+- Áp dụng `timeout_ms` theo run, không tự retry và không theo redirect. Timeout, response malformed/invalid hoặc correlation mismatch làm run thất bại.
+- Simulation time không tiến theo thời gian chờ dịch vụ. Mỗi inference gắn với run, scenario, step, snapshot và model identity; stale hoặc duplicate response không được áp dụng.
+- Hai run có thể inference đồng thời nhưng sở hữu state và evidence writer riêng. Fixture/model output không bị chia sẻ như mutable state.
+- Lưu request/response đã dùng cùng provenance trong evidence local; không ghi credential hoặc payload nhạy cảm vào log/error.
 
 ## Task → Commit
 

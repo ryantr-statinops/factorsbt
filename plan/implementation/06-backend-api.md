@@ -21,13 +21,13 @@ Cho client gửi thí nghiệm, theo dõi trạng thái vận hành và lấy k�
 - [Stage 01](01-contracts.md), [Stage 02](02-project-foundation.md): HTTP contract, framework và nền tảng vận hành.
 - [Stage 05](05-model-orchestration.md): đường chạy điều phối và evidence, bao gồm data/engine phía dưới.
 
-## Quyết định cần chốt — Open
+## Quyết định đã Accepted cho Phase B
 
-- Endpoint/schema, run lifecycle, polling/streaming và cancellation nếu được đưa vào MVP.
-- Lưu trữ, retention, worker/concurrency, giới hạn request và hành vi khi tiến trình dừng; không mặc định queue hoặc cơ chế durable.
-- Authentication/authorization và môi trường truy cập cho phạm vi triển khai thực tế; không tự chọn hosted service hay tenancy.
-- Phạm vi deduplication, thời hạn identity, lỗi xung đột và khả năng tra cứu khi acknowledgment bị mất.
-- Access control cho artifact/snapshot reference, pagination hoặc giới hạn payload cần cho MVP.
+- Giữ bốn operations và lifecycle đã đặc tả trong [HTTP API](../../docs/interfaces/mvp-http-api.md); client đồng bộ poll trạng thái, không streaming/cancellation.
+- Backend dùng metadata và deduplication in-memory tới khi process dừng; evidence lưu cục bộ và không tự xóa. Không có recovery sau restart.
+- Mặc định hai run active và tối đa 16 queued, cấu hình lúc khởi động; worker queue xử lý FIFO.
+- Kiểm tra submission identity/config atomically: cùng key và config trả acknowledgment ban đầu; cùng key khác config conflict. Queue đầy trả `503` và không tạo record mới.
+- Chưa có authentication, hosted deployment, artifact download hay pagination trong MVP local.
 
 ## Task → Commit
 
