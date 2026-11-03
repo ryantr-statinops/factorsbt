@@ -3,7 +3,10 @@
 
 use crate::backend_config::QueueLimits;
 use factorsbt_contracts::{
-    outcomes::{RunLifecycle, RunResult, RunStatus, SubmissionAccepted},
+    outcomes::{
+        RunFailure, RunLifecycle, RunProgress, RunResult, RunStatus, SubmissionAccepted,
+        SubmissionStatus,
+    },
     run_configuration::RunConfiguration,
     UtcTimestamp, Uuid,
 };
@@ -63,6 +66,13 @@ pub enum SubmissionStoreError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStoreTransitionError {
+    NotFound,
+    InvalidTransition,
+    ResultRunMismatch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueueSnapshot {
     pub active_runs: usize,
     pub queued_runs: usize,
@@ -109,6 +119,125 @@ impl RunStore {
             submissions: state.submissions.len(),
             runs: state.runs.len(),
         }
+    }
+
+    pub fn get_submission(&self, submission_id: &Uuid) -> Option<SubmissionStatus> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let submission = state.submissions.get(submission_id)?;
+        let run = state.runs.get(&submission.acknowledgement.run_id)?;
+        Some(SubmissionStatus {
+            submission_id: submission.acknowledgement.submission_id.clone(),
+            run_id: submission.acknowledgement.run_id.clone(),
+            status: run.status.status,
+            submitted_at: submission.acknowledgement.submitted_at.clone(),
+        })
+    }
+
+    pub fn get_run(&self, run_id: &Uuid) -> Option<StoredRun> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .runs
+            .get(run_id)
+            .cloned()
+    }
+
+    pub fn mark_running(
+        &self,
+        run_id: &Uuid,
+        started_at: UtcTimestamp,
+    ) -> Result<(), RunStoreTransitionError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(run_id) {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        let run = state
+            .runs
+            .get_mut(run_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if run.status.status != RunLifecycle::Queued {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        run.status.status = RunLifecycle::Running;
+        run.status.started_at = Some(started_at);
+        Ok(())
+    }
+
+    pub fn update_progress(
+        &self,
+        run_id: &Uuid,
+        progress: RunProgress,
+    ) -> Result<(), RunStoreTransitionError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let run = state
+            .runs
+            .get_mut(run_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if run.status.status != RunLifecycle::Running {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        run.status.progress = Some(progress);
+        Ok(())
+    }
+
+    pub fn mark_succeeded(
+        &self,
+        run_id: &Uuid,
+        finished_at: UtcTimestamp,
+        result: RunResult,
+    ) -> Result<(), RunStoreTransitionError> {
+        if &result.run_id != run_id {
+            return Err(RunStoreTransitionError::ResultRunMismatch);
+        }
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let run = state
+            .runs
+            .get_mut(run_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if run.status.status != RunLifecycle::Running {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        run.status.status = RunLifecycle::Succeeded;
+        run.status.finished_at = Some(finished_at);
+        run.status.failure = None;
+        run.result = Some(result);
+        Ok(())
+    }
+
+    pub fn mark_failed(
+        &self,
+        run_id: &Uuid,
+        finished_at: UtcTimestamp,
+        failure: RunFailure,
+    ) -> Result<(), RunStoreTransitionError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let run = state
+            .runs
+            .get_mut(run_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if run.status.status != RunLifecycle::Running {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        run.status.status = RunLifecycle::Failed;
+        run.status.finished_at = Some(finished_at);
+        run.status.failure = Some(failure);
+        run.result = None;
+        Ok(())
     }
 
     /// Atomically bind one caller-supplied submission ID to a typed config and
@@ -402,5 +531,61 @@ mod tests {
         assert_eq!(store.queue_snapshot().active_runs, 1);
         assert_eq!(store.queue_snapshot().queued_runs, 0);
         assert_eq!(store.record_counts().runs, 1);
+    }
+
+    #[test]
+    fn exposes_queued_running_progress_and_terminal_failure_transitions() {
+        let store = RunStore::new(QueueLimits::default());
+        let accepted = store
+            .accept_submission(submission_id(), configuration(), timestamp())
+            .unwrap()
+            .acknowledgement;
+        assert_eq!(
+            store.get_submission(&submission_id()).unwrap().status,
+            RunLifecycle::Queued
+        );
+        let started_at = UtcTimestamp::new("2026-01-05T16:00:01Z").unwrap();
+        store
+            .mark_running(&accepted.run_id, started_at.clone())
+            .unwrap();
+        let progress = RunProgress {
+            scenario_id: factorsbt_contracts::Identifier::new("baseline").unwrap(),
+            step_id: factorsbt_contracts::Identifier::new("step-0001").unwrap(),
+            simulation_time: UtcTimestamp::new("2026-01-05T16:00:00Z").unwrap(),
+            completed_steps: 1,
+            total_steps: 3,
+        };
+        store
+            .update_progress(&accepted.run_id, progress.clone())
+            .unwrap();
+        let running = store.get_run(&accepted.run_id).unwrap().status;
+        assert_eq!(running.status, RunLifecycle::Running);
+        assert_eq!(running.started_at, Some(started_at));
+        assert_eq!(running.progress, Some(progress));
+
+        let finished_at = UtcTimestamp::new("2026-01-05T16:00:03Z").unwrap();
+        store
+            .mark_failed(
+                &accepted.run_id,
+                finished_at.clone(),
+                RunFailure {
+                    code: "MODEL_FAILURE".to_owned(),
+                    message: "controlled model failure".to_owned(),
+                    scenario_id: Some(factorsbt_contracts::Identifier::new("baseline").unwrap()),
+                    step_id: Some(factorsbt_contracts::Identifier::new("step-0001").unwrap()),
+                    last_valid_state_ref: Some("evidence/summary.json".to_owned()),
+                },
+            )
+            .unwrap();
+        let failed = store.get_run(&accepted.run_id).unwrap().status;
+        assert_eq!(failed.status, RunLifecycle::Failed);
+        assert_eq!(failed.finished_at, Some(finished_at));
+        assert_eq!(failed.failure.unwrap().code, "MODEL_FAILURE");
+        assert_eq!(
+            store.get_submission(&submission_id()).unwrap().status,
+            RunLifecycle::Failed
+        );
+        assert_eq!(store.queue_snapshot().active_runs, 1);
+        assert!(store.mark_running(&accepted.run_id, timestamp()).is_err());
     }
 }

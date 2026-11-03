@@ -9,6 +9,7 @@ use factorsbt_contracts::{
     compare_utc_timestamps,
     instruments::{ExerciseStyle, Instrument, SettlementStyle},
     model::ModelRequest,
+    outcomes::RunProgress as ApiRunProgress,
     temporal::{DecisionSnapshot, PortfolioSnapshot, PositionSnapshot, UnderlyingReservation},
     Identifier, InstrumentId, RunConfiguration, UtcTimestamp, Uuid,
 };
@@ -194,15 +195,43 @@ pub async fn run_simulation(
     fixture: &Fixture,
     identity: RunIdentity,
 ) -> Result<OrchestrationReport, Box<RunExecutionFailure>> {
-    let mut progress = RunProgress::new(identity.clone(), fixture);
-    match run_simulation_inner(
+    run_simulation_with_progress(
         client,
         endpoint,
         timeout,
         configuration,
         fixture,
         identity,
+        |_| {},
+    )
+    .await
+}
+
+/// Execute a run while reporting completed decision steps to its owner.
+pub async fn run_simulation_with_progress<F>(
+    client: &ModelHttpClient,
+    endpoint: &str,
+    timeout: Duration,
+    configuration: &RunConfiguration,
+    fixture: &Fixture,
+    identity: RunIdentity,
+    mut on_progress: F,
+) -> Result<OrchestrationReport, Box<RunExecutionFailure>>
+where
+    F: FnMut(ApiRunProgress),
+{
+    let mut progress = RunProgress::new(identity.clone(), fixture);
+    match run_simulation_inner(
+        RunSimulationContext {
+            client,
+            endpoint,
+            timeout,
+            configuration,
+            fixture,
+            identity,
+        },
         &mut progress,
+        &mut on_progress,
     )
     .await
     {
@@ -225,15 +254,31 @@ pub async fn run_simulation(
     }
 }
 
-async fn run_simulation_inner(
-    client: &ModelHttpClient,
-    endpoint: &str,
+struct RunSimulationContext<'a> {
+    client: &'a ModelHttpClient,
+    endpoint: &'a str,
     timeout: Duration,
-    configuration: &RunConfiguration,
-    fixture: &Fixture,
+    configuration: &'a RunConfiguration,
+    fixture: &'a Fixture,
     identity: RunIdentity,
+}
+
+async fn run_simulation_inner<F>(
+    context: RunSimulationContext<'_>,
     progress: &mut RunProgress,
-) -> Result<OrchestrationReport, OrchestrationError> {
+    on_progress: &mut F,
+) -> Result<OrchestrationReport, OrchestrationError>
+where
+    F: FnMut(ApiRunProgress),
+{
+    let RunSimulationContext {
+        client,
+        endpoint,
+        timeout,
+        configuration,
+        fixture,
+        identity,
+    } = context;
     validate_run_coverage(&fixture.dataset, configuration)
         .map_err(|issues| OrchestrationError::at("fixture coverage", format_issues(&issues)))?;
     let mut portfolio = PortfolioState::initialize(configuration, fixture)
@@ -245,6 +290,10 @@ async fn run_simulation_inner(
     )
     .map_err(|error| OrchestrationError::at("simulation clock", error))?;
     let schedule = std::iter::from_fn(|| clock.next_event()).collect::<Vec<_>>();
+    let total_steps = schedule
+        .iter()
+        .filter(|event| event.kind == SimulationEventKind::Close)
+        .count() as u64;
 
     let mut pending_groups = Vec::<PendingOrderGroup>::new();
     let mut liquidation_group = None::<PendingOrderGroup>;
@@ -358,6 +407,13 @@ async fn run_simulation_inner(
                             })?,
                     );
                     progress.capture_state(&portfolio, &pending_groups, liquidation_group.as_ref());
+                    on_progress(ApiRunProgress {
+                        scenario_id: identity.scenario_id.clone(),
+                        step_id: step_id.clone(),
+                        simulation_time: event.at.clone(),
+                        completed_steps: step_number,
+                        total_steps,
+                    });
                     continue;
                 }
 
@@ -472,6 +528,13 @@ async fn run_simulation_inner(
                 progress.failed_request_body = None;
                 progress.failed_response_body = None;
                 progress.capture_state(&portfolio, &pending_groups, liquidation_group.as_ref());
+                on_progress(ApiRunProgress {
+                    scenario_id: identity.scenario_id.clone(),
+                    step_id,
+                    simulation_time: event.at.clone(),
+                    completed_steps: step_number,
+                    total_steps,
+                });
             }
         }
     }
@@ -1104,7 +1167,8 @@ mod tests {
             response_time,
         );
         let (endpoint, server) = serve(fixture_service.router()).await;
-        let report = run_simulation(
+        let mut progress_updates = Vec::new();
+        let report = run_simulation_with_progress(
             &ModelHttpClient::new().unwrap(),
             &endpoint,
             Duration::from_secs(2),
@@ -1114,12 +1178,21 @@ mod tests {
                 run_id: Uuid::new("a1139f93-8119-4be6-8c84-b6835fb3647e").unwrap(),
                 scenario_id: Identifier::new("baseline").unwrap(),
             },
+            |progress| progress_updates.push(progress),
         )
         .await
         .unwrap();
         server.abort();
 
         assert_eq!(report.cycles.len(), 2);
+        assert_eq!(progress_updates.len(), 2);
+        assert_eq!(progress_updates[0].completed_steps, 1);
+        assert_eq!(progress_updates[0].total_steps, 2);
+        assert_eq!(progress_updates[1].completed_steps, 2);
+        assert_eq!(
+            progress_updates[1].simulation_time,
+            report.cycles[1].snapshot.simulation_time
+        );
         assert_eq!(report.execution_events.len(), 1);
         assert_eq!(
             report.cycles[0].snapshot.simulation_time.as_str(),
