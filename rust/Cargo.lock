@@ -301,6 +301,7 @@ dependencies = [
  "axum",
  "factorsbt-contracts",
  "reqwest",
+ "rust_decimal",
  "serde_json",
  "tokio",
  "tower",

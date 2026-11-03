@@ -4,3 +4,4 @@
 
 pub mod model_client;
 pub mod model_fixture;
+pub mod model_validation;

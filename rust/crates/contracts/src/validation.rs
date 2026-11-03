@@ -73,6 +73,11 @@ pub fn validate_run_configuration(value: &Value) -> Result<(), Vec<String>> {
     validate_document(RUN_CONFIGURATION, "run configuration", value)
 }
 
+/// Validate a model response against the versioned local Draft 2020-12 schema.
+pub fn validate_model_response_document(value: &Value) -> Result<(), Vec<String>> {
+    validate_document(MODEL_RESPONSE, "model response", value)
+}
+
 /// Validate the internal, versioned fixture manifest format.
 pub fn validate_fixture_manifest(value: &Value) -> Result<(), Vec<String>> {
     validate_document(FIXTURE_MANIFEST, "fixture manifest", value)
@@ -118,6 +123,21 @@ mod tests {
     #[test]
     fn accepts_the_shared_valid_run_example() {
         assert_eq!(validate_run_configuration(&minimal_configuration()), Ok(()));
+    }
+
+    #[test]
+    fn validates_shared_model_response_examples_and_rejects_schema_errors() {
+        let valid: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/model/scores-response.valid.json"
+        ))
+        .unwrap();
+        assert_eq!(validate_model_response_document(&valid), Ok(()));
+
+        let invalid: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/model/response-missing-snapshot.schema-invalid.json"
+        ))
+        .unwrap();
+        assert!(validate_model_response_document(&invalid).is_err());
     }
 
     #[test]
