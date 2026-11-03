@@ -102,6 +102,12 @@ impl PortfolioState {
         if candidate.cash() < Decimal::ZERO {
             return Err(EngineError::InsufficientCash);
         }
+        if candidate.cash() < candidate.initial_margin_requirement() {
+            return Err(EngineError::InsufficientInitialMargin);
+        }
+        if candidate.cash() < candidate.cash_encumbrance() {
+            return Err(EngineError::InsufficientDeliveryCash);
+        }
         *self = candidate;
 
         Ok(OptionExecution {
@@ -232,7 +238,7 @@ mod tests {
         assert_eq!(execution.premium_posting.cash_delta, Decimal::from(-500));
         assert_eq!(state.cash(), Decimal::from(99500));
         assert_eq!(state.position("EU_CALL_A").unwrap().quantity, Decimal::ONE);
-        assert_eq!(state.initial_margin_requirement(), Decimal::from(600));
+        assert_eq!(state.initial_margin_requirement(), Decimal::ZERO);
     }
 
     #[test]

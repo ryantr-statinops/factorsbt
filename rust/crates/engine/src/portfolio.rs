@@ -1,7 +1,10 @@
 //! Per-run portfolio state and start-of-run initialization.
 
 use factorsbt_contracts::{
-    instruments::{Instrument, LinearFutureInstrument, OptionInstrument},
+    instruments::{
+        ExerciseStyle, Instrument, LinearFutureInstrument, OptionInstrument,
+        OptionType as ContractOptionType, SettlementStyle,
+    },
     run_configuration::RunConfiguration,
     InstrumentId, UtcTimestamp,
 };
@@ -32,6 +35,9 @@ pub enum EngineError {
     InvalidExecutionPrice,
     MissingPosition(String),
     InsufficientInitialMargin,
+    InsufficientDeliveryCash,
+    InsufficientUnderlyingCollateral(String),
+    InvalidDeliveryUnderlying(String),
     InsufficientCash,
     ArithmeticOverflow(&'static str),
     FixtureTimeline(String),
@@ -69,7 +75,19 @@ impl fmt::Display for EngineError {
             Self::InsufficientInitialMargin => {
                 f.write_str("initial cash does not cover initial margin")
             }
-            Self::InsufficientCash => f.write_str("spot execution would make cash negative"),
+            Self::InsufficientDeliveryCash => {
+                f.write_str("cash does not cover physical-delivery collateral")
+            }
+            Self::InsufficientUnderlyingCollateral(id) => {
+                write!(f, "insufficient unreserved underlying for instrument {id}")
+            }
+            Self::InvalidDeliveryUnderlying(id) => {
+                write!(
+                    f,
+                    "physical option underlying {id} is not a configured spot"
+                )
+            }
+            Self::InsufficientCash => f.write_str("cash constraint would be violated"),
             Self::ArithmeticOverflow(context) => {
                 write!(f, "decimal arithmetic overflow: {context}")
             }
@@ -113,6 +131,10 @@ pub struct PortfolioState {
     positions: HashMap<String, InstrumentPosition>,
     initial_margin_requirement: Decimal,
     maintenance_margin_requirement: Decimal,
+    reserved_cash: Decimal,
+    reserved_underlying: HashMap<String, Decimal>,
+    cash_encumbrance: Decimal,
+    maintenance_cash_encumbrance: Decimal,
     start_at: UtcTimestamp,
 }
 
@@ -190,29 +212,22 @@ impl PortfolioState {
                 .quantity = quantity;
         }
 
-        let mut initial_margin_requirement = Decimal::ZERO;
-        let mut maintenance_margin_requirement = Decimal::ZERO;
-        for (id, instrument) in &instruments {
-            let quantity = positions.get(id).expect("position was inserted").quantity;
-            let (initial, maintenance) = margin_per_unit(instrument)?;
-            let abs_quantity = quantity.abs();
-            initial_margin_requirement = initial_margin_requirement
-                .checked_add(
-                    abs_quantity
-                        .checked_mul(initial)
-                        .ok_or(EngineError::ArithmeticOverflow("initial margin"))?,
-                )
-                .ok_or(EngineError::ArithmeticOverflow("initial margin"))?;
-            maintenance_margin_requirement = maintenance_margin_requirement
-                .checked_add(
-                    abs_quantity
-                        .checked_mul(maintenance)
-                        .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?,
-                )
-                .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?;
-        }
+        let (initial_margin_requirement, maintenance_margin_requirement) =
+            calculate_margin_requirements(&instruments, &positions, None)?;
+        let (reserved_cash, reserved_underlying, cash_encumbrance, maintenance_cash_encumbrance) =
+            calculate_delivery_reservations(
+                &instruments,
+                &positions,
+                initial_margin_requirement,
+                maintenance_margin_requirement,
+                None,
+            )?;
+        validate_underlying_collateral(&instruments, &positions, &reserved_underlying, None)?;
         if cash < initial_margin_requirement {
             return Err(EngineError::InsufficientInitialMargin);
+        }
+        if cash < cash_encumbrance {
+            return Err(EngineError::InsufficientDeliveryCash);
         }
 
         Ok(Self {
@@ -221,6 +236,10 @@ impl PortfolioState {
             positions,
             initial_margin_requirement,
             maintenance_margin_requirement,
+            reserved_cash,
+            reserved_underlying,
+            cash_encumbrance,
+            maintenance_cash_encumbrance,
             start_at: configuration.simulation.start_at.clone(),
         })
     }
@@ -252,8 +271,26 @@ impl PortfolioState {
     pub(super) fn refresh_margin_requirements(&mut self) -> Result<(), EngineError> {
         let (initial, maintenance) =
             calculate_margin_requirements(&self.instruments, &self.positions, None)?;
+        let (reserved_cash, reserved_underlying, cash_encumbrance, maintenance_cash_encumbrance) =
+            calculate_delivery_reservations(
+                &self.instruments,
+                &self.positions,
+                initial,
+                maintenance,
+                None,
+            )?;
+        validate_underlying_collateral(
+            &self.instruments,
+            &self.positions,
+            &reserved_underlying,
+            None,
+        )?;
         self.initial_margin_requirement = initial;
         self.maintenance_margin_requirement = maintenance;
+        self.reserved_cash = reserved_cash;
+        self.reserved_underlying = reserved_underlying;
+        self.cash_encumbrance = cash_encumbrance;
+        self.maintenance_cash_encumbrance = maintenance_cash_encumbrance;
         Ok(())
     }
 
@@ -263,6 +300,24 @@ impl PortfolioState {
 
     pub fn maintenance_margin_requirement(&self) -> Decimal {
         self.maintenance_margin_requirement
+    }
+
+    pub fn reserved_cash(&self) -> Decimal {
+        self.reserved_cash
+    }
+
+    pub fn reserved_underlying(&self) -> &HashMap<String, Decimal> {
+        &self.reserved_underlying
+    }
+
+    /// Cash required by margin and delivery obligations after avoiding a
+    /// second reservation for the same short-put obligation.
+    pub fn cash_encumbrance(&self) -> Decimal {
+        self.cash_encumbrance
+    }
+
+    pub fn maintenance_cash_encumbrance(&self) -> Decimal {
+        self.maintenance_cash_encumbrance
     }
 
     /// Apply a cash and optional position posting atomically. Cash is rounded
@@ -307,6 +362,20 @@ impl PortfolioState {
         let margin_override = instrument_id.map(|id| (id, quantity_after));
         let (initial_margin_requirement, maintenance_margin_requirement) =
             calculate_margin_requirements(&self.instruments, &self.positions, margin_override)?;
+        let (reserved_cash, reserved_underlying, cash_encumbrance, maintenance_cash_encumbrance) =
+            calculate_delivery_reservations(
+                &self.instruments,
+                &self.positions,
+                initial_margin_requirement,
+                maintenance_margin_requirement,
+                margin_override,
+            )?;
+        validate_underlying_collateral(
+            &self.instruments,
+            &self.positions,
+            &reserved_underlying,
+            margin_override,
+        )?;
 
         if let Some((id, _, _)) = position {
             self.positions
@@ -317,6 +386,10 @@ impl PortfolioState {
         self.cash = cash_after;
         self.initial_margin_requirement = initial_margin_requirement;
         self.maintenance_margin_requirement = maintenance_margin_requirement;
+        self.reserved_cash = reserved_cash;
+        self.reserved_underlying = reserved_underlying;
+        self.cash_encumbrance = cash_encumbrance;
+        self.maintenance_cash_encumbrance = maintenance_cash_encumbrance;
 
         Ok(LedgerPosting {
             cash_before,
@@ -378,6 +451,26 @@ fn margin_per_unit(instrument: &Instrument) -> Result<(Decimal, Decimal), Engine
     }
 }
 
+fn margin_for_position(
+    instrument: &Instrument,
+    quantity: Decimal,
+) -> Result<(Decimal, Decimal), EngineError> {
+    if matches!(instrument, Instrument::Option(_)) && quantity >= Decimal::ZERO {
+        return Ok((Decimal::ZERO, Decimal::ZERO));
+    }
+    let (initial_per_unit, maintenance_per_unit) = margin_per_unit(instrument)?;
+    let absolute_quantity =
+        checked_magnitude(quantity).ok_or(EngineError::ArithmeticOverflow("position magnitude"))?;
+    Ok((
+        absolute_quantity
+            .checked_mul(initial_per_unit)
+            .ok_or(EngineError::ArithmeticOverflow("initial margin"))?,
+        absolute_quantity
+            .checked_mul(maintenance_per_unit)
+            .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?,
+    ))
+}
+
 trait MarginFields {
     fn initial(&self) -> &factorsbt_contracts::DecimalString;
     fn maintenance(&self) -> &factorsbt_contracts::DecimalString;
@@ -427,23 +520,161 @@ fn calculate_margin_requirements(
                     .quantity
             }
         };
-        let (initial_per_unit, maintenance_per_unit) = margin_per_unit(instrument)?;
+        let (position_initial, position_maintenance) = margin_for_position(instrument, quantity)?;
         initial_total = initial_total
-            .checked_add(
-                checked_magnitude(quantity)
-                    .and_then(|value| value.checked_mul(initial_per_unit))
-                    .ok_or(EngineError::ArithmeticOverflow("initial margin"))?,
-            )
+            .checked_add(position_initial)
             .ok_or(EngineError::ArithmeticOverflow("initial margin"))?;
         maintenance_total = maintenance_total
-            .checked_add(
-                checked_magnitude(quantity)
-                    .and_then(|value| value.checked_mul(maintenance_per_unit))
-                    .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?,
-            )
+            .checked_add(position_maintenance)
             .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?;
     }
     Ok((initial_total, maintenance_total))
+}
+
+fn calculate_delivery_reservations(
+    instruments: &HashMap<String, Instrument>,
+    positions: &HashMap<String, InstrumentPosition>,
+    initial_margin_requirement: Decimal,
+    maintenance_margin_requirement: Decimal,
+    override_position: Option<(&str, Decimal)>,
+) -> Result<(Decimal, HashMap<String, Decimal>, Decimal, Decimal), EngineError> {
+    let mut reserved_cash = Decimal::ZERO;
+    let mut put_initial_margin = Decimal::ZERO;
+    let mut put_maintenance_margin = Decimal::ZERO;
+    let mut reserved_underlying = HashMap::new();
+
+    for (id, configured) in instruments {
+        let Instrument::Option(option) = configured else {
+            continue;
+        };
+        let quantity = match override_position {
+            Some((override_id, quantity)) if override_id == id => quantity,
+            _ => {
+                positions
+                    .get(id)
+                    .expect("configured position exists")
+                    .quantity
+            }
+        };
+        if quantity >= Decimal::ZERO
+            || option.exercise_style != ExerciseStyle::American
+            || option.settlement_style != SettlementStyle::Physical
+        {
+            continue;
+        }
+
+        let contracts = checked_magnitude(quantity)
+            .ok_or(EngineError::ArithmeticOverflow("delivery contracts"))?;
+        let multiplier = decimal(option.contract_multiplier.as_str())?;
+        match option.option_type {
+            ContractOptionType::Call => {
+                let shares =
+                    contracts
+                        .checked_mul(multiplier)
+                        .ok_or(EngineError::ArithmeticOverflow(
+                            "underlying delivery reserve",
+                        ))?;
+                let previous = reserved_underlying
+                    .get(option.underlying_id.as_str())
+                    .copied()
+                    .unwrap_or(Decimal::ZERO);
+                reserved_underlying.insert(
+                    option.underlying_id.as_str().to_owned(),
+                    previous
+                        .checked_add(shares)
+                        .ok_or(EngineError::ArithmeticOverflow(
+                            "underlying delivery reserve",
+                        ))?,
+                );
+            }
+            ContractOptionType::Put => {
+                let strike = decimal(option.strike.as_str())?;
+                let delivery_cash = contracts
+                    .checked_mul(strike)
+                    .and_then(|value| value.checked_mul(multiplier))
+                    .ok_or(EngineError::ArithmeticOverflow("cash delivery reserve"))?;
+                reserved_cash = reserved_cash
+                    .checked_add(delivery_cash)
+                    .ok_or(EngineError::ArithmeticOverflow("cash delivery reserve"))?;
+                let (initial_per_contract, maintenance_per_contract) = margin_per_unit(configured)?;
+                let initial_margin = contracts
+                    .checked_mul(initial_per_contract)
+                    .ok_or(EngineError::ArithmeticOverflow("short put margin"))?;
+                put_initial_margin = put_initial_margin
+                    .checked_add(initial_margin)
+                    .ok_or(EngineError::ArithmeticOverflow("short put margin"))?;
+                let maintenance_margin = contracts.checked_mul(maintenance_per_contract).ok_or(
+                    EngineError::ArithmeticOverflow("short put maintenance margin"),
+                )?;
+                put_maintenance_margin = put_maintenance_margin
+                    .checked_add(maintenance_margin)
+                    .ok_or(EngineError::ArithmeticOverflow(
+                        "short put maintenance margin",
+                    ))?;
+            }
+        }
+    }
+
+    let cash_encumbrance = cash_requirement_without_double_count(
+        initial_margin_requirement,
+        put_initial_margin,
+        reserved_cash,
+        "initial cash encumbrance",
+    )?;
+    let maintenance_cash_encumbrance = cash_requirement_without_double_count(
+        maintenance_margin_requirement,
+        put_maintenance_margin,
+        reserved_cash,
+        "maintenance cash encumbrance",
+    )?;
+    Ok((
+        reserved_cash,
+        reserved_underlying,
+        cash_encumbrance,
+        maintenance_cash_encumbrance,
+    ))
+}
+
+fn cash_requirement_without_double_count(
+    margin_requirement: Decimal,
+    put_margin: Decimal,
+    delivery_cash: Decimal,
+    context: &'static str,
+) -> Result<Decimal, EngineError> {
+    margin_requirement
+        .checked_sub(put_margin)
+        .and_then(|other_margin| other_margin.checked_add(delivery_cash.max(put_margin)))
+        .ok_or(EngineError::ArithmeticOverflow(context))
+}
+
+fn validate_underlying_collateral(
+    instruments: &HashMap<String, Instrument>,
+    positions: &HashMap<String, InstrumentPosition>,
+    reservations: &HashMap<String, Decimal>,
+    override_position: Option<(&str, Decimal)>,
+) -> Result<(), EngineError> {
+    for (underlying_id, required) in reservations {
+        if !matches!(instruments.get(underlying_id), Some(Instrument::Spot(_))) {
+            return Err(EngineError::InvalidDeliveryUnderlying(
+                underlying_id.clone(),
+            ));
+        }
+        let available = match override_position {
+            Some((override_id, quantity)) if override_id == underlying_id => quantity,
+            _ => {
+                positions
+                    .get(underlying_id)
+                    .expect("configured underlying position exists")
+                    .quantity
+            }
+        };
+        if available < *required {
+            return Err(EngineError::InsufficientUnderlyingCollateral(
+                underlying_id.clone(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn checked_magnitude(value: Decimal) -> Option<Decimal> {
@@ -581,5 +812,68 @@ mod tests {
             Err(EngineError::ArithmeticOverflow("cash posting"))
         ));
         assert_eq!(state.cash(), Decimal::from(100000));
+    }
+
+    #[test]
+    fn physical_short_call_requires_distinct_underlying_shares() {
+        let (mut configuration, fixture) = baseline();
+        configuration.instruments.push(
+            serde_json::from_str(r#"{"instrument_type":"option","instrument_id":"AM_CALL_A","quote_currency":"USD","price_tick":"0.01","quantity_step":"1","contract_multiplier":"100","fee_bps":"0","fee_per_unit":"0","slippage_bps":"0","underlying_id":"SPOT_A","option_type":"call","strike":"100","expiry_at":"2026-01-09T16:00:00Z","exercise_style":"american","settlement_style":"physical","valuation_mode":"quote","initial_margin_per_contract":"600","maintenance_margin_per_contract":"600"}"#)
+                .unwrap(),
+        );
+        configuration.initial_portfolio.positions.push(
+            serde_json::from_str(r#"{"instrument_id":"AM_CALL_A","quantity":"-1"}"#).unwrap(),
+        );
+        assert!(matches!(
+            PortfolioState::initialize(&configuration, &fixture),
+            Err(EngineError::InsufficientUnderlyingCollateral(_))
+        ));
+
+        configuration
+            .initial_portfolio
+            .positions
+            .push(serde_json::from_str(r#"{"instrument_id":"SPOT_A","quantity":"100"}"#).unwrap());
+        let mut state = PortfolioState::initialize(&configuration, &fixture).unwrap();
+        assert_eq!(state.reserved_underlying()["SPOT_A"], Decimal::from(100));
+        assert_eq!(state.initial_margin_requirement(), Decimal::from(600));
+        assert_eq!(state.cash_encumbrance(), Decimal::from(600));
+
+        let result =
+            state.apply_ledger_posting(Some("SPOT_A"), Decimal::from(10000), Decimal::from(-100));
+        assert!(matches!(
+            result,
+            Err(EngineError::InsufficientUnderlyingCollateral(_))
+        ));
+        assert_eq!(
+            state.position("SPOT_A").unwrap().quantity,
+            Decimal::from(100)
+        );
+        assert_eq!(state.cash(), Decimal::from(100000));
+    }
+
+    #[test]
+    fn short_put_cash_collateral_is_not_double_counted_with_margin() {
+        let (mut configuration, fixture) = baseline();
+        configuration.instruments.push(
+            serde_json::from_str(r#"{"instrument_type":"option","instrument_id":"AM_PUT_A","quote_currency":"USD","price_tick":"0.01","quantity_step":"1","contract_multiplier":"100","fee_bps":"0","fee_per_unit":"0","slippage_bps":"0","underlying_id":"SPOT_A","option_type":"put","strike":"100","expiry_at":"2026-01-09T16:00:00Z","exercise_style":"american","settlement_style":"physical","valuation_mode":"quote","initial_margin_per_contract":"600","maintenance_margin_per_contract":"500"}"#)
+                .unwrap(),
+        );
+        configuration
+            .initial_portfolio
+            .positions
+            .push(serde_json::from_str(r#"{"instrument_id":"AM_PUT_A","quantity":"-1"}"#).unwrap());
+        let state = PortfolioState::initialize(&configuration, &fixture).unwrap();
+        assert_eq!(state.initial_margin_requirement(), Decimal::from(600));
+        assert_eq!(state.maintenance_margin_requirement(), Decimal::from(500));
+        assert_eq!(state.reserved_cash(), Decimal::from(10000));
+        assert_eq!(state.cash_encumbrance(), Decimal::from(10000));
+        assert_eq!(state.maintenance_cash_encumbrance(), Decimal::from(10000));
+
+        configuration.initial_portfolio.cash =
+            factorsbt_contracts::DecimalString::new("9999.99").unwrap();
+        assert!(matches!(
+            PortfolioState::initialize(&configuration, &fixture),
+            Err(EngineError::InsufficientDeliveryCash)
+        ));
     }
 }
