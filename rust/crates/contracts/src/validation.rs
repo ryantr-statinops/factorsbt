@@ -56,8 +56,9 @@ pub fn registry() -> Result<Registry<'static>, SchemaRegistryError> {
         let id = schema
             .get("$id")
             .and_then(Value::as_str)
+            .map(str::to_owned)
             .ok_or_else(|| SchemaRegistryError(format!("embedded schema {name} has no $id")))?;
-        builder = builder.add(id.to_owned(), schema).map_err(|error| {
+        builder = builder.add(id, schema).map_err(|error| {
             SchemaRegistryError(format!("cannot register schema {name}: {error}"))
         })?;
     }

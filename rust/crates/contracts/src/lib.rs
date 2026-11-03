@@ -135,7 +135,7 @@ fn is_decimal(value: &str) -> bool {
         return false;
     }
     let unsigned = value.strip_prefix('-').unwrap_or(value);
-    if unsigned.is_empty() {
+    if unsigned.is_empty() || (value.starts_with('-') && is_zero_value(unsigned)) {
         return false;
     }
     let mut parts = unsigned.split('.');
@@ -148,12 +148,31 @@ fn is_decimal(value: &str) -> bool {
     {
         return false;
     }
-    match fraction {
+    let lexical_valid = match fraction {
         Some(value) => {
             (1..=18).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_digit())
         }
         None => true,
-    }
+    };
+    lexical_valid && significant_digits(unsigned) <= 28
+}
+
+fn is_zero_value(unsigned: &str) -> bool {
+    unsigned
+        .bytes()
+        .filter(|byte| *byte != b'.')
+        .all(|byte| byte == b'0')
+}
+
+fn significant_digits(unsigned: &str) -> usize {
+    let digits = unsigned
+        .bytes()
+        .filter(|byte| byte.is_ascii_digit())
+        .collect::<Vec<_>>();
+    digits
+        .iter()
+        .position(|byte| *byte != b'0')
+        .map_or(1, |first_nonzero| digits.len() - first_nonzero)
 }
 
 fn is_utc_timestamp(value: &str) -> bool {
@@ -287,10 +306,20 @@ mod tests {
 
     #[test]
     fn decimal_wire_form_rejects_exponents_and_leading_zeroes() {
-        for invalid in ["1e3", "01", ".5", "1.", "1.1234567890123456789"] {
+        for invalid in [
+            "1e3",
+            "01",
+            ".5",
+            "1.",
+            "1.1234567890123456789",
+            "-0",
+            "-0.000",
+            "12345678901234567890123456789",
+        ] {
             assert!(DecimalString::new(invalid).is_err(), "accepted {invalid}");
         }
-        assert!(DecimalString::new("-0").is_ok());
+        assert!(DecimalString::new("1234567890123456789012345678").is_ok());
+        assert!(DecimalString::new("0.000000000000000001").is_ok());
     }
 
     #[test]

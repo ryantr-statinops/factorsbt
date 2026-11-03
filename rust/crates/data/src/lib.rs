@@ -18,9 +18,11 @@ use std::{
     sync::Arc,
 };
 
+mod coverage;
 mod inputs;
 mod snapshot;
 
+pub use coverage::{validate_run_coverage, CoverageIssue, CoverageIssueCode};
 pub use inputs::{
     execution_prices_available_at, initial_marks_available_at, settlement_events_available_at,
     FixtureTimelineError,
