@@ -156,6 +156,12 @@ impl ModelHttpClient {
     }
 }
 
+/// Check the MVP network boundary without opening a connection. Admission uses
+/// this before it allocates a submission or queues a worker.
+pub fn validate_loopback_endpoint(value: &str) -> Result<(), ModelServiceError> {
+    parse_loopback_endpoint(value).map(|_| ())
+}
+
 fn parse_loopback_endpoint(value: &str) -> Result<Url, ModelServiceError> {
     let endpoint = Url::parse(value)
         .map_err(|_| ModelServiceError::new(ModelServiceErrorKind::InvalidEndpoint, None))?;

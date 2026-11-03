@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admission;
 pub mod backend_config;
 pub mod evidence;
 pub mod inference_guard;
