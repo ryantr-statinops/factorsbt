@@ -6,3 +6,11 @@ publish = false
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+factorsbt-contracts = { path = "../contracts" }
+factorsbt-data = { path = "../data" }
+rust_decimal.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

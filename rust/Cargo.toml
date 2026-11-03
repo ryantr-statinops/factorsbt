@@ -9,3 +9,4 @@ axum = { version = "0.8", features = ["json"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 jsonschema = { version = "0.60.2", default-features = false }
 sha2 = "0.10"
+rust_decimal = { version = "1", features = ["serde"] }

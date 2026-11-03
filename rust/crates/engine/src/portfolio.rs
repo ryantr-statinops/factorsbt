@@ -1,0 +1,375 @@
+//! Per-run portfolio state and start-of-run initialization.
+
+use factorsbt_contracts::{
+    instruments::{Instrument, LinearFutureInstrument, OptionInstrument},
+    run_configuration::RunConfiguration,
+    InstrumentId, UtcTimestamp,
+};
+use factorsbt_data::{initial_marks_available_at, Fixture};
+use rust_decimal::Decimal;
+use std::{collections::HashMap, error::Error, fmt, str::FromStr};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineError {
+    InvalidDecimal(String),
+    MissingInitialMark(String),
+    InvalidInitialMark(String),
+    DuplicateInstrument(String),
+    UnknownPosition(String),
+    DuplicatePosition(String),
+    InvalidInitialCash,
+    InvalidInitialPosition(String),
+    InsufficientInitialMargin,
+    ArithmeticOverflow(&'static str),
+    FixtureTimeline(String),
+}
+
+impl fmt::Display for EngineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidDecimal(value) => write!(f, "invalid decimal value: {value}"),
+            Self::MissingInitialMark(id) => write!(f, "missing initial mark for {id}"),
+            Self::InvalidInitialMark(id) => write!(f, "initial mark for {id} must be positive"),
+            Self::DuplicateInstrument(id) => write!(f, "duplicate configured instrument {id}"),
+            Self::UnknownPosition(id) => {
+                write!(f, "initial position references unknown instrument {id}")
+            }
+            Self::DuplicatePosition(id) => write!(f, "duplicate initial position for {id}"),
+            Self::InvalidInitialCash => f.write_str("initial cash cannot be negative"),
+            Self::InvalidInitialPosition(id) => write!(f, "invalid initial quantity for {id}"),
+            Self::InsufficientInitialMargin => {
+                f.write_str("initial cash does not cover initial margin")
+            }
+            Self::ArithmeticOverflow(context) => {
+                write!(f, "decimal arithmetic overflow: {context}")
+            }
+            Self::FixtureTimeline(message) => {
+                write!(f, "initial fixture marks are invalid: {message}")
+            }
+        }
+    }
+}
+
+impl Error for EngineError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstrumentPosition {
+    pub quantity: Decimal,
+    /// Last valid valuation mark. Futures also use `settlement_basis` below.
+    pub mark: Decimal,
+    /// Previous variation settlement price; initialized to the start mark.
+    pub settlement_basis: Option<Decimal>,
+    pub mark_observation_id: String,
+    pub mark_revision: u64,
+}
+
+/// Mutable state owned by one run/scenario. Constructing another value creates
+/// an independent portfolio, even when both runs share an immutable fixture.
+#[derive(Debug, Clone)]
+pub struct PortfolioState {
+    cash: Decimal,
+    instruments: HashMap<String, Instrument>,
+    positions: HashMap<String, InstrumentPosition>,
+    initial_margin_requirement: Decimal,
+    maintenance_margin_requirement: Decimal,
+    start_at: UtcTimestamp,
+}
+
+impl PortfolioState {
+    pub fn initialize(
+        configuration: &RunConfiguration,
+        fixture: &Fixture,
+    ) -> Result<Self, EngineError> {
+        let marks =
+            initial_marks_available_at(&fixture.dataset, &configuration.simulation.start_at)
+                .map_err(|error| EngineError::FixtureTimeline(error.to_string()))?;
+        let mut available_marks = HashMap::new();
+        for mark in marks {
+            let value = decimal(mark.mark.as_str())?;
+            if value <= Decimal::ZERO {
+                return Err(EngineError::InvalidInitialMark(
+                    mark.instrument_id.as_str().to_owned(),
+                ));
+            }
+            available_marks.insert(
+                mark.instrument_id.as_str().to_owned(),
+                (
+                    value,
+                    mark.observation_id.as_str().to_owned(),
+                    mark.source_revision,
+                ),
+            );
+        }
+
+        let cash = decimal(configuration.initial_portfolio.cash.as_str())?;
+        if cash < Decimal::ZERO {
+            return Err(EngineError::InvalidInitialCash);
+        }
+
+        let mut instruments = HashMap::new();
+        let mut positions = HashMap::new();
+        for instrument in &configuration.instruments {
+            let id = instrument_id(instrument).as_str().to_owned();
+            if instruments.insert(id.clone(), instrument.clone()).is_some() {
+                return Err(EngineError::DuplicateInstrument(id));
+            }
+            let (mark, observation_id, revision) = available_marks
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| EngineError::MissingInitialMark(id.clone()))?;
+            let basis = matches!(instrument, Instrument::LinearFuture(_)).then_some(mark);
+            positions.insert(
+                id,
+                InstrumentPosition {
+                    quantity: Decimal::ZERO,
+                    mark,
+                    settlement_basis: basis,
+                    mark_observation_id: observation_id,
+                    mark_revision: revision,
+                },
+            );
+        }
+
+        let mut seen_positions = HashMap::new();
+        for initial in &configuration.initial_portfolio.positions {
+            let id = initial.instrument_id.as_str();
+            let instrument = instruments
+                .get(id)
+                .ok_or_else(|| EngineError::UnknownPosition(id.to_owned()))?;
+            if seen_positions.insert(id.to_owned(), ()).is_some() {
+                return Err(EngineError::DuplicatePosition(id.to_owned()));
+            }
+            let quantity = decimal(initial.quantity.as_str())?;
+            validate_quantity(instrument, quantity)
+                .map_err(|()| EngineError::InvalidInitialPosition(id.to_owned()))?;
+            positions
+                .get_mut(id)
+                .expect("instrument was inserted")
+                .quantity = quantity;
+        }
+
+        let mut initial_margin_requirement = Decimal::ZERO;
+        let mut maintenance_margin_requirement = Decimal::ZERO;
+        for (id, instrument) in &instruments {
+            let quantity = positions.get(id).expect("position was inserted").quantity;
+            let (initial, maintenance) = margin_per_unit(instrument)?;
+            let abs_quantity = quantity.abs();
+            initial_margin_requirement = initial_margin_requirement
+                .checked_add(
+                    abs_quantity
+                        .checked_mul(initial)
+                        .ok_or(EngineError::ArithmeticOverflow("initial margin"))?,
+                )
+                .ok_or(EngineError::ArithmeticOverflow("initial margin"))?;
+            maintenance_margin_requirement = maintenance_margin_requirement
+                .checked_add(
+                    abs_quantity
+                        .checked_mul(maintenance)
+                        .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?,
+                )
+                .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?;
+        }
+        if cash < initial_margin_requirement {
+            return Err(EngineError::InsufficientInitialMargin);
+        }
+
+        Ok(Self {
+            cash,
+            instruments,
+            positions,
+            initial_margin_requirement,
+            maintenance_margin_requirement,
+            start_at: configuration.simulation.start_at.clone(),
+        })
+    }
+
+    pub fn cash(&self) -> Decimal {
+        self.cash
+    }
+
+    pub fn start_at(&self) -> &UtcTimestamp {
+        &self.start_at
+    }
+
+    pub fn position(&self, instrument_id: &str) -> Option<&InstrumentPosition> {
+        self.positions.get(instrument_id)
+    }
+
+    pub fn instruments(&self) -> &HashMap<String, Instrument> {
+        &self.instruments
+    }
+
+    pub fn positions(&self) -> &HashMap<String, InstrumentPosition> {
+        &self.positions
+    }
+
+    pub fn initial_margin_requirement(&self) -> Decimal {
+        self.initial_margin_requirement
+    }
+
+    pub fn maintenance_margin_requirement(&self) -> Decimal {
+        self.maintenance_margin_requirement
+    }
+}
+
+fn decimal(value: &str) -> Result<Decimal, EngineError> {
+    Decimal::from_str(value).map_err(|_| EngineError::InvalidDecimal(value.to_owned()))
+}
+
+fn instrument_id(instrument: &Instrument) -> &InstrumentId {
+    match instrument {
+        Instrument::Spot(value) => &value.instrument_id,
+        Instrument::LinearFuture(value) => &value.instrument_id,
+        Instrument::Option(value) => &value.instrument_id,
+    }
+}
+
+fn validate_quantity(instrument: &Instrument, quantity: Decimal) -> Result<(), ()> {
+    let step = decimal(instrument_fields(instrument).1.as_str()).map_err(|_| ())?;
+    if step <= Decimal::ZERO || quantity % step != Decimal::ZERO {
+        return Err(());
+    }
+    if matches!(instrument, Instrument::Spot(_)) && quantity < Decimal::ZERO {
+        return Err(());
+    }
+    if !matches!(instrument, Instrument::Spot(_)) && quantity.fract() != Decimal::ZERO {
+        return Err(());
+    }
+    Ok(())
+}
+
+fn instrument_fields(
+    instrument: &Instrument,
+) -> (&InstrumentId, &factorsbt_contracts::DecimalString) {
+    match instrument {
+        Instrument::Spot(value) => (&value.instrument_id, &value.quantity_step),
+        Instrument::LinearFuture(value) => (&value.instrument_id, &value.quantity_step),
+        Instrument::Option(value) => (&value.instrument_id, &value.quantity_step),
+    }
+}
+
+fn margin_per_unit(instrument: &Instrument) -> Result<(Decimal, Decimal), EngineError> {
+    match instrument {
+        Instrument::Spot(_) => Ok((Decimal::ZERO, Decimal::ZERO)),
+        Instrument::LinearFuture(value) => margin(value),
+        Instrument::Option(value) => margin(value),
+    }
+}
+
+trait MarginFields {
+    fn initial(&self) -> &factorsbt_contracts::DecimalString;
+    fn maintenance(&self) -> &factorsbt_contracts::DecimalString;
+}
+
+impl MarginFields for LinearFutureInstrument {
+    fn initial(&self) -> &factorsbt_contracts::DecimalString {
+        &self.initial_margin_per_contract
+    }
+
+    fn maintenance(&self) -> &factorsbt_contracts::DecimalString {
+        &self.maintenance_margin_per_contract
+    }
+}
+
+impl MarginFields for OptionInstrument {
+    fn initial(&self) -> &factorsbt_contracts::DecimalString {
+        &self.initial_margin_per_contract
+    }
+
+    fn maintenance(&self) -> &factorsbt_contracts::DecimalString {
+        &self.maintenance_margin_per_contract
+    }
+}
+
+fn margin(value: &impl MarginFields) -> Result<(Decimal, Decimal), EngineError> {
+    Ok((
+        decimal(value.initial().as_str())?,
+        decimal(value.maintenance().as_str())?,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use factorsbt_contracts::run_configuration::RunConfiguration;
+    use factorsbt_data::FixtureRegistry;
+    use std::path::Path;
+
+    fn baseline() -> (RunConfiguration, Fixture) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        let registry = FixtureRegistry::load(root).unwrap();
+        let fixture = (*registry.get_by("mvp-synthetic", "v1").unwrap()).clone();
+        let configuration = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/instruments/minimal-valid-spot-run.json"
+        ))
+        .unwrap();
+        (configuration, fixture)
+    }
+
+    #[test]
+    fn initializes_zero_positions_at_available_start_marks() {
+        let (configuration, fixture) = baseline();
+        let state = PortfolioState::initialize(&configuration, &fixture).unwrap();
+        let spot = state.position("SPOT_A").unwrap();
+        assert_eq!(state.cash(), Decimal::from(100000));
+        assert_eq!(spot.quantity, Decimal::ZERO);
+        assert_eq!(spot.mark, Decimal::from(100));
+        assert_eq!(spot.settlement_basis, None);
+        assert_eq!(spot.mark_observation_id, "BAR-SPOT_A-20260105");
+    }
+
+    #[test]
+    fn initial_marks_are_not_visible_before_their_availability_time() {
+        let (mut configuration, fixture) = baseline();
+        configuration.simulation.start_at = UtcTimestamp::new("2026-01-05T15:59:59Z").unwrap();
+        assert!(matches!(
+            PortfolioState::initialize(&configuration, &fixture),
+            Err(EngineError::MissingInitialMark(_))
+        ));
+    }
+
+    #[test]
+    fn futures_start_mark_is_the_settlement_basis_without_entry_cashflow() {
+        let (mut configuration, fixture) = baseline();
+        let future: Instrument = serde_json::from_str(
+            r#"{"instrument_type":"linear_future","instrument_id":"FUT_A","quote_currency":"USD","price_tick":"0.01","quantity_step":"1","contract_multiplier":"1","fee_bps":"0","fee_per_unit":"0","slippage_bps":"0","underlying_id":"SPOT_A","expiry_at":"2026-01-09T16:00:00Z","initial_margin_per_contract":"1000","maintenance_margin_per_contract":"800"}"#,
+        )
+        .unwrap();
+        configuration.instruments.push(future);
+        configuration
+            .initial_portfolio
+            .positions
+            .push(serde_json::from_str(r#"{"instrument_id":"FUT_A","quantity":"1"}"#).unwrap());
+        configuration.initial_portfolio.cash =
+            factorsbt_contracts::DecimalString::new("1000").unwrap();
+
+        let state = PortfolioState::initialize(&configuration, &fixture).unwrap();
+        let future = state.position("FUT_A").unwrap();
+        assert_eq!(state.cash(), Decimal::from(1000));
+        assert_eq!(future.mark, Decimal::from(100));
+        assert_eq!(future.settlement_basis, Some(Decimal::from(100)));
+        assert_eq!(state.initial_margin_requirement(), Decimal::from(1000));
+        assert_eq!(state.maintenance_margin_requirement(), Decimal::from(800));
+    }
+
+    #[test]
+    fn initial_portfolio_below_margin_is_rejected_before_run_admission() {
+        let (mut configuration, fixture) = baseline();
+        let future: Instrument = serde_json::from_str(
+            r#"{"instrument_type":"linear_future","instrument_id":"FUT_A","quote_currency":"USD","price_tick":"0.01","quantity_step":"1","contract_multiplier":"1","fee_bps":"0","fee_per_unit":"0","slippage_bps":"0","underlying_id":"SPOT_A","expiry_at":"2026-01-09T16:00:00Z","initial_margin_per_contract":"1000","maintenance_margin_per_contract":"800"}"#,
+        )
+        .unwrap();
+        configuration.instruments.push(future);
+        configuration
+            .initial_portfolio
+            .positions
+            .push(serde_json::from_str(r#"{"instrument_id":"FUT_A","quantity":"1"}"#).unwrap());
+        configuration.initial_portfolio.cash =
+            factorsbt_contracts::DecimalString::new("999.99").unwrap();
+
+        assert!(matches!(
+            PortfolioState::initialize(&configuration, &fixture),
+            Err(EngineError::InsufficientInitialMargin)
+        ));
+    }
+}
