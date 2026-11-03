@@ -6,6 +6,7 @@ mod admission;
 mod clock;
 mod decisions;
 mod execution;
+mod finalize;
 mod futures;
 mod liquidation;
 mod marks;
@@ -22,6 +23,7 @@ pub use decisions::{
     ValidatedOrderIntent,
 };
 pub use execution::SpotExecution;
+pub use finalize::{finalize_run_state, FinalRunStatus, OpenPositionSummary, RunFinalization};
 pub use futures::{FutureExecution, FutureSettlement};
 pub use liquidation::{execute_liquidation_group, schedule_liquidation, LiquidationOutcome};
 pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};

@@ -310,6 +310,26 @@ impl PortfolioState {
         Ok(nav)
     }
 
+    pub fn position_market_value(&self, instrument_id: &str) -> Result<Decimal, EngineError> {
+        let instrument = self
+            .instruments
+            .get(instrument_id)
+            .ok_or_else(|| EngineError::MissingPosition(instrument_id.to_owned()))?;
+        if matches!(instrument, Instrument::LinearFuture(_)) {
+            return Ok(Decimal::ZERO);
+        }
+        let position = self
+            .positions
+            .get(instrument_id)
+            .ok_or_else(|| EngineError::MissingPosition(instrument_id.to_owned()))?;
+        let multiplier = decimal(instrument_multiplier(instrument).as_str())?;
+        position
+            .quantity
+            .checked_mul(position.mark)
+            .and_then(|value| value.checked_mul(multiplier))
+            .ok_or(EngineError::ArithmeticOverflow("position market value"))
+    }
+
     pub fn start_at(&self) -> &UtcTimestamp {
         &self.start_at
     }
