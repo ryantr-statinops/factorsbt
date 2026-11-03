@@ -5,6 +5,7 @@
 mod clock;
 mod execution;
 mod futures;
+mod marks;
 mod options;
 mod portfolio;
 mod pricing;
@@ -12,6 +13,7 @@ mod pricing;
 pub use clock::{ClockError, ClockEvent, SimulationClock, SimulationEventKind};
 pub use execution::SpotExecution;
 pub use futures::{FutureExecution, FutureSettlement};
+pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};
 pub use options::{
     AmericanWorthlessExpiry, OptionExecution, OptionSettlement, PhysicalOptionSettlement,
 };

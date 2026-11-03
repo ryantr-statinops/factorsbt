@@ -137,6 +137,8 @@ pub struct InstrumentPosition {
     pub settlement_basis: Option<Decimal>,
     pub mark_observation_id: String,
     pub mark_revision: u64,
+    pub mark_source: Option<super::marks::MarkSource>,
+    pub mark_provenance: Vec<super::marks::MarkProvenance>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +221,8 @@ impl PortfolioState {
                     settlement_basis: basis,
                     mark_observation_id: observation_id,
                     mark_revision: revision,
+                    mark_source: None,
+                    mark_provenance: Vec::new(),
                 },
             );
         }
@@ -292,6 +296,46 @@ impl PortfolioState {
 
     pub fn positions(&self) -> &HashMap<String, InstrumentPosition> {
         &self.positions
+    }
+
+    /// Atomically replace marks and preserve every input revision used to
+    /// calculate them. A batch with an unknown or repeated instrument changes
+    /// no position.
+    pub fn apply_valuation_marks(
+        &mut self,
+        marks: &[super::marks::ValuationMark],
+    ) -> Result<(), EngineError> {
+        let mut seen = HashSet::new();
+        for mark in marks {
+            let id = mark.instrument_id.as_str();
+            if !self.positions.contains_key(id) {
+                return Err(EngineError::MissingPosition(id.to_owned()));
+            }
+            if !seen.insert(id) {
+                return Err(EngineError::DuplicateInstrument(id.to_owned()));
+            }
+        }
+        for mark in marks {
+            let position = self
+                .positions
+                .get_mut(mark.instrument_id.as_str())
+                .expect("all mark instruments were validated");
+            position.mark = mark.mark;
+            position.mark_source = Some(mark.source);
+            position.mark_observation_id = mark
+                .provenance
+                .first()
+                .map(|input| input.observation_id.clone())
+                .unwrap_or_default();
+            position.mark_revision = mark
+                .provenance
+                .iter()
+                .map(|input| input.source_revision)
+                .max()
+                .unwrap_or_default();
+            position.mark_provenance = mark.provenance.clone();
+        }
+        Ok(())
     }
 
     pub(super) fn position_mut(&mut self, instrument_id: &str) -> Option<&mut InstrumentPosition> {
