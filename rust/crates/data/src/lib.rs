@@ -18,8 +18,13 @@ use std::{
     sync::Arc,
 };
 
+mod inputs;
 mod snapshot;
 
+pub use inputs::{
+    execution_prices_available_at, initial_marks_available_at, settlement_events_available_at,
+    FixtureTimelineError,
+};
 pub use snapshot::{assemble_snapshot, observations_available_at, SnapshotContext, SnapshotError};
 
 const FIXTURE_FORMAT_VERSION: &str = "1.0.0";
