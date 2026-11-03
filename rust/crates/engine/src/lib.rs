@@ -7,6 +7,7 @@ mod clock;
 mod decisions;
 mod execution;
 mod futures;
+mod liquidation;
 mod marks;
 mod options;
 mod orders;
@@ -22,6 +23,7 @@ pub use decisions::{
 };
 pub use execution::SpotExecution;
 pub use futures::{FutureExecution, FutureSettlement};
+pub use liquidation::{execute_liquidation_group, schedule_liquidation, LiquidationOutcome};
 pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};
 pub use options::{
     AmericanWorthlessExpiry, OptionExecution, OptionSettlement, PhysicalOptionSettlement,
