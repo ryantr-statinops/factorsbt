@@ -89,6 +89,16 @@ pub use outcomes::{EngineEvent, HealthResponse, RunResult, RunStatus};
 pub use run_configuration::{RunConfiguration, SimulationConfiguration};
 pub use temporal::{DecisionSnapshot, Observation, PortfolioSnapshot};
 
+/// Compare normalized UTC RFC 3339 values, including fractional seconds.
+pub fn compare_utc_timestamps(left: &UtcTimestamp, right: &UtcTimestamp) -> std::cmp::Ordering {
+    let (left_base, left_fraction) = timestamp_components(left.as_str());
+    let (right_base, right_fraction) = timestamp_components(right.as_str());
+    match left_base.cmp(&right_base) {
+        std::cmp::Ordering::Equal => compare_fractions(left_fraction, right_fraction),
+        ordering => ordering,
+    }
+}
+
 fn is_uuid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(index, byte)| {
@@ -184,11 +194,83 @@ fn is_utc_timestamp(value: &str) -> bool {
     ) else {
         return false;
     };
-    [hour, minute, second]
+    if ![hour, minute, second]
         .iter()
         .all(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()))
-        && fraction
+        || !fraction
             .is_none_or(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return false;
+    }
+    let (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute), Ok(second)) = (
+        year.parse::<u32>(),
+        month.parse::<u32>(),
+        day.parse::<u32>(),
+        hour.parse::<u32>(),
+        minute.parse::<u32>(),
+        second.parse::<u32>(),
+    ) else {
+        return false;
+    };
+    let month_days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year % 400 == 0 || (year % 4 == 0 && year % 100 != 0) => 29,
+        2 => 28,
+        _ => return false,
+    };
+    day >= 1 && day <= month_days && hour <= 23 && minute <= 59 && second <= 59
+}
+
+fn timestamp_components(value: &str) -> ((u32, u32, u32, u32, u32, u32), &str) {
+    let body = value.strip_suffix('Z').expect("validated UTC timestamp");
+    let (date, time) = body.split_once('T').expect("validated timestamp separator");
+    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
+    let mut date = date.split('-');
+    let mut clock = clock.split(':');
+    let base = (
+        date.next()
+            .expect("validated year")
+            .parse()
+            .expect("year digits"),
+        date.next()
+            .expect("validated month")
+            .parse()
+            .expect("month digits"),
+        date.next()
+            .expect("validated day")
+            .parse()
+            .expect("day digits"),
+        clock
+            .next()
+            .expect("validated hour")
+            .parse()
+            .expect("hour digits"),
+        clock
+            .next()
+            .expect("validated minute")
+            .parse()
+            .expect("minute digits"),
+        clock
+            .next()
+            .expect("validated second")
+            .parse()
+            .expect("second digits"),
+    );
+    (base, fraction)
+}
+
+fn compare_fractions(left: &str, right: &str) -> std::cmp::Ordering {
+    let max_len = left.len().max(right.len());
+    for index in 0..max_len {
+        let left_digit = left.as_bytes().get(index).copied().unwrap_or(b'0');
+        let right_digit = right.as_bytes().get(index).copied().unwrap_or(b'0');
+        match left_digit.cmp(&right_digit) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+    }
+    std::cmp::Ordering::Equal
 }
 
 #[cfg(test)]
@@ -219,6 +301,23 @@ mod tests {
         assert!(InstrumentId::new("aapl").is_err());
         assert!(UtcTimestamp::new("2026-01-02T09:00:00Z").is_ok());
         assert!(UtcTimestamp::new("2026-01-02T09:00:00+00:00").is_err());
+        assert!(UtcTimestamp::new("2026-02-30T09:00:00Z").is_err());
+        assert!(UtcTimestamp::new("2026-01-02T24:00:00Z").is_err());
+    }
+
+    #[test]
+    fn utc_timestamp_order_compares_fractional_seconds_numerically() {
+        let exact = UtcTimestamp::new("2026-01-02T09:00:00Z").unwrap();
+        let tenth = UtcTimestamp::new("2026-01-02T09:00:00.1Z").unwrap();
+        let tenth_extended = UtcTimestamp::new("2026-01-02T09:00:00.10Z").unwrap();
+        assert_eq!(
+            compare_utc_timestamps(&exact, &tenth),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_utc_timestamps(&tenth, &tenth_extended),
+            std::cmp::Ordering::Equal
+        );
     }
 
     #[test]

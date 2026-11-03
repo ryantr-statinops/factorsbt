@@ -18,6 +18,10 @@ use std::{
     sync::Arc,
 };
 
+mod snapshot;
+
+pub use snapshot::{assemble_snapshot, observations_available_at, SnapshotContext, SnapshotError};
+
 const FIXTURE_FORMAT_VERSION: &str = "1.0.0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,7 +148,7 @@ impl fmt::Display for FixtureLoadError {
 
 impl Error for FixtureLoadError {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fixture {
     pub manifest: FixtureManifest,
     pub digest_sha256: String,
