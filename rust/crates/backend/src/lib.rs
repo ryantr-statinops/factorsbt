@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod evidence;
 pub mod inference_guard;
 pub mod model_client;
 pub mod model_fixture;

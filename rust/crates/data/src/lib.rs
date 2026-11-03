@@ -161,6 +161,9 @@ pub struct Fixture {
     pub manifest: FixtureManifest,
     pub digest_sha256: String,
     pub dataset: Arc<FixtureDataset>,
+    /// Exact versioned source bytes retained for traceable run evidence.
+    pub manifest_bytes: Arc<[u8]>,
+    pub dataset_bytes: Arc<[u8]>,
 }
 
 /// Process-local registry of immutable fixtures keyed by ID and version.
@@ -227,6 +230,8 @@ impl FixtureRegistry {
                 manifest,
                 digest_sha256: digest,
                 dataset: Arc::new(dataset),
+                manifest_bytes: Arc::from(manifest_bytes),
+                dataset_bytes: Arc::from(dataset_bytes),
             });
             if registry.fixtures.insert(key, fixture).is_some() {
                 return Err(FixtureLoadError::DuplicateFixture);
