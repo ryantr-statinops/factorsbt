@@ -4,7 +4,6 @@ use jsonschema::Registry;
 use serde_json::Value;
 use std::error::Error;
 
-const BASE: &str = "https://schemas.factorsbt.invalid/v1/";
 const COMMON: &str = include_str!("../../../../contracts/schemas/common.schema.json");
 const INSTRUMENT: &str = include_str!("../../../../contracts/schemas/instrument.schema.json");
 const OBSERVATION: &str = include_str!("../../../../contracts/schemas/observation.schema.json");
@@ -17,6 +16,10 @@ const RUN_RESULT: &str = include_str!("../../../../contracts/schemas/run-result.
 const SNAPSHOT: &str = include_str!("../../../../contracts/schemas/snapshot.schema.json");
 const ENGINE_OUTCOME: &str =
     include_str!("../../../../contracts/schemas/engine-outcome.schema.json");
+const FIXTURE_MANIFEST: &str =
+    include_str!("../../../../contracts/fixtures/schemas/manifest.v1.schema.json");
+const FIXTURE_DATASET: &str =
+    include_str!("../../../../contracts/fixtures/schemas/dataset.v1.schema.json");
 
 #[derive(Debug)]
 pub struct SchemaRegistryError(String);
@@ -42,17 +45,21 @@ pub fn registry() -> Result<Registry<'static>, SchemaRegistryError> {
         ("run-result.schema.json", RUN_RESULT),
         ("snapshot.schema.json", SNAPSHOT),
         ("engine-outcome.schema.json", ENGINE_OUTCOME),
+        ("manifest.v1.schema.json", FIXTURE_MANIFEST),
+        ("dataset.v1.schema.json", FIXTURE_DATASET),
     ];
     let mut builder = Registry::new();
     for (name, source) in schemas {
         let schema: Value = serde_json::from_str(source).map_err(|error| {
             SchemaRegistryError(format!("embedded schema {name} is invalid: {error}"))
         })?;
-        builder = builder
-            .add(format!("{BASE}{name}"), schema)
-            .map_err(|error| {
-                SchemaRegistryError(format!("cannot register schema {name}: {error}"))
-            })?;
+        let id = schema
+            .get("$id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| SchemaRegistryError(format!("embedded schema {name} has no $id")))?;
+        builder = builder.add(id.to_owned(), schema).map_err(|error| {
+            SchemaRegistryError(format!("cannot register schema {name}: {error}"))
+        })?;
     }
     builder.prepare().map_err(|error| {
         SchemaRegistryError(format!("cannot prepare local schema registry: {error}"))
@@ -62,18 +69,29 @@ pub fn registry() -> Result<Registry<'static>, SchemaRegistryError> {
 /// Return all schema errors. Cross-field relationships such as underlying
 /// existence remain semantic validation responsibilities.
 pub fn validate_run_configuration(value: &Value) -> Result<(), Vec<String>> {
+    validate_document(RUN_CONFIGURATION, "run configuration", value)
+}
+
+/// Validate the internal, versioned fixture manifest format.
+pub fn validate_fixture_manifest(value: &Value) -> Result<(), Vec<String>> {
+    validate_document(FIXTURE_MANIFEST, "fixture manifest", value)
+}
+
+/// Validate the internal, versioned fixture dataset format.
+pub fn validate_fixture_dataset(value: &Value) -> Result<(), Vec<String>> {
+    validate_document(FIXTURE_DATASET, "fixture dataset", value)
+}
+
+fn validate_document(source: &str, name: &str, value: &Value) -> Result<(), Vec<String>> {
     let registry = registry().map_err(|error| vec![error.to_string()])?;
-    let schema: Value = serde_json::from_str(RUN_CONFIGURATION).map_err(|error| {
-        vec![format!(
-            "embedded run configuration schema is invalid: {error}"
-        )]
-    })?;
+    let schema: Value = serde_json::from_str(source)
+        .map_err(|error| vec![format!("embedded {name} schema is invalid: {error}")])?;
     let validator = jsonschema::draft202012::options()
         .with_registry(&registry)
         .offline()
         .should_validate_formats(true)
         .build(&schema)
-        .map_err(|error| vec![format!("cannot build run configuration validator: {error}")])?;
+        .map_err(|error| vec![format!("cannot build {name} validator: {error}")])?;
     let errors = validator
         .iter_errors(value)
         .map(|error| format!("{} at {}", error, error.instance_path()))

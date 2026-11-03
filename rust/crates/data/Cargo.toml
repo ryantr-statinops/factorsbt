@@ -1,0 +1,14 @@
+[package]
+name = "factorsbt-data"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+factorsbt-contracts = { path = "../contracts" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
