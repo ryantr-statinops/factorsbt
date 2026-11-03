@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 axum = { workspace = true }
 factorsbt-contracts = { path = "../contracts" }
+reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 

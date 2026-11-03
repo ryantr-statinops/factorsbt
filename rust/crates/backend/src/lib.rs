@@ -2,4 +2,5 @@
 
 #![forbid(unsafe_code)]
 
+pub mod model_client;
 pub mod model_fixture;
