@@ -17,6 +17,7 @@ pub enum PricingError {
     InvalidTime,
     InvalidTimestamp,
     NonFiniteInput,
+    NonFiniteIntermediate,
     ArithmeticOverflow,
 }
 
@@ -32,7 +33,10 @@ impl fmt::Display for PricingError {
             Self::NonFiniteInput => {
                 f.write_str("pricing input is outside the finite numeric range")
             }
-            Self::ArithmeticOverflow => f.write_str("intrinsic value arithmetic overflow"),
+            Self::NonFiniteIntermediate => {
+                f.write_str("option pricer produced a non-finite intermediate")
+            }
+            Self::ArithmeticOverflow => f.write_str("pricing decimal arithmetic overflow"),
         }
     }
 }
@@ -41,11 +45,11 @@ impl Error for PricingError {}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ValidatedPricingInputs {
-    pub underlying_price: f64,
-    pub strike: f64,
-    pub risk_free_rate: f64,
-    pub annualized_volatility: f64,
-    pub time_to_expiry_years: f64,
+    underlying_price: f64,
+    strike: f64,
+    risk_free_rate: f64,
+    annualized_volatility: f64,
+    time_to_expiry_years: f64,
 }
 
 /// Compute ACT/365F years from UTC elapsed seconds. A valuation at or after
@@ -126,6 +130,76 @@ pub fn intrinsic_value(
             .ok_or(PricingError::ArithmeticOverflow)?
             .max(Decimal::ZERO),
     })
+}
+
+/// Price a European option with the accepted Black–Scholes assumptions and
+/// return one per-unit mark rounded half-even to 12 decimal places.
+pub fn black_scholes_european_value(
+    option_type: ContractOptionType,
+    inputs: ValidatedPricingInputs,
+) -> Result<Decimal, PricingError> {
+    let spot = inputs.underlying_price;
+    let strike = inputs.strike;
+    let rate = inputs.risk_free_rate;
+    let volatility = inputs.annualized_volatility;
+    let time = inputs.time_to_expiry_years;
+    if time == 0.0 {
+        return decimal_mark(match option_type {
+            ContractOptionType::Call => (spot - strike).max(0.0),
+            ContractOptionType::Put => (strike - spot).max(0.0),
+        });
+    }
+
+    let discount = (-rate * time).exp();
+    if !discount.is_finite() {
+        return Err(PricingError::NonFiniteIntermediate);
+    }
+    if spot == 0.0 {
+        return decimal_mark(match option_type {
+            ContractOptionType::Call => 0.0,
+            ContractOptionType::Put => strike * discount,
+        });
+    }
+
+    let sigma_sqrt_time = volatility * time.sqrt();
+    let d1 = ((spot.ln() - strike.ln()) + (rate + 0.5 * volatility * volatility) * time)
+        / sigma_sqrt_time;
+    let d2 = d1 - sigma_sqrt_time;
+    if !sigma_sqrt_time.is_finite() || sigma_sqrt_time <= 0.0 || !d1.is_finite() || !d2.is_finite()
+    {
+        return Err(PricingError::NonFiniteIntermediate);
+    }
+    let price = match option_type {
+        ContractOptionType::Call => spot * normal_cdf(d1) - strike * discount * normal_cdf(d2),
+        ContractOptionType::Put => strike * discount * normal_cdf(-d2) - spot * normal_cdf(-d1),
+    };
+    if !price.is_finite() {
+        return Err(PricingError::NonFiniteIntermediate);
+    }
+    decimal_mark(price.max(0.0))
+}
+
+fn normal_cdf(value: f64) -> f64 {
+    let x = value / std::f64::consts::SQRT_2;
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let magnitude = x.abs();
+    let t = 1.0 / (1.0 + 0.3275911 * magnitude);
+    let mut polynomial = 1.061405429 * t - 1.453152027;
+    polynomial = polynomial * t + 1.421413741;
+    polynomial = polynomial * t - 0.284496736;
+    polynomial = polynomial * t + 0.254829592;
+    polynomial *= t;
+    let erf = sign * (1.0 - polynomial * (-(magnitude * magnitude)).exp());
+    (0.5 * (1.0 + erf)).clamp(0.0, 1.0)
+}
+
+fn decimal_mark(value: f64) -> Result<Decimal, PricingError> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(PricingError::NonFiniteIntermediate);
+    }
+    let decimal =
+        Decimal::from_str(&value.to_string()).map_err(|_| PricingError::ArithmeticOverflow)?;
+    Ok(decimal.round_dp_with_strategy(12, rust_decimal::RoundingStrategy::MidpointNearestEven))
 }
 
 fn to_f64(value: Decimal) -> Result<f64, PricingError> {
@@ -236,6 +310,23 @@ mod tests {
 
     fn decimal(value: &str) -> Decimal {
         Decimal::from_str(value).unwrap()
+    }
+
+    fn validated(
+        s: &str,
+        k: &str,
+        rate: &str,
+        volatility: &str,
+        time: f64,
+    ) -> ValidatedPricingInputs {
+        validate_pricing_inputs(
+            decimal(s),
+            decimal(k),
+            decimal(rate),
+            decimal(volatility),
+            time,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -356,5 +447,39 @@ mod tests {
         )
         .unwrap();
         assert_eq!(time, 0.0);
+    }
+
+    #[test]
+    fn black_scholes_matches_accepted_european_reference_values() {
+        let inputs = validated("100", "100", "0.05", "0.2", 1.0);
+        let call = black_scholes_european_value(ContractOptionType::Call, inputs).unwrap();
+        let put = black_scholes_european_value(ContractOptionType::Put, inputs).unwrap();
+        assert!((call - decimal("10.45058357")).abs() < decimal("0.00005"));
+        assert!((put - decimal("5.57352602")).abs() < decimal("0.00005"));
+        assert_eq!(call.scale(), 12);
+    }
+
+    #[test]
+    fn black_scholes_handles_zero_underlying_and_zero_time_limits() {
+        let zero_underlying = validated("0", "100", "0.05", "0.2", 1.0);
+        assert_eq!(
+            black_scholes_european_value(ContractOptionType::Call, zero_underlying).unwrap(),
+            Decimal::ZERO
+        );
+        let put = black_scholes_european_value(ContractOptionType::Put, zero_underlying).unwrap();
+        assert!((put - decimal("95.12294245")).abs() < decimal("0.00005"));
+
+        let expiry = validated("110", "100", "0.05", "0.2", 0.0);
+        assert_eq!(
+            black_scholes_european_value(ContractOptionType::Call, expiry).unwrap(),
+            decimal("10")
+        );
+    }
+
+    #[test]
+    fn black_scholes_never_returns_negative_value_for_deep_out_of_money_inputs() {
+        let inputs = validated("1", "100", "0", "0.2", 1.0);
+        let value = black_scholes_european_value(ContractOptionType::Call, inputs).unwrap();
+        assert!(value >= Decimal::ZERO);
     }
 }

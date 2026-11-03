@@ -17,6 +17,6 @@ pub use options::{
 };
 pub use portfolio::{EngineError, InstrumentPosition, LedgerPosting, PortfolioState};
 pub use pricing::{
-    intrinsic_value, time_to_expiry_act_365f, validate_pricing_inputs, PricingError,
-    ValidatedPricingInputs,
+    black_scholes_european_value, intrinsic_value, time_to_expiry_act_365f,
+    validate_pricing_inputs, PricingError, ValidatedPricingInputs,
 };
