@@ -1,6 +1,8 @@
 # MVP 1: synthetic multi-instrument backtest
 
-**Status:** Accepted scope for the first implementation slice. Runtime behavior is not implemented.
+**Design status:** Accepted scope for the first implementation slice.
+
+**Implementation status:** Phase B has implemented and locally verified data snapshots, engine primitives, model orchestration, and the Rust run API (Stages 03–06). The typed Python backtest SDK and full acceptance outcome remain in Stage 07; this scope is not yet accepted as a completed MVP release.
 
 ## User and outcome
 
@@ -55,7 +57,7 @@ Real-market/provider integrations, exchange-specific calendars or margin, FX and
 
 ## Acceptance outcome
 
-MVP 1 is accepted for release planning when a local Python client can submit a run to the Rust backend and obtain inspectable output connecting configuration, versioned inputs, model response, grouped admission, orders, fills, cash/positions, and risk events. The run must use the assumptions above and synthetic fixtures. Phase A only establishes the specification, contracts, buildable project skeleton, and health check; completing Phase A alone does not meet this runtime outcome.
+MVP 1 is accepted for release planning when a local Python client can submit a run to the Rust backend and obtain inspectable output connecting configuration, versioned inputs, model response, grouped admission, orders, fills, cash/positions, and risk events. The run must use the assumptions above and synthetic fixtures. Phase A established the specification, contracts, buildable project skeleton, and health check; Phase B added the local Rust flow. The typed Python client and complete acceptance outcome are still required to meet this runtime criterion.
 
 ## Decision record
 

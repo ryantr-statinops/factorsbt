@@ -1,6 +1,6 @@
 # Stage 06 — Backend API và quản lý run
 
-**Status:** Proposed
+**Status:** Implemented
 
 **Phase:** B — Backtest xuyên suốt
 
@@ -31,25 +31,35 @@ Cho client gửi thí nghiệm, theo dõi trạng thái vận hành và lấy k�
 
 ## Task → Commit
 
-| Thứ tự | Task và phạm vi commit | Commit dự kiến |
+| # | Kết quả đã commit | Commit |
 | --- | --- | --- |
-| 1 | Triển khai submission/validation và identity chống hiệu ứng trùng | `feat(api): accept validated backtest runs with submission identity` |
-| 2 | Nối orchestrator và công bố lifecycle/progress/failure | `feat(api): expose run progress and execution failures` |
-| 3 | Truy xuất kết quả/evidence với giới hạn truy cập đã chọn | `feat(api): expose traceable backtest results` |
+| 39 | Queue limits và process-local store | `d06d0ff feat(backend): configure bounded concurrent run execution` |
+| 40 | Validate schema, fixture, coverage và initial portfolio | `70eb319 feat(api): validate submitted run configurations` |
+| 41 | Atomic submission identity và equality | `1aef221 feat(api): deduplicate concurrent run submissions` |
+| 42 | Worker pool, FIFO queue và active-slot dispatch | `003f3c8 feat(backend): schedule isolated concurrent runs` |
+| 43 | Lifecycle, progress và failure resources | `52ec27e feat(api): expose run lifecycle and progress` |
+| 44 | Successful result và evidence validation | `6d9f802 feat(api): expose verified run results` |
+| 45 | Error envelope, request ID và input redaction | `ab5b562 feat(api): return structured contextual failures` |
+| 46 | Local startup, worker failure cleanup và graceful drain | `1f48bab feat(backend): manage local worker lifecycle` |
+| 47 | API race, queue, concurrent execution, failure và evidence tests | `80a4e1f test(api): verify concurrent submission and execution behavior` |
+| 48 | Đồng bộ contract docs và bằng chứng triển khai | `docs(api): record implemented MVP run operations` |
 
-## Kiểm chứng dự kiến
+## Kiểm chứng đã chạy
 
-- Cấu hình hợp lệ và không hợp lệ cho acknowledgment/lỗi đúng hợp đồng; không bắt đầu run bị từ chối.
-- Submission được nhận nhưng HTTP response bị mất có thể được xác định lại theo cơ chế đã chọn, không coi client timeout là chắc chắn thất bại.
-- Retry/trùng submission không nhân đôi hiệu ứng trong phạm vi bảo đảm được ghi rõ.
-- Adapter failure được thể hiện ở run đúng ngữ cảnh; xem tiến trình không làm thay đổi đồng hồ mô phỏng.
-- Kết quả nối được đến evidence; kiểm tra truy cập và secret redaction theo mô hình truy cập đã chọn.
+- Toàn bộ 50 test của `factorsbt-backend` pass. Trong đó API integration test chạy qua loopback thật với hai run đồng thời và inference responses đảo thứ tự.
+- Concurrent POST cùng key/config trả cùng acknowledgment và chỉ tạo một run; đổi config trả `409 SUBMISSION_ID_REUSED`.
+- Queue overflow trả `503 BACKEND_UNAVAILABLE` không tạo record; retry key đã nhận vẫn trả acknowledgment cũ khi queue đầy.
+- Schema-invalid, thiếu idempotency key, contract version không hỗ trợ, invalid resource ID, run chưa xong, run lỗi và submission/run không tồn tại có error code/status theo contract.
+- Hai run thành công giữ riêng model identity/result/evidence; lỗi model tạo `failed` status với step và last-valid-state reference.
+- `GET .../results` kiểm tra schema, đường dẫn, SHA-256, kích thước và manifest trên `evidence_root/runs/<run_id>` mỗi lần đọc. Test sửa bytes xác nhận API không trả result khi digest sai.
+- `cargo clippy -p factorsbt-backend --all-targets --offline` và `cargo fmt --all -- --check` pass. CI chưa được cấu hình.
 
 ## Điều kiện hoàn thành
 
-- Các thao tác run/results thực sự chạy được và có kiểm chứng qua HTTP với controlled adapters.
-- Contract phản ánh hành vi triển khai; không công bố stable API hoặc exactly-once vượt bằng chứng.
-- Giới hạn persistence, restart, concurrency và truy cập được ghi rõ thay vì hứa khả năng chưa triển khai.
+- Các thao tác run/results thực sự chạy được và được kiểm chứng qua Rust HTTP service với controlled model/data fixtures.
+- Contract/OpenAPI phản ánh behavior đã triển khai; không công bố stable API hoặc exactly-once vượt bằng chứng.
+- Metadata/deduplication chỉ ở process; evidence local không tự xóa; không restart recovery, cancellation, streaming, artifact download, authentication hay hosted deployment.
+- Service chỉ bind loopback; defaults là hai active và 16 queued, có thể cấu hình khi khởi động.
 
 ## Tài liệu liên quan
 

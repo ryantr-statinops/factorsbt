@@ -1,6 +1,8 @@
 # MVP 1 model output and portfolio-admission rules
 
-**Status:** Accepted for the synthetic MVP only. Model invocation and portfolio transitions are not implemented yet.
+**Design status:** Accepted for the synthetic MVP only.
+
+**Implementation status:** Phase B implements the controlled model invocation, response validation, proposal conversion, and engine admission path in Rust. The typed Python backtest flow and full MVP acceptance remain in Stage 07.
 
 The [MVP scope](../product/mvp-scope.md) defines which output types exist. This document makes their selection and conversion behavior precise while preserving the rule that a proposal, order, and fill are separate events. Wire shapes and correlation identity are specified in the [MVP model exchange](../interfaces/model-exchanges.md).
 

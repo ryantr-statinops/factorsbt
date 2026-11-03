@@ -1,6 +1,8 @@
 # MVP 1 results and evidence references
 
-**Status:** Accepted MVP 1 result-contract design. It describes successful-run output and local evidence references; it does not provide persistent storage or an artifact-download endpoint.
+**Design status:** Accepted MVP 1 result-contract design.
+
+**Implementation status:** The local Rust backend writes and verifies successful-run evidence before publishing `succeeded`; the results endpoint verifies the stored artifacts again before returning the result. This does not provide persistent metadata storage or an artifact-download endpoint.
 
 The canonical [successful result schema](../../contracts/schemas/run-result.schema.json) is returned by `GET /v1/runs/{run_id}/results` only after the run reaches `succeeded`. A failed or unfinished run is reported by its status resource; an unavailable or failed result is never represented as a successful result with missing fields.
 

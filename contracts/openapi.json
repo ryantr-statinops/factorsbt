@@ -4,17 +4,18 @@
   "info": {
     "title": "FactorsBT MVP 1 local HTTP API",
     "version": "1.0.0",
-    "description": "Proposed local HTTP/JSON contract. Phase A implements only GET /healthz; run operations remain specifications."
+    "description": "Accepted MVP 1 HTTP/JSON contract. The loopback Rust service implements GET /healthz and the four /v1 run operations, with verification recorded in plan/implementation/06-backend-api.md. This local implementation has no public stability guarantee; the Python backtest SDK remains in Stage 07."
   },
   "paths": {
     "/healthz": {
       "get": {
         "operationId": "healthCheck",
         "summary": "Check the local backend process",
-        "description": "Confirms that the API process accepts requests. It does not assert worker readiness or run-store durability.",
+        "description": "Confirms that the local HTTP service responds after fixture registry, evidence directory, and workers have initialized. It does not mean any submitted run has completed.",
         "responses": {
           "200": {
             "description": "Backend process is responding.",
+            "headers": { "X-Request-ID": { "$ref": "#/components/headers/RequestId" } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } }
           },
           "500": { "$ref": "#/components/responses/InternalError" },
@@ -26,15 +27,59 @@
       "post": {
         "operationId": "submitRun",
         "summary": "Validate and enqueue a run",
-        "description": "Asynchronous submission. The caller must supply an Idempotency-Key and must not automatically retry after a lost acknowledgment.",
+        "description": "Asynchronous submission. The configuration must reference a registered data fixture and an HTTP model service on loopback; connectivity is exercised by the worker after admission. The caller must supply an Idempotency-Key and must not automatically retry after a lost acknowledgment.",
         "parameters": [ { "$ref": "#/components/parameters/IdempotencyKey" } ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "schemas/run-configuration.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "schemas/run-configuration.schema.json" },
+              "examples": {
+                "minimalValidSpotRun": {
+                  "summary": "Controlled synthetic single-spot run",
+                  "value": {
+                    "contract_version": "1.0.0",
+                    "simulation": {
+                      "start_at": "2026-01-05T16:00:00Z",
+                      "end_at": "2026-01-09T16:00:00Z",
+                      "calendar_id": "synthetic-daily-utc-v1"
+                    },
+                    "initial_portfolio": { "cash": "100000", "positions": [] },
+                    "instruments": [
+                      {
+                        "instrument_id": "SPOT_A",
+                        "instrument_type": "spot",
+                        "quote_currency": "USD",
+                        "price_tick": "0.01",
+                        "quantity_step": "0.001",
+                        "contract_multiplier": "1",
+                        "fee_bps": "0",
+                        "fee_per_unit": "0",
+                        "slippage_bps": "0"
+                      }
+                    ],
+                    "data": { "fixture_id": "mvp-synthetic", "fixture_version": "v1" },
+                    "model": {
+                      "adapter": "http_fixture",
+                      "model_id": "synthetic-model",
+                      "model_version": "v1",
+                      "endpoint": "http://127.0.0.1:8787/infer",
+                      "timeout_ms": 5000
+                    },
+                    "decision_policy": {
+                      "output_mode": "scores",
+                      "score_policy": { "top_k": 1, "derivative_score_targets": [] }
+                    }
+                  }
+                }
+              }
+            }
+          }
         },
         "responses": {
           "202": {
             "description": "One run was accepted, or the original acknowledgment was replayed for an equivalent submission.",
+            "headers": { "X-Request-ID": { "$ref": "#/components/headers/RequestId" } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SubmissionAccepted" } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
@@ -53,6 +98,7 @@
         "responses": {
           "200": {
             "description": "Submission identity and current run status.",
+            "headers": { "X-Request-ID": { "$ref": "#/components/headers/RequestId" } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SubmissionStatus" } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
@@ -70,6 +116,7 @@
         "responses": {
           "200": {
             "description": "Run lifecycle, current progress, and terminal failure when applicable.",
+            "headers": { "X-Request-ID": { "$ref": "#/components/headers/RequestId" } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunStatus" } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
@@ -86,7 +133,8 @@
         "parameters": [ { "$ref": "#/components/parameters/RunId" } ],
         "responses": {
           "200": {
-            "description": "Successful run summary, final portfolio, provenance, and local evidence references.",
+            "description": "Successful run summary, final portfolio, provenance, and local evidence references. The backend revalidates artifact path, size, digest, and manifest before each response.",
+            "headers": { "X-Request-ID": { "$ref": "#/components/headers/RequestId" } },
             "content": { "application/json": { "schema": { "$ref": "schemas/run-result.schema.json" } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },

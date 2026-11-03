@@ -1,6 +1,8 @@
 # MVP 1 synthetic collateral, exercise, and liquidation
 
-**Status:** Accepted for the synthetic MVP only. Risk controls and settlement code are not implemented yet.
+**Design status:** Accepted for the synthetic MVP only.
+
+**Implementation status:** The Rust engine implements controlled margin, collateral, settlement, maintenance, and liquidation primitives with acceptance tests. Full end-to-end MVP acceptance remains in Stage 07.
 
 This document defines fixed, transparent controls for synthetic fixtures. It does not model exchange/broker risk parameters or guarantee real-world solvency. Read it with the [instrument model](instrument-model.md), [synthetic accounting](synthetic-accounting.md), and [accepted MVP scope](../product/mvp-scope.md).
 

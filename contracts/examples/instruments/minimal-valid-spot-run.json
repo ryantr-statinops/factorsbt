@@ -30,7 +30,7 @@
     "adapter": "http_fixture",
     "model_id": "synthetic-model",
     "model_version": "v1",
-    "endpoint": "http://127.0.0.1:8787/model",
+    "endpoint": "http://127.0.0.1:8787/infer",
     "timeout_ms": 5000
   },
   "decision_policy": {

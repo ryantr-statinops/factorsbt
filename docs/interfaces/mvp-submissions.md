@@ -1,6 +1,8 @@
 # MVP 1 submission identity and failures
 
-**Status:** Accepted MVP 1 contract behavior for the in-process backend. It does not promise persistence, cross-process deduplication, or exactly-once execution.
+**Design status:** Accepted MVP 1 contract behavior for the in-process backend.
+
+**Implementation status:** Submission identity, atomic deduplication, queue overflow, lookups, and run-failure reporting are implemented and locally tested in Stage 06. The guarantee remains process-local; it does not promise persistence, cross-process deduplication, or exactly-once execution.
 
 ## Submission identity
 

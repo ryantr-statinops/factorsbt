@@ -1,10 +1,10 @@
 # Phase A local development
 
-**Status:** Verified on Windows with the MSVC target. This guide records the tested health-only slice.
+**Status:** Verified on Windows with the MSVC target. This guide records the Phase A health-only checks; Phase B Stage 06 later added the local run API described in the [MVP HTTP API](../interfaces/mvp-http-api.md).
 
 ## Scope
 
-Phase A implements the local `GET /healthz` path and synchronous Python `Client.health()` call. Run submission, simulation, pricing, persistence, and the other API paths remain specifications. The Python SDK has no runtime third-party dependencies. JSON Schema validation is a test-only dependency from `python-sdk/requirements-test.txt`.
+The Phase A verification recorded here covers the local `GET /healthz` path and synchronous Python `Client.health()` call. It did not test run submission or simulation. Those operations now have separate local Rust implementation evidence in [Stage 06](../../plan/implementation/06-backend-api.md); the Python SDK backtest flow, pricing acceptance suite, and persistence beyond process-local metadata/local evidence remain outside this Phase A guide. The Python SDK has no runtime third-party dependencies. JSON Schema validation is a test-only dependency from `python-sdk/requirements-test.txt`.
 
 ## Python SDK and contract examples
 

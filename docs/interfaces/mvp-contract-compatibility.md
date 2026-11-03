@@ -1,6 +1,6 @@
 # MVP 1 contract versioning and compatibility
 
-**Status:** Accepted MVP 1 compatibility rules. They govern the agreed contract design; they do not establish a stable or implemented public API.
+**Status:** Accepted MVP 1 compatibility rules. They govern the agreed contract design; local implementation and verification do not establish a stable public API.
 
 ## One contract set
 
@@ -34,6 +34,6 @@ Submission equality is separate from schema compatibility. It ignores JSON objec
 
 ## Implementation boundary
 
-The exact operation paths, schemas, lifecycle, error envelope, and compatibility policy are selected for the MVP contract. `GET /healthz` is the only operation implemented in Phase A. Run submission, polling resources, result retrieval, schema enforcement, and artifact access remain unimplemented until code and verification support them. Local artifact references do not define remote artifact retrieval.
+The exact operation paths, schemas, lifecycle, error envelope, and compatibility policy are selected for the MVP contract. Phase A implemented `GET /healthz`. Phase B Stage 06 implemented the four `/v1` run operations, local configuration validation, lifecycle and result retrieval, and evidence-integrity checks. These are local implementations without a public stability guarantee. Local artifact references do not define remote artifact retrieval; the typed Python backtest SDK and full MVP acceptance remain in Stage 07.
 
 See the [MVP HTTP API](mvp-http-api.md), [submission behavior](mvp-submissions.md), and [service contract overview](service-contracts.md).

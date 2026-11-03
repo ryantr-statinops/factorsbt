@@ -1,6 +1,8 @@
 # MVP 1 model requests and responses
 
-**Status:** Accepted MVP 1 correlated exchange design for a stateless local HTTP fixture. It does not implement inference, external credentials, automatic retries, or model fallback.
+**Design status:** Accepted MVP 1 correlated exchange design for a stateless local HTTP fixture.
+
+**Implementation status:** The Rust backend implements a local async HTTP client, controlled stateless fixture, correlated response validation, orchestration, and evidence capture. It does not add external model credentials, automatic retries, or model fallback; the typed Python backtest flow remains in Stage 07.
 
 The canonical schemas are [inference request](../../contracts/schemas/model-request.schema.json) and [model response](../../contracts/schemas/model-response.schema.json). Both use the shared [common definitions](../../contracts/schemas/common.schema.json), [instrument configuration](../../contracts/schemas/instrument.schema.json), and [snapshot](../../contracts/schemas/snapshot.schema.json).
 

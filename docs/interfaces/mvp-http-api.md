@@ -1,14 +1,16 @@
 # MVP 1 HTTP API
 
-**Status:** Accepted MVP 1 contract design. The run operations are not implemented and no public API stability guarantee exists yet.
+**Design status:** Accepted MVP 1 contract design.
 
-This is the initial loopback HTTP/JSON surface for the Python SDK. The Rust backend coordinates runs; the engine owns simulation state and financial outcomes. Phase A scopes implementation to `GET /healthz`; the endpoint itself is not implemented yet. The run operations remain specifications until their later implementation stages.
+**Implementation status:** The Rust backend implements the health operation and all four run operations for local loopback use. Stage 06 verification passed against controlled fixtures. This does not establish public API stability or hosted-service support.
+
+This is the loopback HTTP/JSON surface for the Python SDK. The Rust backend coordinates runs; the engine owns simulation state and financial outcomes. `GET /healthz` was verified in Phase A. The four run operations were implemented and exercised through the Rust service in Phase B Stage 06. The typed backtest SDK flow remains for Stage 07.
 
 ## Operations
 
 | Method and path | Purpose | Success |
 |---|---|---|
-| `GET /healthz` | Verify that the local backend accepts requests. It does not promise that a worker or run store is ready. | `200 OK` with service and contract version. |
+| `GET /healthz` | Verify that the local backend accepts requests after fixture, evidence path, and worker initialization. It does not indicate that a submitted run has completed. | `200 OK` with service and contract version. |
 | `POST /v1/runs` | Validate and enqueue one run configuration. The caller supplies an `Idempotency-Key` UUID. | `202 Accepted` with submission ID, run ID, and `queued` status. |
 | `GET /v1/submissions/{submission_id}` | Resolve an acknowledged or uncertain submission to its run and current status. | `200 OK` with submission and run identity. |
 | `GET /v1/runs/{run_id}` | Inspect run lifecycle, progress context, and terminal failure when present. | `200 OK` with current run status. |
@@ -26,7 +28,7 @@ The submission body is the versioned `RunConfiguration` contract assembled in th
 }
 ```
 
-This response is intentionally small and has no dependency on run persistence. A successful health check does not claim that run submission or simulation is available.
+This response is intentionally small and has no dependency on run persistence. The process loads the local fixture registry, creates the evidence directory, and starts the worker pool before it begins serving. A successful health check does not indicate that a submitted run has completed.
 
 ### Submission acknowledgment
 
@@ -73,10 +75,11 @@ The lifecycle is `queued → running → succeeded | failed`. `started_at` and `
 - There is no cancellation or streaming endpoint in MVP 1. A client wait deadline does not cancel backend work.
 - Run metadata and the submission deduplication map are in memory in the backend process. Evidence artifacts are written under a local run directory. Database storage, process-restart recovery, resumption, remote deployment, and cross-process deduplication are outside this contract.
 - The first run is local and loopback-only. No authentication mechanism is selected by this API specification.
-- Phase A does not implement a backtest execution endpoint. The planned Stage 02 health endpoint is the only runtime API in scope and remains unimplemented until its Rust service and Python client checks pass.
+- The service accepts only loopback bind addresses. `FACTORSBT_BIND_ADDR`, `FACTORSBT_MAX_ACTIVE_RUNS`, `FACTORSBT_MAX_QUEUED_RUNS`, `FACTORSBT_FIXTURE_DIR`, and `FACTORSBT_EVIDENCE_DIR` configure the local process. Defaults are `127.0.0.1:8080`, two active runs, sixteen queued runs, the checked-in fixture directory, and `.factorsbt/evidence`.
+- Queue overflow and shutdown rejection return `503 BACKEND_UNAVAILABLE` without creating a new submission. Repeating a recorded key with the same configuration returns the original acknowledgment even when the queue is full.
 
 Error bodies, submission retry rules, and error codes are specified in [submission identity and failures](mvp-submissions.md). The shared schemas, OpenAPI document, and compatibility rules are collected in [contract compatibility](mvp-contract-compatibility.md).
 
 ## Status and implementation boundary
 
-These operation definitions are Accepted contracts for MVP 1. A schema or API document is not evidence that an endpoint is executable. The health operation becomes Implemented only after the Rust service and Python health client pass the Phase A checks. The four run operations remain unimplemented until their corresponding implementation and verification exist.
+These operation definitions remain the Accepted contract for MVP 1. The local Rust health and run operations are Implemented with controlled service checks, but they are not declared stable. The Python backtest SDK and the full Phase B MVP acceptance gate remain incomplete.

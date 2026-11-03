@@ -1,10 +1,10 @@
 # Service contracts
 
-**Status:** Accepted MVP 1 contract design; executable behavior and public stability are not established.
+**Status:** Accepted MVP 1 contract design. Data, engine, orchestration and run API slices have local implementation evidence; public stability is not established.
 
-This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents; none is evidence that its runtime producer or consumer exists.
+This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents. The Rust backend and controlled local fixtures implement the Stage 03–06 slices; Stage 07 still needs to connect the typed Python backtest SDK and pass the full MVP acceptance gate.
 
-The [MVP 1 HTTP API](mvp-http-api.md) selects the initial operation paths and run lifecycle. The shared shapes and [compatibility rules](mvp-contract-compatibility.md) are documented; the run endpoints are not implemented or stable.
+The [MVP 1 HTTP API](mvp-http-api.md) selects the initial operation paths and run lifecycle. The shared shapes and [compatibility rules](mvp-contract-compatibility.md) are documented. The four run operations are implemented and locally verified, but are not declared stable.
 
 The current request shape and type-specific instrument requirements are summarized in [MVP run and instrument configuration](instrument-configuration.md); the JSON Schema files under `contracts/schemas/` are the wire-shape authority.
 

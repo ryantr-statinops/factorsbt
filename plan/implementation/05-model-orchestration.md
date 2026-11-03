@@ -1,6 +1,6 @@
 # Stage 05 — Model adapter và điều phối mô phỏng
 
-**Status:** Proposed
+**Status:** Implemented
 
 **Phase:** B — Backtest xuyên suốt
 
@@ -32,25 +32,29 @@ Nối snapshot, lời gọi mô hình và engine thành chu kỳ mô phỏng có
 
 ## Task → Commit
 
-| Thứ tự | Task và phạm vi commit | Commit dự kiến |
+| # | Kết quả đã commit | Commit |
 | --- | --- | --- |
-| 1 | Xây model adapter, validation và controlled service fixture | `feat(models): add correlated MVP inference adapter` |
-| 2 | Nối snapshot, model và engine thành decision cycle | `feat(orchestrator): coordinate simulation decision cycles` |
-| 3 | Xử lý failure/duplicate và ghi phản hồi, trạng thái bước | `feat(orchestrator): handle inference failures and duplicate responses` |
+| 31 | Controlled HTTP model fixture | `8a7b948 test(models): add controlled HTTP inference service` |
+| 32 | Async loopback HTTP client, timeout, không retry/redirect | `0e9acc2 feat(models): call the local correlated inference service` |
+| 33 | Validation ba output modes và correlation | `aaf5c3a feat(models): validate correlated decision outputs` |
+| 34 | Pending inference identity, stale/duplicate guard | `5836942 feat(orchestrator): guard inference response application` |
+| 35 | Data → snapshot → model → engine decision cycle | `259d2c8 feat(orchestrator): execute complete simulation cycles` |
+| 36 | Evidence writer và digest/size theo bytes lưu | `b72ef92 feat(evidence): persist traceable run artifacts` |
+| 37 | Failure evidence và last valid state | `9fb141b feat(orchestrator): preserve failed run evidence` |
+| 38 | Hai run đồng thời, response isolation và evidence riêng | `806e2ba test(orchestrator): verify concurrent run isolation` |
 
-## Kiểm chứng dự kiến
+## Kiểm chứng đã chạy
 
-- Một phản hồi chứa nhiều quyết định được xét thành nhóm trên cùng snapshot.
-- Request timeout, malformed output, phản hồi sai scenario/step/snapshot và phản hồi trễ có kết quả đúng chính sách.
-- Gửi lại/nhận trùng không tạo hai lần chuyển trạng thái cho một nhóm đã áp dụng trong phạm vi bảo đảm đã chọn.
-- Thay thời gian chờ dịch vụ không tự đổi simulation time khi policy không quy định ánh xạ.
-- Model state và dữ liệu nhạy cảm được xử lý theo ranh giới đã chấp nhận, không suy ra deterministic inference từ endpoint hoặc seed.
+- `cargo test -p factorsbt-backend --offline`: 50 tests pass sau khi hoàn thành Stage 06; suite bao gồm adapter, model validation, inference guard, orchestrator và concurrency.
+- Các kiểm tra trực tiếp bao phủ timeout, HTTP failure, response malformed, redirect không được theo, endpoint non-loopback, correlation mismatch/stale response và tách evidence cho hai run.
+- `cargo clippy -p factorsbt-backend --all-targets --offline` và `cargo fmt --all -- --check` pass ở lần xác minh Stage 06.
+- Đường chạy đầy đủ qua HTTP model fixture, engine, result và evidence được xác minh thêm tại [Stage 06](06-backend-api.md).
 
 ## Điều kiện hoàn thành
 
-- Chạy được một chu kỳ đầy đủ với model fixture và đường dịch vụ đã chọn trong phạm vi truy cập có thể xác minh.
-- Failure và duplicate có evidence; phản hồi không thể cập nhật sai scenario/step trong các trường hợp đã kiểm tra.
-- Engine vẫn sở hữu vốn/thực thi, orchestrator sở hữu điều phối và I/O.
+- Chạy được decision cycle với model fixture, engine và evidence; failure giữ ngữ cảnh inference/last valid state khi có.
+- Hai run đồng thời giữ correlation, portfolio và evidence riêng; response đảo thứ tự không bị gán chéo.
+- Engine sở hữu vốn/thực thi, orchestrator sở hữu điều phối và I/O. Việc triển khai Stage 05 không khẳng định inference có tính deterministic.
 
 ## Tài liệu liên quan
 

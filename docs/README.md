@@ -4,7 +4,7 @@ FactorsBT is API-first infrastructure for multi-asset backtesting, synchronized 
 
 ## Project status
 
-The repository contains accepted product and interface documentation, a verified Phase A foundation, and implemented local fixture/snapshot support from Phase B Stage 03. The Python SDK exposes a health client and the Rust backend exposes `GET /healthz`; the simulation engine and MVP run API are not implemented. Endpoint and schema descriptions remain specifications until their behavior has implementation and verification evidence.
+The repository contains accepted product and interface documentation, a verified Phase A foundation, and locally verified Phase B data, engine primitives, model orchestration, and run API behavior (Stages 03–06). The Rust backend exposes `GET /healthz` and the four `/v1` run operations. The Python SDK currently exposes health only; typed backtest configuration, submission, polling, and the complete MVP acceptance gate remain in Stage 07. The implemented local API has no public stability guarantee.
 
 The accepted technology direction is a pure Python SDK and a Rust backend/engine, communicating initially over HTTP/JSON. Acceptance records design intent, not implementation completion.
 

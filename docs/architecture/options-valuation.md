@@ -1,6 +1,8 @@
 # MVP 1 option valuation rules
 
-**Status:** Accepted pricing-method scope for the synthetic MVP. Pricing code is not implemented yet.
+**Design status:** Accepted pricing-method scope for the synthetic MVP.
+
+**Implementation status:** The Rust engine includes the synthetic quote, Black–Scholes, and CRR valuation paths with controlled checks. This does not claim real-market pricing fidelity or complete MVP acceptance.
 
 ## Pricing modes
 
