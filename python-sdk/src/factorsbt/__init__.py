@@ -11,6 +11,7 @@ from .types import (
 )
 from .client import Client, HealthResponse
 from .errors import FactorsBTError, HttpStatusError, ProtocolError, RequestTimeout, TransportError
+from .instruments import LinearFutureInstrument, OptionInstrument, SpotInstrument
 
 __all__ = [
     "Client",
@@ -18,9 +19,12 @@ __all__ = [
     "FactorsBTError",
     "HealthResponse",
     "HttpStatusError",
+    "LinearFutureInstrument",
+    "OptionInstrument",
     "ProtocolError",
     "RequestTimeout",
     "TransportError",
+    "SpotInstrument",
     "UtcInstant",
     "WireDecimal",
     "decimal_to_wire",
