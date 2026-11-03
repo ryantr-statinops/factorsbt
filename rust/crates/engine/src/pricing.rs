@@ -18,6 +18,8 @@ pub enum PricingError {
     InvalidTimestamp,
     NonFiniteInput,
     NonFiniteIntermediate,
+    InvalidTreeSteps,
+    InvalidTreeProbability,
     ArithmeticOverflow,
 }
 
@@ -35,6 +37,10 @@ impl fmt::Display for PricingError {
             }
             Self::NonFiniteIntermediate => {
                 f.write_str("option pricer produced a non-finite intermediate")
+            }
+            Self::InvalidTreeSteps => f.write_str("CRR steps must be in [2, 4096]"),
+            Self::InvalidTreeProbability => {
+                f.write_str("CRR risk-neutral probability is outside [0, 1]")
             }
             Self::ArithmeticOverflow => f.write_str("pricing decimal arithmetic overflow"),
         }
@@ -177,6 +183,95 @@ pub fn black_scholes_european_value(
         return Err(PricingError::NonFiniteIntermediate);
     }
     decimal_mark(price.max(0.0))
+}
+
+/// Price an American option with a Cox–Ross–Rubinstein recombining tree.
+pub fn crr_american_value(
+    option_type: ContractOptionType,
+    inputs: ValidatedPricingInputs,
+    steps: u16,
+) -> Result<Decimal, PricingError> {
+    if !(2..=4096).contains(&steps) {
+        return Err(PricingError::InvalidTreeSteps);
+    }
+    let spot = inputs.underlying_price;
+    let strike = inputs.strike;
+    let rate = inputs.risk_free_rate;
+    let volatility = inputs.annualized_volatility;
+    let time = inputs.time_to_expiry_years;
+    if time == 0.0 {
+        return decimal_mark(match option_type {
+            ContractOptionType::Call => (spot - strike).max(0.0),
+            ContractOptionType::Put => (strike - spot).max(0.0),
+        });
+    }
+
+    let step_time = time / f64::from(steps);
+    let up = (volatility * step_time.sqrt()).exp();
+    let down = 1.0 / up;
+    let growth = (rate * step_time).exp();
+    let denominator = up - down;
+    if !step_time.is_finite()
+        || step_time <= 0.0
+        || !up.is_finite()
+        || !down.is_finite()
+        || !growth.is_finite()
+        || !denominator.is_finite()
+        || denominator <= 0.0
+    {
+        return Err(PricingError::NonFiniteIntermediate);
+    }
+    let probability = (growth - down) / denominator;
+    if !probability.is_finite() {
+        return Err(PricingError::NonFiniteIntermediate);
+    }
+    if !(0.0..=1.0).contains(&probability) {
+        return Err(PricingError::InvalidTreeProbability);
+    }
+    let discount = (-rate * step_time).exp();
+    if !discount.is_finite() {
+        return Err(PricingError::NonFiniteIntermediate);
+    }
+    if spot == 0.0 {
+        return decimal_mark(match option_type {
+            ContractOptionType::Call => 0.0,
+            ContractOptionType::Put => strike,
+        });
+    }
+
+    let log_step = volatility * step_time.sqrt();
+    let mut values = Vec::with_capacity(usize::from(steps) + 1);
+    for up_moves in 0..=steps {
+        let log_move = (2.0 * f64::from(up_moves) - f64::from(steps)) * log_step;
+        let node_spot = spot * log_move.exp();
+        if !log_move.is_finite() || !node_spot.is_finite() {
+            return Err(PricingError::NonFiniteIntermediate);
+        }
+        values.push(intrinsic_f64(option_type, node_spot, strike));
+    }
+
+    for level in (0..steps).rev() {
+        for up_moves in 0..=level {
+            let continuation = discount
+                * (probability * values[usize::from(up_moves) + 1]
+                    + (1.0 - probability) * values[usize::from(up_moves)]);
+            let log_move = (2.0 * f64::from(up_moves) - f64::from(level)) * log_step;
+            let node_spot = spot * log_move.exp();
+            if !continuation.is_finite() || !log_move.is_finite() || !node_spot.is_finite() {
+                return Err(PricingError::NonFiniteIntermediate);
+            }
+            values[usize::from(up_moves)] =
+                continuation.max(intrinsic_f64(option_type, node_spot, strike));
+        }
+    }
+    decimal_mark(values[0])
+}
+
+fn intrinsic_f64(option_type: ContractOptionType, spot: f64, strike: f64) -> f64 {
+    match option_type {
+        ContractOptionType::Call => (spot - strike).max(0.0),
+        ContractOptionType::Put => (strike - spot).max(0.0),
+    }
 }
 
 fn normal_cdf(value: f64) -> f64 {
@@ -481,5 +576,46 @@ mod tests {
         let inputs = validated("1", "100", "0", "0.2", 1.0);
         let value = black_scholes_european_value(ContractOptionType::Call, inputs).unwrap();
         assert!(value >= Decimal::ZERO);
+    }
+
+    #[test]
+    fn crr_matches_accepted_american_reference_values_at_256_steps() {
+        let inputs = validated("100", "100", "0.05", "0.2", 1.0);
+        let call = crr_american_value(ContractOptionType::Call, inputs, 256).unwrap();
+        let put = crr_american_value(ContractOptionType::Put, inputs, 256).unwrap();
+        assert!((call - decimal("10.44277600")).abs() < decimal("0.00000002"));
+        assert!((put - decimal("6.08725833")).abs() < decimal("0.00000002"));
+    }
+
+    #[test]
+    fn crr_rejects_out_of_bounds_steps_and_invalid_risk_neutral_probability() {
+        let inputs = validated("100", "100", "0.05", "0.2", 1.0);
+        assert_eq!(
+            crr_american_value(ContractOptionType::Call, inputs, 1),
+            Err(PricingError::InvalidTreeSteps)
+        );
+        assert_eq!(
+            crr_american_value(ContractOptionType::Call, inputs, 4097),
+            Err(PricingError::InvalidTreeSteps)
+        );
+        let invalid_probability = validated("100", "100", "1", "0.0001", 1.0);
+        assert_eq!(
+            crr_american_value(ContractOptionType::Put, invalid_probability, 2),
+            Err(PricingError::InvalidTreeProbability)
+        );
+    }
+
+    #[test]
+    fn crr_returns_intrinsic_at_zero_time_and_american_put_value_at_zero_spot() {
+        let expiry = validated("110", "100", "0.05", "0.2", 0.0);
+        assert_eq!(
+            crr_american_value(ContractOptionType::Call, expiry, 256).unwrap(),
+            decimal("10")
+        );
+        let zero_spot = validated("0", "100", "0.05", "0.2", 1.0);
+        assert_eq!(
+            crr_american_value(ContractOptionType::Put, zero_spot, 256).unwrap(),
+            decimal("100")
+        );
     }
 }
