@@ -77,6 +77,7 @@ string_contract_type!(
 pub mod instruments;
 pub mod model;
 pub mod outcomes;
+pub mod validation;
 
 pub use instruments::{
     Currency, Instrument, LinearFutureInstrument, OptionInstrument, SpotInstrument,
