@@ -3,9 +3,11 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod api_errors;
 pub mod backend_config;
 pub mod dispatcher;
 pub mod evidence;
+pub mod ids;
 pub mod inference_guard;
 pub mod model_client;
 pub mod model_fixture;

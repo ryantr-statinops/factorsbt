@@ -2,6 +2,7 @@
 //! with the admission operations that begin using them.
 
 use crate::backend_config::QueueLimits;
+use crate::ids::new_uuid_v4;
 use factorsbt_contracts::{
     outcomes::{
         RunFailure, RunLifecycle, RunProgress, RunResult, RunStatus, SubmissionAccepted,
@@ -10,18 +11,11 @@ use factorsbt_contracts::{
     run_configuration::RunConfiguration,
     UtcTimestamp, Uuid,
 };
-use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
-    },
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{Arc, Mutex},
 };
 use tokio::sync::Notify;
-
-static RUN_ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct RunStore {
@@ -293,7 +287,7 @@ impl RunStore {
             }
 
             notify_count += promote_waiting_runs(&mut state, self.limits);
-            let run_id = new_run_id();
+            let run_id = new_uuid_v4();
             let acknowledgement = SubmissionAccepted {
                 submission_id: submission_id.clone(),
                 run_id: run_id.clone(),
@@ -391,31 +385,6 @@ fn promote_waiting_runs(state: &mut QueueState, limits: QueueLimits) -> usize {
         promoted += 1;
     }
     promoted
-}
-
-fn new_run_id() -> Uuid {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    let sequence = RUN_ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let digest = Sha256::digest(format!("{}:{now}:{sequence}", std::process::id()).as_bytes());
-    let mut bytes = [0_u8; 16];
-    bytes.copy_from_slice(&digest[..16]);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex = bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    Uuid::new(format!(
-        "{}-{}-{}-{}-{}",
-        &hex[0..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..32]
-    ))
-    .expect("SHA-256-derived run ID has valid UUID wire form")
 }
 
 #[cfg(test)]
