@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod admission;
 mod clock;
 mod decisions;
 mod execution;
@@ -11,6 +12,7 @@ mod options;
 mod portfolio;
 mod pricing;
 
+pub use admission::{admit_target_group, AdmissionAdjustment, AdmissionError, AdmissionResult};
 pub use clock::{ClockError, ClockEvent, SimulationClock, SimulationEventKind};
 pub use decisions::{
     response_to_proposal, scores_to_targets, DecisionError, DecisionProposal, InstrumentTarget,

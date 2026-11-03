@@ -366,6 +366,112 @@ impl PortfolioState {
         Ok(())
     }
 
+    /// Build a feasible, isolated projection for a complete target-position
+    /// group. Cash flows are valued at the decision snapshot mark; later fills
+    /// must recheck capacity at their execution opens.
+    pub fn project_target_positions(
+        &self,
+        targets: &[(String, Decimal)],
+    ) -> Result<Self, EngineError> {
+        let mut candidate = self.clone();
+        let mut seen = HashSet::new();
+        let mut ordered = targets.iter().collect::<Vec<_>>();
+        ordered.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut cash_delta = Decimal::ZERO;
+
+        for (id, target_quantity) in ordered {
+            if !seen.insert(id.as_str()) {
+                return Err(EngineError::DuplicateInstrument(id.clone()));
+            }
+            let instrument = self
+                .instruments
+                .get(id)
+                .ok_or_else(|| EngineError::MissingPosition(id.clone()))?;
+            let position = self
+                .positions
+                .get(id)
+                .ok_or_else(|| EngineError::MissingPosition(id.clone()))?;
+            validate_quantity(instrument, *target_quantity)
+                .map_err(|()| EngineError::InvalidPostingQuantity(id.clone()))?;
+            let delta = target_quantity
+                .checked_sub(position.quantity)
+                .ok_or(EngineError::ArithmeticOverflow("target quantity delta"))?;
+            let multiplier = decimal(instrument_multiplier(instrument).as_str())?;
+            let event_cash_delta = match instrument {
+                Instrument::Spot(_) | Instrument::Option(_) => delta
+                    .checked_mul(position.mark)
+                    .and_then(|value| value.checked_mul(multiplier))
+                    .and_then(|value| Decimal::ZERO.checked_sub(value))
+                    .ok_or(EngineError::ArithmeticOverflow("target cash flow"))?,
+                Instrument::LinearFuture(_) => {
+                    let close_quantity = if position.quantity.is_zero()
+                        || target_quantity.is_zero()
+                        || target_quantity.is_sign_positive()
+                            != position.quantity.is_sign_positive()
+                    {
+                        position.quantity
+                    } else if target_quantity.abs() < position.quantity.abs() {
+                        position
+                            .quantity
+                            .checked_sub(*target_quantity)
+                            .ok_or(EngineError::ArithmeticOverflow("future close quantity"))?
+                    } else {
+                        Decimal::ZERO
+                    };
+                    close_quantity
+                        .checked_mul(
+                            position
+                                .mark
+                                .checked_sub(position.settlement_basis.unwrap_or(position.mark))
+                                .ok_or(EngineError::ArithmeticOverflow("future close variation"))?,
+                        )
+                        .and_then(|value| value.checked_mul(multiplier))
+                        .ok_or(EngineError::ArithmeticOverflow("future close variation"))?
+                }
+            };
+            cash_delta = cash_delta
+                .checked_add(event_cash_delta)
+                .ok_or(EngineError::ArithmeticOverflow("group cash flow"))?;
+            candidate
+                .positions
+                .get_mut(id)
+                .expect("position was validated")
+                .quantity = *target_quantity;
+        }
+
+        candidate.cash = candidate
+            .cash
+            .checked_add(cash_delta)
+            .ok_or(EngineError::ArithmeticOverflow("group cash posting"))?
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        let (initial, maintenance) =
+            calculate_margin_requirements(&candidate.instruments, &candidate.positions, None)?;
+        let (reserved_cash, reserved_underlying, cash_encumbrance, maintenance_cash_encumbrance) =
+            calculate_delivery_reservations(
+                &candidate.instruments,
+                &candidate.positions,
+                initial,
+                maintenance,
+                None,
+            )?;
+        validate_underlying_collateral(
+            &candidate.instruments,
+            &candidate.positions,
+            &reserved_underlying,
+            None,
+        )?;
+        if candidate.cash < Decimal::ZERO || candidate.cash < cash_encumbrance {
+            return Err(EngineError::InsufficientCash);
+        }
+        candidate.initial_margin_requirement = initial;
+        candidate.maintenance_margin_requirement = maintenance;
+        candidate.reserved_cash = reserved_cash;
+        candidate.reserved_underlying = reserved_underlying;
+        candidate.cash_encumbrance = cash_encumbrance;
+        candidate.maintenance_cash_encumbrance = maintenance_cash_encumbrance;
+        Ok(candidate)
+    }
+
     pub(super) fn position_mut(&mut self, instrument_id: &str) -> Option<&mut InstrumentPosition> {
         self.positions.get_mut(instrument_id)
     }
