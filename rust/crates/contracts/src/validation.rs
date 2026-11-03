@@ -73,6 +73,11 @@ pub fn validate_run_configuration(value: &Value) -> Result<(), Vec<String>> {
     validate_document(RUN_CONFIGURATION, "run configuration", value)
 }
 
+/// Validate a successful run result against the versioned local schema.
+pub fn validate_run_result_document(value: &Value) -> Result<(), Vec<String>> {
+    validate_document(RUN_RESULT, "run result", value)
+}
+
 /// Validate a model response against the versioned local Draft 2020-12 schema.
 pub fn validate_model_response_document(value: &Value) -> Result<(), Vec<String>> {
     validate_document(MODEL_RESPONSE, "model response", value)
@@ -145,6 +150,21 @@ mod tests {
         let mut value = minimal_configuration();
         value["unexpected"] = Value::Bool(true);
         assert!(validate_run_configuration(&value).is_err());
+    }
+
+    #[test]
+    fn validates_shared_successful_result_and_rejects_missing_evidence_digest() {
+        let valid: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/results/successful-run.valid.json"
+        ))
+        .unwrap();
+        assert_eq!(validate_run_result_document(&valid), Ok(()));
+
+        let invalid: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/results/missing-artifact-hash.schema-invalid.json"
+        ))
+        .unwrap();
+        assert!(validate_run_result_document(&invalid).is_err());
     }
 
     #[test]

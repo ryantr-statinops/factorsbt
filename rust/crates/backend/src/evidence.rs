@@ -232,6 +232,14 @@ fn write_report_artifacts(
     write_json_artifact(
         &run_directory,
         &created_at,
+        EvidenceKind::Fill,
+        "evidence/liquidations.json",
+        &json!(report.liquidation_events),
+        &mut artifacts,
+    )?;
+    write_json_artifact(
+        &run_directory,
+        &created_at,
         EvidenceKind::Settlement,
         "evidence/settlements.json",
         &json!(report.settlement_events),
@@ -240,6 +248,7 @@ fn write_report_artifacts(
     let ledger = report
         .execution_events
         .iter()
+        .chain(report.liquidation_events.iter())
         .chain(report.settlement_events.iter())
         .flat_map(collect_ledger_postings)
         .collect::<Vec<_>>();
@@ -605,6 +614,7 @@ fn summary_value(report: &OrchestrationReport, failure: Option<&OrchestrationErr
         "final_portfolio":{
             "cash":report.finalization.cash.to_string(),
             "nav":report.finalization.nav.to_string(),
+            "snapshot":&report.final_portfolio,
             "open_positions":report.finalization.open_positions.iter().map(|position| json!({
                 "instrument_id":position.instrument_id,
                 "quantity":position.quantity.to_string(),
@@ -846,6 +856,22 @@ mod tests {
             liquidation_events: Vec::new(),
             settlement_events: Vec::new(),
             risk_events: Vec::new(),
+            final_portfolio: factorsbt_contracts::PortfolioSnapshot {
+                cash: factorsbt_contracts::DecimalString::new("100000").unwrap(),
+                nav: factorsbt_contracts::DecimalString::new("100000").unwrap(),
+                positions: vec![factorsbt_contracts::temporal::PositionSnapshot {
+                    instrument_id: factorsbt_contracts::InstrumentId::new("SPOT_A").unwrap(),
+                    quantity: factorsbt_contracts::DecimalString::new("1").unwrap(),
+                    mark: factorsbt_contracts::DecimalString::new("100").unwrap(),
+                    market_value: factorsbt_contracts::DecimalString::new("100").unwrap(),
+                }],
+                reserved_cash: factorsbt_contracts::DecimalString::new("0").unwrap(),
+                reserved_underlying: Vec::new(),
+                initial_margin_requirement: factorsbt_contracts::DecimalString::new("0").unwrap(),
+                maintenance_margin_requirement: factorsbt_contracts::DecimalString::new("0")
+                    .unwrap(),
+                free_buying_power: factorsbt_contracts::DecimalString::new("100000").unwrap(),
+            },
             finalization: RunFinalization {
                 status: FinalRunStatus::Succeeded,
                 failure_reason: None,
@@ -877,6 +903,21 @@ mod tests {
         assert_eq!(stored_fixture.as_slice(), fixture.dataset_bytes.as_ref());
         assert_eq!(sha256(&stored_fixture), fixture.digest_sha256);
         verify_artifacts(&bundle.run_directory, &bundle.artifacts).unwrap();
+        let result = crate::results::build_run_result(
+            &configuration,
+            &fixture,
+            &report,
+            UtcTimestamp::new("2026-01-06T09:00:00Z").unwrap(),
+            &bundle,
+        )
+        .unwrap();
+        assert_eq!(
+            result.status,
+            factorsbt_contracts::outcomes::SuccessfulStatus::Succeeded
+        );
+        assert_eq!(result.counts.decision_steps, 0);
+        assert_eq!(result.total_fees.as_str(), "0");
+        crate::results::verify_result_evidence(&bundle.run_directory, &result).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 

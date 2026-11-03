@@ -11,4 +11,5 @@ pub mod model_client;
 pub mod model_fixture;
 pub mod model_validation;
 pub mod orchestrator;
+pub mod results;
 pub mod run_store;

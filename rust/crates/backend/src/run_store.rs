@@ -73,6 +73,14 @@ pub enum RunStoreTransitionError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunResultLookupError {
+    NotFound,
+    NotSucceeded,
+    Failed,
+    ResultUnavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueueSnapshot {
     pub active_runs: usize,
     pub queued_runs: usize,
@@ -143,6 +151,25 @@ impl RunStore {
             .runs
             .get(run_id)
             .cloned()
+    }
+
+    pub fn get_result(&self, run_id: &Uuid) -> Result<RunResult, RunResultLookupError> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let run = state
+            .runs
+            .get(run_id)
+            .ok_or(RunResultLookupError::NotFound)?;
+        match run.status.status {
+            RunLifecycle::Queued | RunLifecycle::Running => Err(RunResultLookupError::NotSucceeded),
+            RunLifecycle::Failed => Err(RunResultLookupError::Failed),
+            RunLifecycle::Succeeded => run
+                .result
+                .clone()
+                .ok_or(RunResultLookupError::ResultUnavailable),
+        }
     }
 
     pub fn mark_running(
@@ -585,7 +612,38 @@ mod tests {
             store.get_submission(&submission_id()).unwrap().status,
             RunLifecycle::Failed
         );
+        assert_eq!(
+            store.get_result(&accepted.run_id),
+            Err(RunResultLookupError::Failed)
+        );
         assert_eq!(store.queue_snapshot().active_runs, 1);
         assert!(store.mark_running(&accepted.run_id, timestamp()).is_err());
+    }
+
+    #[test]
+    fn result_is_visible_only_after_a_successful_terminal_transition() {
+        let store = RunStore::new(QueueLimits::default());
+        let accepted = store
+            .accept_submission(submission_id(), configuration(), timestamp())
+            .unwrap()
+            .acknowledgement;
+        assert_eq!(
+            store.get_result(&accepted.run_id),
+            Err(RunResultLookupError::NotSucceeded)
+        );
+        store.mark_running(&accepted.run_id, timestamp()).unwrap();
+        let mut result: RunResult = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/results/successful-run.valid.json"
+        ))
+        .unwrap();
+        result.run_id = accepted.run_id.clone();
+        store
+            .mark_succeeded(
+                &accepted.run_id,
+                UtcTimestamp::new("2026-01-05T16:01:00Z").unwrap(),
+                result.clone(),
+            )
+            .unwrap();
+        assert_eq!(store.get_result(&accepted.run_id), Ok(result));
     }
 }

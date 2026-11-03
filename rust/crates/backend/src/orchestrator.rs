@@ -64,6 +64,7 @@ pub struct OrchestrationReport {
     pub settlement_events: Vec<Value>,
     pub risk_events: Vec<Value>,
     pub finalization: RunFinalization,
+    pub final_portfolio: PortfolioSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +171,7 @@ impl RunProgress {
         }
         let finalization =
             finalize_run_state(portfolio, &mut pending, Some(error.to_string())).ok()?;
+        let final_portfolio = portfolio_snapshot(portfolio).ok()?;
         Some(OrchestrationReport {
             identity: self.identity.clone(),
             fixture_id: self.fixture_id.clone(),
@@ -181,6 +183,7 @@ impl RunProgress {
             settlement_events: self.settlement_events.clone(),
             risk_events: self.risk_events.clone(),
             finalization,
+            final_portfolio,
         })
     }
 }
@@ -550,6 +553,8 @@ where
                 .unwrap_or("run failed"),
         ));
     }
+    let final_portfolio = portfolio_snapshot(&portfolio)
+        .map_err(|error| OrchestrationError::at("run finalization snapshot", error))?;
     Ok(OrchestrationReport {
         identity,
         fixture_id: progress.fixture_id.clone(),
@@ -561,6 +566,7 @@ where
         settlement_events: progress.settlement_events.clone(),
         risk_events: progress.risk_events.clone(),
         finalization,
+        final_portfolio,
     })
 }
 
