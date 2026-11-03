@@ -16,6 +16,7 @@ use std::{
     },
     time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::Notify;
 
 static RUN_ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -23,11 +24,13 @@ static RUN_ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub struct RunStore {
     limits: QueueLimits,
     state: Arc<Mutex<QueueState>>,
+    ready: Arc<Notify>,
 }
 
 #[derive(Debug, Default)]
 struct QueueState {
     queued: VecDeque<Uuid>,
+    starting: VecDeque<Uuid>,
     active: HashSet<Uuid>,
     submissions: HashMap<Uuid, StoredSubmission>,
     runs: HashMap<Uuid, StoredRun>,
@@ -77,6 +80,7 @@ impl RunStore {
         Self {
             limits,
             state: Arc::new(Mutex::new(QueueState::default())),
+            ready: Arc::new(Notify::new()),
         }
     }
 
@@ -115,58 +119,122 @@ impl RunStore {
         configuration: RunConfiguration,
         submitted_at: UtcTimestamp,
     ) -> Result<SubmissionOutcome, SubmissionStoreError> {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(existing) = state.submissions.get(&submission_id) {
-            return if existing.configuration == configuration {
-                Ok(SubmissionOutcome {
-                    acknowledgement: existing.acknowledgement.clone(),
-                    created: false,
-                })
-            } else {
-                Err(SubmissionStoreError::SubmissionIdReused)
-            };
-        }
+        let mut notify_count = 0;
+        let outcome = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(existing) = state.submissions.get(&submission_id) {
+                return if existing.configuration == configuration {
+                    Ok(SubmissionOutcome {
+                        acknowledgement: existing.acknowledgement.clone(),
+                        created: false,
+                    })
+                } else {
+                    Err(SubmissionStoreError::SubmissionIdReused)
+                };
+            }
 
-        let run_id = new_run_id();
-        let acknowledgement = SubmissionAccepted {
-            submission_id: submission_id.clone(),
-            run_id: run_id.clone(),
-            status: factorsbt_contracts::outcomes::QueuedStatus::Queued,
-            submitted_at: submitted_at.clone(),
-        };
-        state.queued.push_back(run_id.clone());
-        state.submissions.insert(
-            submission_id.clone(),
-            StoredSubmission {
-                configuration: configuration.clone(),
-                acknowledgement: acknowledgement.clone(),
-            },
-        );
-        state.runs.insert(
-            run_id.clone(),
-            StoredRun {
-                submission_id,
-                configuration,
-                status: RunStatus {
-                    run_id,
-                    status: RunLifecycle::Queued,
-                    submitted_at,
-                    started_at: None,
-                    finished_at: None,
-                    progress: None,
-                    failure: None,
+            notify_count += promote_waiting_runs(&mut state, self.limits);
+            let run_id = new_run_id();
+            let acknowledgement = SubmissionAccepted {
+                submission_id: submission_id.clone(),
+                run_id: run_id.clone(),
+                status: factorsbt_contracts::outcomes::QueuedStatus::Queued,
+                submitted_at: submitted_at.clone(),
+            };
+            if state.active.len() < self.limits.max_active_runs {
+                state.active.insert(run_id.clone());
+                state.starting.push_back(run_id.clone());
+                notify_count += 1;
+            } else if state.queued.len() < self.limits.max_queued_runs {
+                state.queued.push_back(run_id.clone());
+            } else {
+                return Err(SubmissionStoreError::QueueFull);
+            }
+            state.submissions.insert(
+                submission_id.clone(),
+                StoredSubmission {
+                    configuration: configuration.clone(),
+                    acknowledgement: acknowledgement.clone(),
                 },
-                result: None,
-            },
-        );
-        Ok(SubmissionOutcome {
-            acknowledgement,
-            created: true,
-        })
+            );
+            state.runs.insert(
+                run_id.clone(),
+                StoredRun {
+                    submission_id,
+                    configuration,
+                    status: RunStatus {
+                        run_id,
+                        status: RunLifecycle::Queued,
+                        submitted_at,
+                        started_at: None,
+                        finished_at: None,
+                        progress: None,
+                        failure: None,
+                    },
+                    result: None,
+                },
+            );
+            SubmissionOutcome {
+                acknowledgement,
+                created: true,
+            }
+        };
+        self.notify_workers(notify_count);
+        Ok(outcome)
     }
+
+    pub async fn next_reserved_run(&self) -> Uuid {
+        loop {
+            let notified = self.ready.notified();
+            if let Some(run_id) = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .starting
+                .pop_front()
+            {
+                return run_id;
+            }
+            notified.await;
+        }
+    }
+
+    pub fn finish_active_run(&self, run_id: &Uuid) -> bool {
+        let promoted = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if !state.active.remove(run_id) {
+                return false;
+            }
+            promote_waiting_runs(&mut state, self.limits)
+        };
+        self.notify_workers(promoted);
+        true
+    }
+
+    fn notify_workers(&self, count: usize) {
+        for _ in 0..count {
+            self.ready.notify_one();
+        }
+    }
+}
+
+fn promote_waiting_runs(state: &mut QueueState, limits: QueueLimits) -> usize {
+    let mut promoted = 0;
+    while state.active.len() < limits.max_active_runs {
+        let Some(run_id) = state.queued.pop_front() else {
+            break;
+        };
+        state.active.insert(run_id.clone());
+        state.starting.push_back(run_id);
+        promoted += 1;
+    }
+    promoted
 }
 
 fn new_run_id() -> Uuid {
@@ -248,7 +316,8 @@ mod tests {
             .unwrap();
         assert!(!repeated.created);
         assert_eq!(repeated.acknowledgement, first.acknowledgement);
-        assert_eq!(store.queue_snapshot().queued_runs, 1);
+        assert_eq!(store.queue_snapshot().active_runs, 1);
+        assert_eq!(store.queue_snapshot().queued_runs, 0);
 
         let mut changed = configuration();
         changed.model.model_version = factorsbt_contracts::Identifier::new("v2").unwrap();
@@ -256,7 +325,8 @@ mod tests {
             store.accept_submission(submission_id(), changed, timestamp()),
             Err(SubmissionStoreError::SubmissionIdReused)
         );
-        assert_eq!(store.queue_snapshot().queued_runs, 1);
+        assert_eq!(store.queue_snapshot().active_runs, 1);
+        assert_eq!(store.queue_snapshot().queued_runs, 0);
         assert_eq!(
             store.record_counts(),
             StoreRecordCounts {
@@ -329,7 +399,8 @@ mod tests {
         assert!(outcomes
             .iter()
             .all(|outcome| outcome.acknowledgement == outcomes[0].acknowledgement));
-        assert_eq!(store.queue_snapshot().queued_runs, 1);
+        assert_eq!(store.queue_snapshot().active_runs, 1);
+        assert_eq!(store.queue_snapshot().queued_runs, 0);
         assert_eq!(store.record_counts().runs, 1);
     }
 }
