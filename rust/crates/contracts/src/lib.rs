@@ -182,9 +182,8 @@ fn is_utc_timestamp(value: &str) -> bool {
     [hour, minute, second]
         .iter()
         .all(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()))
-        && fraction.map_or(true, |part| {
-            !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())
-        })
+        && fraction
+            .is_none_or(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 #[cfg(test)]
