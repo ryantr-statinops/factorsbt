@@ -20,8 +20,12 @@ pub enum EngineError {
     InvalidInitialCash,
     InvalidInitialPosition(String),
     InvalidPostingQuantity(String),
+    InvalidTradeQuantity(String),
+    UnsupportedTradeInstrument(String),
+    InvalidExecutionPrice,
     MissingPosition(String),
     InsufficientInitialMargin,
+    InsufficientCash,
     ArithmeticOverflow(&'static str),
     FixtureTimeline(String),
 }
@@ -40,10 +44,16 @@ impl fmt::Display for EngineError {
             Self::InvalidInitialCash => f.write_str("initial cash cannot be negative"),
             Self::InvalidInitialPosition(id) => write!(f, "invalid initial quantity for {id}"),
             Self::InvalidPostingQuantity(id) => write!(f, "invalid posting quantity for {id}"),
+            Self::InvalidTradeQuantity(id) => write!(f, "invalid trade quantity for {id}"),
+            Self::UnsupportedTradeInstrument(id) => {
+                write!(f, "spot execution requested for non-spot instrument {id}")
+            }
+            Self::InvalidExecutionPrice => f.write_str("execution price must be positive"),
             Self::MissingPosition(id) => write!(f, "posting references unknown instrument {id}"),
             Self::InsufficientInitialMargin => {
                 f.write_str("initial cash does not cover initial margin")
             }
+            Self::InsufficientCash => f.write_str("spot execution would make cash negative"),
             Self::ArithmeticOverflow(context) => {
                 write!(f, "decimal arithmetic overflow: {context}")
             }
@@ -286,7 +296,7 @@ impl PortfolioState {
     }
 }
 
-fn decimal(value: &str) -> Result<Decimal, EngineError> {
+pub(super) fn decimal(value: &str) -> Result<Decimal, EngineError> {
     Decimal::from_str(value).map_err(|_| EngineError::InvalidDecimal(value.to_owned()))
 }
 
@@ -298,7 +308,7 @@ fn instrument_id(instrument: &Instrument) -> &InstrumentId {
     }
 }
 
-fn validate_quantity(instrument: &Instrument, quantity: Decimal) -> Result<(), ()> {
+pub(super) fn validate_quantity(instrument: &Instrument, quantity: Decimal) -> Result<(), ()> {
     let step = decimal(instrument_fields(instrument).1.as_str()).map_err(|_| ())?;
     if step <= Decimal::ZERO || quantity % step != Decimal::ZERO {
         return Err(());
