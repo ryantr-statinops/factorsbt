@@ -1,6 +1,7 @@
 //! Run operations, engine outcome, result, and evidence wire payloads.
 
 use crate::model::OutputMode;
+use crate::temporal::PortfolioSnapshot;
 use crate::{DecimalString, Identifier, InstrumentId, UtcTimestamp, Uuid};
 use serde::{Deserialize, Serialize};
 
@@ -394,7 +395,7 @@ pub struct RunResult {
     pub initial_cash: DecimalString,
     pub total_fees: DecimalString,
     pub counts: ResultCounts,
-    pub portfolio: serde_json::Value,
+    pub portfolio: PortfolioSnapshot,
     pub provenance: ResultProvenance,
     pub evidence: Vec<EvidenceArtifactRef>,
 }

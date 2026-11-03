@@ -8,9 +8,10 @@ fn request_and_all_model_response_modes_deserialize_shared_examples() {
     .unwrap();
     assert_eq!(request.contract_version, "1.0.0");
     assert_eq!(
-        request.snapshot["snapshot_id"],
+        request.snapshot.snapshot_id.as_str(),
         request.snapshot_id.as_str()
     );
+    assert_eq!(request.snapshot.portfolio.cash.as_str(), "100000");
 
     let responses = [
         include_str!("../../../../contracts/examples/model/scores-response.valid.json"),

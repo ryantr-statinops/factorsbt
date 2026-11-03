@@ -1,6 +1,7 @@
 //! Correlated model request and response payloads.
 
 use crate::instruments::Instrument;
+use crate::temporal::DecisionSnapshot;
 use crate::{DecimalString, Identifier, InstrumentId, UtcTimestamp, Uuid};
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +51,7 @@ pub struct ModelRequest {
     pub decision_policy: DecisionPolicy,
     pub eligible_instrument_ids: Vec<InstrumentId>,
     pub instruments: Vec<Instrument>,
-    pub snapshot: serde_json::Value,
+    pub snapshot: DecisionSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
