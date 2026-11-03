@@ -1007,7 +1007,7 @@ fn next_open(close: &UtcTimestamp) -> Result<UtcTimestamp, &'static str> {
     .map_err(|_| "next synthetic open is outside timestamp range")
 }
 
-fn system_utc_timestamp() -> Result<UtcTimestamp, &'static str> {
+pub(crate) fn system_utc_timestamp() -> Result<UtcTimestamp, &'static str> {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| "system clock precedes Unix epoch")?

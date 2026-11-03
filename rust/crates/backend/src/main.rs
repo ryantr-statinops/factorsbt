@@ -1,6 +1,7 @@
-//! Local HTTP boundary for the Phase A health operation.
+//! Loopback service entry point. The run operations are registered in Stage 06.
 
 use axum::{routing::get, Json, Router};
+use factorsbt_backend::{backend_config::BackendConfig, runtime::BackendRuntime};
 use factorsbt_contracts::outcomes::{BackendService, HealthResponse, HealthStatus};
 use std::error::Error;
 use tokio::net::TcpListener;
@@ -15,12 +16,22 @@ async fn healthz() -> Json<HealthResponse> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let bind_address =
-        std::env::var("FACTORSBT_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_owned());
-    let listener = TcpListener::bind(&bind_address).await?;
+    let config = BackendConfig::from_env()?;
+    let listener = TcpListener::bind(config.bind_address).await?;
+    let runtime = BackendRuntime::start(&config)?;
     let app = Router::new().route("/healthz", get(healthz));
 
-    println!("FactorsBT backend listening on {bind_address}");
-    axum::serve(listener, app).await?;
+    println!("FactorsBT backend listening on {}", config.bind_address);
+    let serve_result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await;
+    runtime.shutdown().await;
+    serve_result?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        eprintln!("failed to listen for shutdown signal: {error}");
+    }
 }

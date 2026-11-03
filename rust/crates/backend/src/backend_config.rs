@@ -1,6 +1,6 @@
 //! Process configuration for the local run service.
 
-use std::{env, error::Error, fmt, net::SocketAddr, str::FromStr};
+use std::{env, error::Error, fmt, net::SocketAddr, path::PathBuf, str::FromStr};
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:8080";
 const DEFAULT_MAX_ACTIVE_RUNS: usize = 2;
@@ -33,10 +33,12 @@ impl QueueLimits {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendConfig {
     pub bind_address: SocketAddr,
     pub queue_limits: QueueLimits,
+    pub fixture_directory: PathBuf,
+    pub evidence_directory: PathBuf,
 }
 
 impl Default for BackendConfig {
@@ -45,12 +47,15 @@ impl Default for BackendConfig {
             bind_address: SocketAddr::from_str(DEFAULT_BIND_ADDRESS)
                 .expect("the built-in loopback address is valid"),
             queue_limits: QueueLimits::default(),
+            fixture_directory: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../contracts/fixtures/data"),
+            evidence_directory: PathBuf::from(".factorsbt/evidence"),
         }
     }
 }
 
 impl BackendConfig {
-    /// Load supported process settings without choosing data or evidence paths.
+    /// Load supported process settings for the local-only run service.
     ///
     /// Queue capacity defaults to two concurrent runs and sixteen waiting runs;
     /// `FACTORSBT_MAX_QUEUED_RUNS=0` disables waiting while keeping active work.
@@ -63,11 +68,20 @@ impl BackendConfig {
             })
             .transpose()?
             .unwrap_or(defaults.bind_address);
+        validate_bind_address(bind_address)?;
         let max_active_runs = parse_limit("FACTORSBT_MAX_ACTIVE_RUNS", DEFAULT_MAX_ACTIVE_RUNS)?;
         let max_queued_runs = parse_limit("FACTORSBT_MAX_QUEUED_RUNS", DEFAULT_MAX_QUEUED_RUNS)?;
+        let fixture_directory = env::var_os("FACTORSBT_FIXTURE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or(defaults.fixture_directory);
+        let evidence_directory = env::var_os("FACTORSBT_EVIDENCE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or(defaults.evidence_directory);
         Ok(Self {
             bind_address,
             queue_limits: QueueLimits::new(max_active_runs, max_queued_runs)?,
+            fixture_directory,
+            evidence_directory,
         })
     }
 }
@@ -82,9 +96,18 @@ fn parse_limit(name: &'static str, default: usize) -> Result<usize, BackendConfi
         .ok_or(BackendConfigError::InvalidQueueLimit(name))
 }
 
+fn validate_bind_address(address: SocketAddr) -> Result<(), BackendConfigError> {
+    if address.ip().is_loopback() {
+        Ok(())
+    } else {
+        Err(BackendConfigError::NonLoopbackBindAddress)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendConfigError {
     InvalidBindAddress,
+    NonLoopbackBindAddress,
     InvalidQueueLimit(&'static str),
     ActiveRunLimitMustBePositive,
 }
@@ -93,6 +116,9 @@ impl fmt::Display for BackendConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidBindAddress => formatter.write_str("backend bind address is invalid"),
+            Self::NonLoopbackBindAddress => {
+                formatter.write_str("backend bind address must be loopback for the local MVP")
+            }
             Self::InvalidQueueLimit(name) => {
                 write!(formatter, "{name} must be a non-negative integer")
             }
@@ -118,6 +144,30 @@ mod tests {
         );
         assert_eq!(config.queue_limits.max_active_runs, 2);
         assert_eq!(config.queue_limits.max_queued_runs, 16);
+        assert!(config
+            .fixture_directory
+            .ends_with("contracts/fixtures/data"));
+        assert_eq!(
+            config.evidence_directory,
+            PathBuf::from(".factorsbt/evidence")
+        );
+    }
+
+    #[test]
+    fn only_loopback_bind_addresses_are_allowed() {
+        for address in ["0.0.0.0:8080", "192.0.2.10:8080", "[::]:8080"] {
+            let parsed = SocketAddr::from_str(address).unwrap();
+            assert_eq!(
+                validate_bind_address(parsed),
+                Err(BackendConfigError::NonLoopbackBindAddress)
+            );
+        }
+        for address in ["127.0.0.1:8080", "[::1]:8080"] {
+            assert_eq!(
+                validate_bind_address(SocketAddr::from_str(address).unwrap()),
+                Ok(())
+            );
+        }
     }
 
     #[test]

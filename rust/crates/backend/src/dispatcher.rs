@@ -7,6 +7,7 @@ use tokio::task::JoinHandle;
 
 pub struct RunDispatcher {
     workers: Vec<JoinHandle<()>>,
+    store: RunStore,
 }
 
 impl RunDispatcher {
@@ -17,31 +18,47 @@ impl RunDispatcher {
         F: Fn(Uuid) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        Self::start_with_failure_handler(store, handler, |_| {})
+    }
+
+    /// Start workers with an isolated panic callback. A callback panic cannot
+    /// prevent the worker from releasing its reserved run slot.
+    pub fn start_with_failure_handler<F, Fut, P>(store: RunStore, handler: F, on_panic: P) -> Self
+    where
+        F: Fn(Uuid) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+        P: Fn(Uuid) + Send + Sync + 'static,
+    {
         let handler = Arc::new(handler);
+        let on_panic = Arc::new(on_panic);
         let worker_count = store.limits().max_active_runs;
         let workers = (0..worker_count)
             .map(|_| {
                 let store = store.clone();
                 let handler = Arc::clone(&handler);
+                let on_panic = Arc::clone(&on_panic);
                 tokio::spawn(async move {
                     loop {
-                        let run_id = store.next_reserved_run().await;
+                        let Some(run_id) = store.next_reserved_run().await else {
+                            return;
+                        };
                         let task = tokio::spawn(handler(run_id.clone()));
-                        let _ = task.await;
+                        if task.await.is_err() {
+                            let on_panic = Arc::clone(&on_panic);
+                            let failed_run_id = run_id.clone();
+                            let _ = tokio::spawn(async move { on_panic(failed_run_id) }).await;
+                        }
                         store.finish_active_run(&run_id);
                     }
                 })
             })
             .collect();
-        Self { workers }
+        Self { workers, store }
     }
 
-    /// Stop the worker loops. The service owns run status and graceful shutdown
-    /// behavior; this low-level primitive only joins its worker tasks.
+    /// Stop new submissions and drain all accepted work before joining workers.
     pub async fn shutdown(self) {
-        for worker in &self.workers {
-            worker.abort();
-        }
+        self.store.stop_accepting();
         for worker in self.workers {
             let _ = worker.await;
         }
@@ -160,5 +177,72 @@ mod tests {
         assert_eq!(store.queue_snapshot().active_runs, 0);
         assert_eq!(store.queue_snapshot().queued_runs, 0);
         dispatcher.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn panic_callback_runs_and_shutdown_drains_queued_work() {
+        let store = RunStore::new(QueueLimits::new(1, 1).unwrap());
+        let first = store
+            .accept_submission(submission_id(11), configuration(), timestamp())
+            .unwrap()
+            .acknowledgement
+            .run_id;
+        let second = store
+            .accept_submission(submission_id(12), configuration(), timestamp())
+            .unwrap()
+            .acknowledgement
+            .run_id;
+        let panic_seen = Arc::new(AtomicUsize::new(0));
+        let (started_tx, mut started_rx) = mpsc::unbounded_channel();
+        let panic_run_id = first.clone();
+        let handler = move |run_id: Uuid| {
+            let started_tx = started_tx.clone();
+            let panic_run_id = panic_run_id.clone();
+            async move {
+                started_tx.send(run_id.clone()).unwrap();
+                if run_id == panic_run_id {
+                    panic!("controlled worker panic");
+                }
+            }
+        };
+        let panic_seen_callback = Arc::clone(&panic_seen);
+        let callback_store = store.clone();
+        let dispatcher =
+            RunDispatcher::start_with_failure_handler(store.clone(), handler, move |run_id| {
+                panic_seen_callback.fetch_add(1, Ordering::SeqCst);
+                callback_store
+                    .mark_failed(
+                        &run_id,
+                        timestamp(),
+                        factorsbt_contracts::outcomes::RunFailure {
+                            code: "RUN_WORKER_PANICKED".to_owned(),
+                            message: "The run worker stopped unexpectedly.".to_owned(),
+                            scenario_id: None,
+                            step_id: None,
+                            last_valid_state_ref: None,
+                        },
+                    )
+                    .unwrap();
+            });
+
+        assert_eq!(started_rx.recv().await.unwrap(), first);
+        assert_eq!(started_rx.recv().await.unwrap(), second);
+        dispatcher.shutdown().await;
+        assert_eq!(panic_seen.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            store.get_run(&first).unwrap().status.status,
+            factorsbt_contracts::outcomes::RunLifecycle::Failed
+        );
+        assert_eq!(store.queue_snapshot().active_runs, 0);
+        assert_eq!(store.queue_snapshot().queued_runs, 0);
+        let prior = store
+            .accept_submission(submission_id(11), configuration(), timestamp())
+            .unwrap();
+        assert!(!prior.created);
+        assert_eq!(prior.acknowledgement.run_id, first);
+        assert_eq!(
+            store.accept_submission(submission_id(13), configuration(), timestamp()),
+            Err(SubmissionStoreError::BackendUnavailable)
+        );
     }
 }

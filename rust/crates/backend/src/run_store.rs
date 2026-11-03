@@ -24,13 +24,27 @@ pub struct RunStore {
     ready: Arc<Notify>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct QueueState {
+    accepting: bool,
     queued: VecDeque<Uuid>,
     starting: VecDeque<Uuid>,
     active: HashSet<Uuid>,
     submissions: HashMap<Uuid, StoredSubmission>,
     runs: HashMap<Uuid, StoredRun>,
+}
+
+impl Default for QueueState {
+    fn default() -> Self {
+        Self {
+            accepting: true,
+            queued: VecDeque::new(),
+            starting: VecDeque::new(),
+            active: HashSet::new(),
+            submissions: HashMap::new(),
+            runs: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +71,7 @@ pub struct SubmissionOutcome {
 pub enum SubmissionStoreError {
     SubmissionIdReused,
     QueueFull,
+    BackendUnavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,11 +262,17 @@ impl RunStore {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(run_id) {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
         let run = state
             .runs
             .get_mut(run_id)
             .ok_or(RunStoreTransitionError::NotFound)?;
-        if run.status.status != RunLifecycle::Running {
+        if !matches!(
+            run.status.status,
+            RunLifecycle::Queued | RunLifecycle::Running
+        ) {
             return Err(RunStoreTransitionError::InvalidTransition);
         }
         run.status.status = RunLifecycle::Failed;
@@ -284,6 +305,9 @@ impl RunStore {
                 } else {
                     Err(SubmissionStoreError::SubmissionIdReused)
                 };
+            }
+            if !state.accepting {
+                return Err(SubmissionStoreError::BackendUnavailable);
             }
 
             notify_count += promote_waiting_runs(&mut state, self.limits);
@@ -336,24 +360,44 @@ impl RunStore {
         Ok(outcome)
     }
 
-    pub async fn next_reserved_run(&self) -> Uuid {
-        loop {
-            let notified = self.ready.notified();
-            if let Some(run_id) = self
+    /// Stop admitting new identities. Existing idempotent submissions still
+    /// resolve to their original acknowledgement while workers drain.
+    pub fn stop_accepting(&self) {
+        {
+            let mut state = self
                 .state
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .starting
-                .pop_front()
-            {
-                return run_id;
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.accepting = false;
+        }
+        self.ready.notify_waiters();
+    }
+
+    pub async fn next_reserved_run(&self) -> Option<Uuid> {
+        loop {
+            let notified = self.ready.notified();
+            let next = {
+                let mut state = self
+                    .state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if let Some(run_id) = state.starting.pop_front() {
+                    Some(Some(run_id))
+                } else if !state.accepting && state.active.is_empty() && state.queued.is_empty() {
+                    Some(None)
+                } else {
+                    None
+                }
+            };
+            if let Some(next) = next {
+                return next;
             }
             notified.await;
         }
     }
 
     pub fn finish_active_run(&self, run_id: &Uuid) -> bool {
-        let promoted = {
+        let (promoted, drained) = {
             let mut state = self
                 .state
                 .lock()
@@ -361,9 +405,14 @@ impl RunStore {
             if !state.active.remove(run_id) {
                 return false;
             }
-            promote_waiting_runs(&mut state, self.limits)
+            let promoted = promote_waiting_runs(&mut state, self.limits);
+            let drained = !state.accepting && state.active.is_empty() && state.queued.is_empty();
+            (promoted, drained)
         };
         self.notify_workers(promoted);
+        if drained {
+            self.ready.notify_waiters();
+        }
         true
     }
 
