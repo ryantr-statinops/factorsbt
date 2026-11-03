@@ -8,6 +8,7 @@ from referencing import Registry, Resource
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "contracts" / "schemas"
+FIXTURE_SCHEMA_DIR = ROOT / "contracts" / "fixtures" / "schemas"
 EXAMPLE_DIR = ROOT / "contracts" / "examples"
 
 
@@ -19,6 +20,11 @@ def build_registry():
     registry = Registry()
     schemas = {}
     for path in sorted(SCHEMA_DIR.glob("*.schema.json")):
+        schema = load_document(path)
+        Draft202012Validator.check_schema(schema)
+        schemas[path.name] = schema
+        registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
+    for path in sorted(FIXTURE_SCHEMA_DIR.glob("*.schema.json")):
         schema = load_document(path)
         Draft202012Validator.check_schema(schema)
         schemas[path.name] = schema
@@ -84,6 +90,41 @@ class ContractExampleTests(unittest.TestCase):
         for schema_name, example_name, expected_valid in cases:
             with self.subTest(example=example_name):
                 self.check_example(schema_name, example_name, expected_valid)
+
+    def test_internal_fixture_v1_schemas_accept_controlled_shape_and_reject_traversal(self):
+        manifest = {
+            "format_version": "1.0.0",
+            "fixture_id": "mvp-synthetic",
+            "fixture_version": "v1",
+            "dataset_path": "datasets/baseline.json",
+            "dataset_sha256": "a" * 64,
+        }
+        dataset = {
+            "format_version": "1.0.0",
+            "fixture_id": "mvp-synthetic",
+            "fixture_version": "v1",
+            "calendar_id": "synthetic-daily-utc-v1",
+            "observations": [],
+            "initial_marks": [{
+                "instrument_id": "SPOT_A", "mark": "100", "available_at": "2026-01-05T16:00:00Z",
+                "observation_id": "SPOT-A-INIT", "source_revision": 1,
+            }],
+            "execution_prices": [{
+                "instrument_id": "SPOT_A", "session_open": "2026-01-06T09:00:00Z", "price": "100.5",
+                "available_at": "2026-01-06T09:00:00Z", "observation_id": "SPOT-A-OPEN", "source_revision": 1,
+            }],
+            "settlement_events": [],
+        }
+        manifest_validator = Draft202012Validator(
+            self.schemas["manifest.v1.schema.json"], registry=self.registry, format_checker=FormatChecker()
+        )
+        dataset_validator = Draft202012Validator(
+            self.schemas["dataset.v1.schema.json"], registry=self.registry, format_checker=FormatChecker()
+        )
+        self.assertEqual(list(manifest_validator.iter_errors(manifest)), [])
+        self.assertEqual(list(dataset_validator.iter_errors(dataset)), [])
+        manifest["dataset_path"] = "../outside.json"
+        self.assertTrue(list(manifest_validator.iter_errors(manifest)))
 
 
 if __name__ == "__main__":

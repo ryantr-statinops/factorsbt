@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/fixtures/v1/manifest.schema.json",
+  "title": "FactorsBT local fixture manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "fixture_id", "fixture_version", "dataset_path", "dataset_sha256"],
+  "properties": {
+    "format_version": { "const": "1.0.0" },
+    "fixture_id": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/Identifier" },
+    "fixture_version": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/Identifier" },
+    "dataset_path": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\\.json$",
+      "description": "Relative POSIX path below the registered fixture directory. Traversal segments and absolute paths are not allowed."
+    },
+    "dataset_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}
