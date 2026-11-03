@@ -1,48 +1,51 @@
 # Phase A local development
 
-**Status:** Working instructions. Rust backend execution remains blocked on the current Windows host.
+**Status:** Verified on Windows with the MSVC target. This guide records the tested health-only slice.
 
 ## Scope
 
-The executable slice in Phase A is limited to `GET /healthz` and the synchronous Python `Client.health()` call. Run submission, simulation, pricing, persistence, and the other API paths remain specifications. The Python SDK has no runtime third-party dependencies. JSON Schema validation is a test-only dependency in `python-sdk/requirements-test.txt`.
+Phase A implements the local `GET /healthz` path and synchronous Python `Client.health()` call. Run submission, simulation, pricing, persistence, and the other API paths remain specifications. The Python SDK has no runtime third-party dependencies. JSON Schema validation is a test-only dependency from `python-sdk/requirements-test.txt`.
 
 ## Python SDK and contract examples
 
-From the repository root in PowerShell:
+Create a temporary virtual environment and run the suite from the repository root in PowerShell:
 
 ```powershell
-python -m venv .venv
-& .\.venv\Scripts\python.exe -m pip install -r python-sdk/requirements-test.txt
-& .\.venv\Scripts\python.exe -m unittest discover -s python-sdk/tests -v
+$testEnv = Join-Path $env:TEMP 'factorsbt-phase-a-test'
+python -m venv $testEnv
+& (Join-Path $testEnv 'Scripts\python.exe') -m pip install -r python-sdk/requirements-test.txt
+& (Join-Path $testEnv 'Scripts\python.exe') -m unittest discover -s python-sdk/tests -v
 ```
 
-The unit suite checks decimal and UTC wire primitives, `Client.health()` transport behavior, Draft 2020-12 schemas, and shared contract examples. The schema tests distinguish schema-invalid examples from examples that are schema-valid but semantically invalid. The Rust shared-example tests are in the contracts crate and require a buildable Rust host.
+The suite checks decimal and UTC wire primitives, `Client.health()` transport behavior, Draft 2020-12 schemas, and shared examples. Schema-invalid examples must fail validation; examples with semantic errors must pass schema validation. The Python suite passed: 8 tests.
 
-## Rust workspace checks
+## Rust workspace
 
-From the repository root:
+The verified host uses Visual Studio 2022 Build Tools 17.14.44, MSVC 14.44.35207, Windows SDK 10.0.26100.0, and Rust/Cargo 1.99.1 for `x86_64-pc-windows-msvc`. Run from an x64 Developer Command Prompt with the repository root as the working directory:
 
 ```powershell
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
 cargo metadata --offline --manifest-path rust/Cargo.toml --no-deps --format-version 1
+cargo clippy --offline --manifest-path rust/Cargo.toml --workspace --all-targets
 cargo check --offline --manifest-path rust/Cargo.toml --workspace --all-targets
+cargo test --offline --manifest-path rust/Cargo.toml --workspace --all-targets
 ```
 
-On the implementation host, formatting and Cargo metadata checks succeeded. `cargo check` was attempted after dependencies were fetched and failed before project crates compiled because the host lacks `link.exe`. A compatible MSVC C++ linker/toolset and Windows SDK are prerequisites for compile, test, backend launch, and the integration smoke check. Do not treat `cargo metadata` as a code compile.
+All commands passed. Rust tests reported 11 unit tests and 3 shared-example tests passed. Clippy completed without warnings.
 
-After the Rust prerequisites are available, run:
+## Python-to-Rust smoke
+
+Run from the same x64 Developer Command Prompt:
 
 ```powershell
-cargo test --offline --manifest-path rust/Cargo.toml --workspace --all-targets
 python python-sdk/tests/smoke_health.py
 ```
 
-The smoke script builds into a temporary Cargo target directory, selects an available loopback port, calls the Rust service through `Client.health()`, and terminates the service in a `finally` block. It was attempted on the current host and stopped at the same missing-linker error before the service could start.
+The script builds into a temporary Cargo target directory, selects a free loopback port, calls the backend through `Client.health()`, and terminates the process in a `finally` block. The smoke passed. The restricted Codex shell returned Windows `WinError 10013` for loopback sockets; the verified smoke ran in a loopback-enabled command context.
 
-## Environment evidence
+## Verification evidence
 
-- Python 3.13.13, Rust/Cargo 1.99.1, target `x86_64-pc-windows-msvc`.
-- `cargo fmt` and offline Cargo metadata validation succeeded.
-- Python unittest suite, including JSON Schema validation, passed in an isolated virtual environment.
-- Rust compile/test and Python-to-Rust smoke are unverified because MSVC linker/Windows SDK are absent.
-- No CI workflow or engine/backtest behavior was added by Phase A foundation work.
+- `cargo fmt`, `cargo clippy`, `cargo check`, `cargo test`, and offline metadata validation passed.
+- Python unittest and Draft 2020-12 validation passed in a temporary virtual environment.
+- Python SDK reached the Rust backend at `GET /healthz`; process cleanup completed.
+- The repository has no CI workflow. No engine/backtest behavior was added by Phase A.

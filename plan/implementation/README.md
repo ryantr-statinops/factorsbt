@@ -2,7 +2,7 @@
 
 **Status:** Proposed — phân rã công việc, chưa phải các tính năng đã triển khai.
 
-**Mốc đối chiếu:** 2026-11-03. Stage 00–01 đã qua cổng thiết kế. Stage 02 có workspace Rust, kiểu contracts, health endpoint source và Python SDK; Rust build/backend runtime chưa xác minh được vì host thiếu MSVC linker/Windows SDK.
+**Mốc đối chiếu:** 2026-11-03. Phase A đã qua đủ cổng Stage 00–02. Nền tảng Rust, contract types, health endpoint và Python SDK đã build, test và smoke trên Windows/MSVC. Backtest engine và run API vẫn chưa được triển khai.
 
 ## Cách đọc và phạm vi
 
@@ -23,7 +23,7 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | --- | --- | --- | --- | --- |
 | A | [00 — Quyết định MVP](00-mvp-decisions.md) | Accepted | Có | [Scope](../../docs/product/mvp-scope.md), [fixture và acceptance cases](../../docs/examples/mvp/acceptance-cases.md) |
 | A | [01 — Contracts](01-contracts.md) | Accepted | Có | [OpenAPI](../../contracts/openapi.json), [run schema](../../contracts/schemas/run-configuration.schema.json), [shared example](../../contracts/examples/instruments/minimal-valid-spot-run.json), [contract docs](../../docs/interfaces/service-contracts.md) |
-| A | [02 — Nền tảng dự án](02-project-foundation.md) | Proposed | Chưa | [Lệnh và bằng chứng local](../../docs/development/phase-a-local.md), [preflight](../../docs/decisions/0002-phase-a-tooling.md#environment-preflight): thiếu MSVC linker và Windows SDK |
+| A | [02 — Nền tảng dự án](02-project-foundation.md) | Implemented | Có | [Lệnh và bằng chứng local](../../docs/development/phase-a-local.md), [toolchain và kết quả kiểm chứng](../../docs/decisions/0002-phase-a-tooling.md#follow-up-verification-2026-11-03) |
 | B | [03 — Data snapshots](03-data-snapshots.md) | Proposed | Chưa | Chưa có |
 | B | [04 — Simulation engine](04-simulation-engine.md) | Proposed | Chưa | Chưa có |
 | B | [05 — Model orchestration](05-model-orchestration.md) | Proposed | Chưa | Chưa có |
@@ -35,7 +35,7 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | D | [11 — RL interface](11-rl-interface.md) | Proposed | Chưa | Chưa có |
 | E | [12 — Ý tưởng CLI / console application](12-cli-console-ideas.md) | Proposed — brainstorm | Không áp dụng | Chưa chốt triển khai |
 
-Hiện có **2/12 stage đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **2/8**; Phase A là **2/3**. Stage 00 hoàn tất quyết định/fixtures; Stage 01 hoàn tất thiết kế OpenAPI/schemas/examples. Stage 02 có mã nền tảng và kiểm tra Python, nhưng build/type tests Rust và gọi endpoint thật chưa chạy được; vì vậy Stage 02 vẫn Proposed và Phase A chưa qua cổng. Chưa có backtest engine hoặc API chạy backtest được Implemented. Đây là số stage đạt cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
+Hiện có **3/12 stage đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **3/8**; Phase A là **3/3**. Stage 00 hoàn tất quyết định/fixtures; Stage 01 hoàn tất thiết kế OpenAPI/schemas/examples; Stage 02 hoàn tất nền tảng và health flow đã kiểm chứng. Backtest engine và run API chưa Implemented. Đây là số stage đạt cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
 
 Trạng thái thiết kế dùng đúng từ vựng của [documentation index](../../docs/README.md#status-vocabulary): Accepted, Proposed, Open và Implemented. Cột hoàn thành là theo dõi công việc riêng. Stage thiết kế có thể hoàn thành bằng quyết định được Accepted và tài liệu đã kiểm tra; điều đó không làm tính năng thành Implemented. Chỉ mô tả hành vi là Implemented khi có code và kiểm chứng phù hợp.
 
@@ -47,12 +47,12 @@ Mũi tên liền biểu thị trình tự triển khai chính được đề xu�
 
 ```mermaid
 flowchart TD
-    NOW["Hiện tại: Stage 02 một phần<br/>Rust build chưa xác minh"]
+    NOW["Phase A hoàn tất<br/>Health flow đã kiểm chứng"]
     NOW --> A0
 
-    subgraph A["Phase A — Thiết kế MVP · 2/3"]
+    subgraph A["Phase A — Thiết kế MVP · 3/3"]
         A0["00 · Chốt MVP — Accepted"] --> A1["01 · Contracts — Accepted"]
-        A1 --> A2["02 · Nền tảng dự án — chưa qua cổng"]
+        A1 --> A2["02 · Nền tảng và health flow — verified"]
     end
 
     subgraph B["Phase B — MVP xuyên suốt · 0/5"]
@@ -111,10 +111,10 @@ Phase E không yêu cầu Phase D hoàn thành. Mục 12 chưa chọn tính năn
 
 ### Tiến độ thực hiện Phase A — 2026-11-03
 
-- Các commit 17–27 trên `main` tạo tooling ADR, Rust workspace/contracts/backend health source, Python package/client, shared-example tests, smoke script và hướng dẫn local. Danh sách chi tiết nằm trong [Stage 02](02-project-foundation.md).
-- Python unittest cùng JSON Schema Draft 2020-12 đã chạy thành công trong virtualenv test; `cargo fmt` và `cargo metadata` cũng thành công.
-- `cargo check`, `cargo test` và smoke test đều đã thử. Rust build dừng trước compile code vì không có `link.exe`; service không khởi động nên smoke chưa xác minh được.
-- Commit 28 ghi nhận trạng thái và bằng chứng chưa qua cổng, không đánh dấu Stage 02/Phase A hoàn tất. Chưa push vì điều kiện push của kế hoạch chưa đạt; repository chưa có CI.
+- Các commit 17–27 trên `main` tạo tooling ADR, Rust workspace/contracts/backend, Python package/client, shared-example tests, smoke script và hướng dẫn local. Commit 29 sửa cảnh báo Clippy; commit 30 đóng Phase A sau khi qua cổng. Danh sách chi tiết nằm trong [Stage 02](02-project-foundation.md).
+- `cargo fmt`, `cargo clippy`, `cargo check`, `cargo test`, Cargo metadata, 8 Python tests và JSON Schema Draft 2020-12 validation đều pass. Rust có 11 unit tests và 3 shared-example tests.
+- Smoke test chạy backend trong Developer Command Prompt và xác minh `Client.health()` gọi được `GET /healthz`; script cleanup tiến trình thành công. CI chưa được cấu hình.
+- 28 commit ban đầu đã nằm trên `main`; các commit sửa và closeout nối tiếp. Push sau khi kiểm tra remote `origin/main` còn fast-forward được.
 - Các lần tiếp theo tiếp tục theo [commit-workflow](../../.agents/skills/commit-workflow/SKILL.md), xác minh diff/staged scope, test và trạng thái remote cho từng đợt.
 - Chốt quyết định Open trước khi task phụ thuộc bắt đầu; cập nhật contracts hai phía và ảnh hưởng tới kết quả lưu trữ. Ghi ADR cho thay đổi kiến trúc đáng kể, không xóa lịch sử quyết định cũ.
 - Giữ các ranh giới: event/availability/processing time; decision/order/fill; mutable scenario state/immutable input; recorded replay/fresh inference.

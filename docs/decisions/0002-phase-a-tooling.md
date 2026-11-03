@@ -1,6 +1,6 @@
 # ADR 0002: Phase A local tooling and module layout
 
-**Status:** Accepted implementation direction; local build prerequisite is currently missing.
+**Status:** Accepted implementation direction; Phase A foundation verified on the local Windows host.
 
 ## Context
 
@@ -27,7 +27,19 @@ The environment preflight ran before source-code changes. It found Python 3.13.1
 | Windows SDK | Windows Kits library directories were not found. |
 | Python JSON Schema validator | No `jsonschema` module was present in the base environment. For the test-only shared-example check, `jsonschema==4.26.0` was installed in an isolated temporary virtualenv; all Python schema/example tests passed. The SDK runtime remains standard-library-only. |
 
-**Prerequisite:** provide a compatible MSVC C++ linker/toolset and Windows SDK, or run the final executable and Python-to-Rust smoke checks on a supported host that has them. Do not auto-install system build tools as part of this change. Until that prerequisite is met, compile/link, backend execution, integration smoke, and Phase A completion remain unverified.
+The preflight findings above describe the environment before toolchain provisioning. The prerequisite was subsequently resolved; see the verification record below.
+
+## Follow-up verification 2026-11-03
+
+| Check | Verified result |
+|---|---|
+| Visual Studio Build Tools | Visual Studio 2022 Build Tools 17.14.44; MSVC x64/x86 toolset 14.44.35207. `VsDevCmd.bat` exposes `cl.exe` and `link.exe`. |
+| Windows SDK | Windows SDK 10.0.26100.0; `rc.exe`, `kernel32.lib`, and `ucrt.lib` are available. |
+| Rust | Rust/Cargo 1.99.1, target `x86_64-pc-windows-msvc`; `cargo fmt`, `cargo clippy`, `cargo check`, and `cargo test` passed offline. Clippy is warning-free. |
+| Rust tests | 11 contract crate unit tests and 3 shared-example tests passed; backend and engine crates have no unit tests yet. |
+| Python/contracts | 8 Python tests passed, including Draft 2020-12 schemas and shared examples with test-only `jsonschema==4.26.0`. |
+| Integration | `python-sdk/tests/smoke_health.py` built and launched the backend, reached `GET /healthz` through the Python SDK, then cleaned up the process. |
+| CI | No CI workflow exists; CI was not run. |
 
 ## Alternatives considered
 
@@ -37,7 +49,7 @@ The environment preflight ran before source-code changes. It found Python 3.13.1
 
 ## Consequences
 
-The first executable path stays small and language boundaries remain explicit. Cargo.lock records the resolved Rust dependencies. Formatting, metadata, and Python schema/example checks have been verified; the missing native linker and SDK prevent Rust compile/test and the final server smoke check in this environment. No implementation stage may be marked complete on the basis of static files alone.
+The first executable path stays small and language boundaries remain explicit. Cargo.lock records the resolved Rust dependencies. The health-only backend/SDK path, contracts, Rust tests, Python tests, formatting, and Clippy were verified. This does not establish backtest execution, simulation correctness, or run API behavior. No CI workflow exists.
 
 ## Related documents
 

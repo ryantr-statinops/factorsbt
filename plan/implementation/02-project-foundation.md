@@ -1,6 +1,6 @@
 # Stage 02 — Nền tảng dự án và công cụ phát triển
 
-**Status:** Proposed — implementation incomplete; local native build prerequisite is missing.
+**Status:** Implemented — foundation and health flow verified on the Windows MSVC host.
 
 **Phase:** A — Chốt thiết kế MVP
 
@@ -31,7 +31,7 @@ Tạo nền tảng chạy và phát triển tối thiểu cho SDK Python và bac
 
 ## Prerequisite môi trường hiện tại
 
-Preflight ghi nhận Python 3.13.13, Rust/Cargo 1.99.1 và target `x86_64-pc-windows-msvc`. Không tìm thấy MSVC C++ linker/toolset hoặc Windows SDK. Python contract examples đã được kiểm tra bằng JSON Schema Draft 2020-12 trong virtualenv tạm với validator test-only. Cần môi trường MSVC/Windows SDK tương thích để build backend, chạy Rust tests và integration smoke. Không tự cài công cụ hệ thống trong stage này.
+Toolchain đã được cấp trên host này: Visual Studio 2022 Build Tools 17.14.44, MSVC 14.44.35207 và Windows SDK 10.0.26100.0; Rust/Cargo 1.99.1 target `x86_64-pc-windows-msvc`, Python 3.13.13. Kết quả cài đặt và kiểm chứng được ghi trong [ADR 0002](../../docs/decisions/0002-phase-a-tooling.md#follow-up-verification-2026-11-03).
 
 ## Task → Commit
 
@@ -48,19 +48,19 @@ Preflight ghi nhận Python 3.13.13, Rust/Cargo 1.99.1 và target `x86_64-pc-win
 | 9 | Kiểm tra contract examples dùng chung qua schema, Rust và Python | `test(contracts): verify cross-language contract examples` |
 | 10 | Smoke test khởi chạy Rust backend, gọi SDK và cleanup | `test(integration): verify Python-to-Rust health flow` |
 | 11 | Hướng dẫn prerequisite và lệnh đã thực sự xác minh | `docs(dev): document verified Phase A commands` |
-| 12 | Ghi nhận bằng chứng và graph Phase A; chỉ đánh dấu hoàn tất sau khi qua mọi cổng | `docs(plan): record Phase A verification status` |
+| 12 | Cập nhật trạng thái, bằng chứng và graph Phase A sau khi qua cổng | `docs(plan): close Phase A verification` |
 
 ## Kiểm chứng dự kiến
 
-- Chạy `cargo fmt`, compile/check/test Rust, Python `unittest`, schema/contract checks và integration smoke khi prerequisite đủ.
+- `cargo fmt --manifest-path rust/Cargo.toml --all -- --check`, `cargo clippy`, `cargo check`, `cargo test`, Python `unittest`, schema/contract checks và integration smoke đều đã chạy thành công.
 - Xác minh SDK không nhúng Rust engine; engine không phụ thuộc HTTP retry policy.
-- Ghi riêng checks có thể chạy không cần linker với checks yêu cầu binary; nếu prerequisite thiếu thì giữ Stage Proposed và không push/không ghi Implemented.
+- Ghi lệnh và toolchain thực tế trong [Phase A local development](../../docs/development/phase-a-local.md); CI không được thiết lập trong stage này.
 
 ## Điều kiện hoàn thành
 
-- Python/Rust skeleton được build/check; SDK gọi được health endpoint của Rust backend.
-- Shared contract examples qua được kiểm chứng; Python-to-Rust smoke cleanup hoàn tất.
-- Development workflow chỉ ghi lệnh và prerequisite đã xác minh. Thiếu linker/SDK đồng nghĩa stage chưa hoàn thành.
+- Python/Rust workspace build/check/test; Clippy và formatter pass.
+- Shared contract examples pass; Python-to-Rust smoke gọi được health endpoint và cleanup hoàn tất.
+- Development workflow ghi đúng phiên bản toolchain và lệnh đã xác minh. Không bao gồm simulation, pricing hoặc API chạy backtest.
 
 ## Tài liệu liên quan
 
