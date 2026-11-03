@@ -103,6 +103,8 @@ class ControlledModelHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
     requests = []
     requests_lock = threading.Lock()
+    failing_model_ids = set()
+    delayed_model_ids = {}
 
     def do_POST(self):
         if self.path != "/infer":
@@ -112,6 +114,13 @@ class ControlledModelHandler(BaseHTTPRequestHandler):
             size = int(self.headers["Content-Length"])
             request = json.loads(self.rfile.read(size))
             mode = request["decision_policy"]["output_mode"]
+            model_id = request["model_id"]
+            delay = self.delayed_model_ids.get(model_id, 0)
+            if delay:
+                time.sleep(delay)
+            if model_id in self.failing_model_ids:
+                self.send_error(503)
+                return
             outputs = {
                 "scores": {
                     "scores": [
@@ -169,14 +178,14 @@ class ControlledModelHandler(BaseHTTPRequestHandler):
         return
 
 
-def run_configuration(policy, model_endpoint):
+def run_configuration(policy, model_endpoint, model_id="controlled-http-fixture"):
     return RunConfiguration(
         simulation=SimulationConfiguration(RUN_DATE_START, RUN_DATE_END),
         initial_portfolio=InitialPortfolio("100000"),
         instruments=instruments(),
         data=DataFixtureConfiguration("mvp-synthetic", "v1"),
         model=ModelConfiguration(
-            "controlled-http-fixture",
+            model_id,
             "v1",
             model_endpoint,
             5000,
