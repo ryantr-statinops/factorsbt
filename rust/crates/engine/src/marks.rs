@@ -20,6 +20,7 @@ use std::{cmp::Ordering, error::Error, fmt};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkSource {
     BarClose,
+    ExecutionOpen,
     OptionQuote,
     BlackScholes,
     Crr,

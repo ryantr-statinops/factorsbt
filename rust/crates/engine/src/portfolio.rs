@@ -528,6 +528,19 @@ impl PortfolioState {
         self.maintenance_cash_encumbrance
     }
 
+    pub fn validate_initial_capacity(&self) -> Result<(), EngineError> {
+        if self.cash < Decimal::ZERO {
+            return Err(EngineError::InsufficientCash);
+        }
+        if self.cash < self.initial_margin_requirement {
+            return Err(EngineError::InsufficientInitialMargin);
+        }
+        if self.cash < self.cash_encumbrance {
+            return Err(EngineError::InsufficientDeliveryCash);
+        }
+        Ok(())
+    }
+
     /// Apply a cash and optional position posting atomically. Cash is rounded
     /// half-even to cents; invalid quantities or arithmetic overflow leave the
     /// state untouched.

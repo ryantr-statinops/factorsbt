@@ -9,6 +9,7 @@ mod execution;
 mod futures;
 mod marks;
 mod options;
+mod orders;
 mod portfolio;
 mod pricing;
 
@@ -23,6 +24,10 @@ pub use futures::{FutureExecution, FutureSettlement};
 pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};
 pub use options::{
     AmericanWorthlessExpiry, OptionExecution, OptionSettlement, PhysicalOptionSettlement,
+};
+pub use orders::{
+    execute_pending_group, queue_order_intents, queue_target_group, ExecutedOrderGroup,
+    ExecutionFill, PendingOrder, PendingOrderError, PendingOrderGroup,
 };
 pub use portfolio::{EngineError, InstrumentPosition, LedgerPosting, PortfolioState};
 pub use pricing::{
