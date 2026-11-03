@@ -12,7 +12,10 @@ mod portfolio;
 mod pricing;
 
 pub use clock::{ClockError, ClockEvent, SimulationClock, SimulationEventKind};
-pub use decisions::{scores_to_targets, DecisionError, InstrumentTarget};
+pub use decisions::{
+    response_to_proposal, scores_to_targets, DecisionError, DecisionProposal, InstrumentTarget,
+    ValidatedOrderIntent,
+};
 pub use execution::SpotExecution;
 pub use futures::{FutureExecution, FutureSettlement};
 pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};
