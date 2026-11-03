@@ -58,7 +58,7 @@ Cung cấp cho mô phỏng đúng dữ liệu có thể biết tại thời đi�
 - Snapshot chỉ chứa revision đã available tại simulation time và không đổi khi một revision mới xuất hiện.
 - Coverage xác nhận initial marks, close/pricing inputs và execution opens theo ngày; empty news hợp lệ, giá/pricing thiếu hoặc stale không được carry-forward.
 - Engine/orchestrator có thể dùng snapshot, execution prices và settlement events có source identity/version rõ ràng.
-- Provider thật, execution engine, model orchestration và API run chưa được triển khai trong Stage 03.
+- Stage 03 chỉ cung cấp đầu vào fixture và snapshot. Các stage sau đã nối chúng với engine (Stage 04), model/orchestration (Stage 05), API run (Stage 06) và typed SDK/backtest end-to-end (Stage 07); toàn bộ đường chạy chỉ được xác minh với fixture cục bộ, chưa tích hợp provider thật.
 
 ## Tài liệu liên quan
 

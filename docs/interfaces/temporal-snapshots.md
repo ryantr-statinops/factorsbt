@@ -2,6 +2,8 @@
 
 **Status:** Accepted MVP 1 data-contract design. The JSON Schemas define wire shape; availability, revisions, references, and ledger consistency also require semantic validation.
 
+**Implementation status:** The Rust fixture loader and snapshot selector implement availability/revision selection, stable snapshot identity, and coverage checks for local versioned fixtures. Real provider ingestion is not included; see the [Phase B verification record](../development/phase-b-local.md).
+
 The canonical schemas are [normalized observation](../../contracts/schemas/observation.schema.json) and [decision snapshot](../../contracts/schemas/snapshot.schema.json). Shared decimal, identifier, timestamp, and error definitions are in [common schema](../../contracts/schemas/common.schema.json).
 
 ## Observation identity and time

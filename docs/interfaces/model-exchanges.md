@@ -2,7 +2,7 @@
 
 **Design status:** Accepted MVP 1 correlated exchange design for a stateless local HTTP fixture.
 
-**Implementation status:** The Rust backend implements a local async HTTP client, controlled stateless fixture, correlated response validation, orchestration, and evidence capture. It does not add external model credentials, automatic retries, or model fallback; the typed Python backtest flow remains in Stage 07.
+**Implementation status:** The Rust backend implements a local async HTTP client, controlled stateless fixture, correlated response validation, orchestration, and evidence capture. The typed Python backtest flow and its three output modes are verified end to end with the local service. External model credentials, automatic retries, and model fallback are not included.
 
 The canonical schemas are [inference request](../../contracts/schemas/model-request.schema.json) and [model response](../../contracts/schemas/model-response.schema.json). Both use the shared [common definitions](../../contracts/schemas/common.schema.json), [instrument configuration](../../contracts/schemas/instrument.schema.json), and [snapshot](../../contracts/schemas/snapshot.schema.json).
 
@@ -37,4 +37,4 @@ There is one request per decision step and no automatic inference retry. A timeo
 - [Missing snapshot identity](../../contracts/examples/model/response-missing-snapshot.schema-invalid.json) fails with run error `MODEL_RESPONSE_SCHEMA_INVALID` at `$.snapshot_id`.
 - [Mismatched step](../../contracts/examples/model/response-mismatched-step.semantic-invalid.json) is schema-valid but fails with `MODEL_RESPONSE_CORRELATION_MISMATCH`; it cannot be applied to `step-0001`.
 
-These errors fail the run; they are not HTTP error responses to the SDK. Submission errors are defined in [submission identity and failures](mvp-submissions.md). Producer/consumer verification is still pending.
+These errors fail the run; they are not HTTP error responses to the SDK. Submission errors are defined in [submission identity and failures](mvp-submissions.md). The shared schemas, Rust backend, typed Python SDK, and controlled integration examples were verified together for the local MVP; external model providers are not covered.

@@ -1,6 +1,6 @@
 # MVP 1 run and instrument configuration
 
-**Status:** Accepted MVP 1 wire-contract design. The schema describes shape and lexical constraints; semantic checks remain required and no run-submission endpoint is implemented yet.
+**Status:** Accepted MVP 1 wire-contract design. The schemas describe shape and lexical constraints; semantic checks remain required. The local Rust run API and typed Python configuration builders are implemented and verified for the controlled fixtures; this does not establish public API stability.
 
 The canonical JSON Schema files are [shared primitives](../../contracts/schemas/common.schema.json), [instrument types](../../contracts/schemas/instrument.schema.json), and [run configuration](../../contracts/schemas/run-configuration.schema.json). The API accepts a `RunConfiguration` document as its POST body after OpenAPI assembly. Decimal amounts are JSON strings; binary floating-point JSON numbers are not accepted for financial values.
 
@@ -35,4 +35,4 @@ Schema validity and semantic validity are separate outcomes. A missing required 
 
 [Minimal valid spot run](../../contracts/examples/instruments/minimal-valid-spot-run.json) is a schema example, not the seven-instrument acceptance fixture. [Spot missing a required fee field](../../contracts/examples/instruments/spot-missing-fee.schema-invalid.json) is valid JSON but fails the instrument schema with `422 SCHEMA_VALIDATION_FAILED` at `$.fee_bps`. [Unresolved-underlying example](../../contracts/examples/instruments/unresolved-underlying.semantic-invalid.json) is valid against the run schema and has the expected semantic error `422 RUN_CONFIGURATION_INVALID` at `$.instruments[0].underlying_id` because `SPOT_MISSING` is not defined.
 
-The canonical product and instrument rules remain in the [MVP scope](../product/mvp-scope.md) and [instrument model](../architecture/instrument-model.md). Stage 01 examples will be machine-checked against the shared schemas when the contract verification step is reached.
+The canonical product and instrument rules remain in the [MVP scope](../product/mvp-scope.md) and [instrument model](../architecture/instrument-model.md). The shared examples are machine-checked against the schemas, Rust types, and Python wire handling; run-specific semantic checks still execute in the backend.

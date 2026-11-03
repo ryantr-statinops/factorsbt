@@ -4,7 +4,7 @@
 
 **Implementation status:** The Rust backend implements the health operation and all four run operations for local loopback use. Stage 06 verification passed against controlled fixtures. This does not establish public API stability or hosted-service support.
 
-This is the loopback HTTP/JSON surface for the Python SDK. The Rust backend coordinates runs; the engine owns simulation state and financial outcomes. `GET /healthz` was verified in Phase A. The four run operations were implemented and exercised through the Rust service in Phase B Stage 06. The typed backtest SDK flow remains for Stage 07.
+This is the loopback HTTP/JSON surface for the Python SDK. The Rust backend coordinates runs; the engine owns simulation state and financial outcomes. `GET /healthz` was verified in Phase A. The four run operations and typed Python backtest flow were implemented and exercised through the Rust service in Phase B Stages 06–07 using controlled fixtures. See the [local verification record](../development/phase-b-local.md).
 
 ## Operations
 
@@ -82,4 +82,4 @@ Error bodies, submission retry rules, and error codes are specified in [submissi
 
 ## Status and implementation boundary
 
-These operation definitions remain the Accepted contract for MVP 1. The local Rust health and run operations are Implemented with controlled service checks, but they are not declared stable. The Python backtest SDK and the full Phase B MVP acceptance gate remain incomplete.
+These operation definitions remain the Accepted contract for MVP 1. The local Rust health and run operations and Python backtest SDK are Implemented with controlled service checks, but they are not declared stable. Verification does not establish hosted-service behavior or external-provider support.

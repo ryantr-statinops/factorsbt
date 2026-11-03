@@ -1,6 +1,6 @@
 # Product overview
 
-**Status:** Accepted product direction and [MVP 1 synthetic scope](mvp-scope.md); runtime behavior remains unimplemented.
+**Status:** Accepted product direction and [MVP 1 synthetic scope](mvp-scope.md). The controlled local MVP is implemented and verified; provider integrations, scenario comparison, replay, hosted service, and public API stability are not included.
 
 FactorsBT is API-first infrastructure for multi-asset backtesting, synchronized data, and multi-model decision research.
 
@@ -27,7 +27,7 @@ These audiences are an initial product hypothesis. Specific market coverage and 
 - Preserve enough evidence to inspect the chain from data to decision, order, fill, and portfolio result.
 - Provide a Python SDK for interacting with a Rust backend and simulation engine.
 
-These are design goals, not claims of available features or superior performance.
+The synthetic data/model-to-portfolio path is implemented locally for the MVP. Provider integrations and scenario comparison remain design goals, not available features or performance claims.
 
 ## Research example
 
@@ -35,7 +35,7 @@ A researcher connects price history and timestamped news to a model API. At a si
 
 The researcher then compares a price-only scenario with a price-and-news scenario and a delayed-news scenario. Each has separate mutable state. The results should explain both aggregate portfolio differences and the individual decisions affected by the data change.
 
-This is an illustrative workflow. The assets, data schemas, model-output representation, and execution rules are not yet specified.
+This remains an illustrative research workflow. The MVP's synthetic instruments, snapshot, model-output, and execution contracts are specified in the linked product and interface documents; this example does not imply real-market coverage or scenario-comparison support.
 
 ## Meaning of multi-model
 
@@ -55,4 +55,4 @@ The initial scope is historical simulation infrastructure. Live trading, model h
 
 Real-market coverage, source providers, and model-output contracts remain open beyond the accepted synthetic first slice. The [roadmap](../roadmap.md) distinguishes the bounded MVP from later provider and service decisions.
 
-For the accepted first implementation slice, those choices are intentionally bounded to configured synthetic instruments, controlled historical bars/quotes, a stateless local model fixture, and inspectable run evidence. See the [MVP 1 scope](mvp-scope.md) and its [acceptance cases](../examples/mvp/acceptance-cases.md). This acceptance defines an implementation target; it does not mean any part of that target is implemented.
+For the accepted first implementation slice, those choices are intentionally bounded to configured synthetic instruments, controlled historical bars/quotes, a stateless local model fixture, and inspectable run evidence. That slice is implemented and verified locally. See the [MVP 1 scope](mvp-scope.md), its [acceptance cases](../examples/mvp/acceptance-cases.md), and the [Phase B verification record](../development/phase-b-local.md).

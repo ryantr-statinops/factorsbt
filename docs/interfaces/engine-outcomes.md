@@ -2,6 +2,8 @@
 
 **Status:** Accepted MVP 1 internal Rust contract design. The schema describes event shape; event references, arithmetic, ordering, atomicity, and portfolio invariants require engine validation.
 
+**Implementation status:** The Rust engine emits the specified event classes through controlled transitions, and the local MVP persists and verifies run evidence. End-to-end verification uses controlled fixtures; see the [Phase B verification record](../development/phase-b-local.md).
+
 The canonical [engine event schema](../../contracts/schemas/engine-outcome.schema.json) covers decision admission, order creation/cancellation, fills, ledger postings, settlements, and risk events. These are separate records linked by stable IDs. A model response is only a proposal; a fill is a distinct execution outcome.
 
 ## Event identity and ordering

@@ -2,7 +2,7 @@
 
 **Design status:** Accepted for the synthetic MVP only.
 
-**Implementation status:** Phase B implements the controlled model invocation, response validation, proposal conversion, and engine admission path in Rust. The typed Python backtest flow and full MVP acceptance remain in Stage 07.
+**Implementation status:** Phase B implements and locally verifies controlled model invocation, response validation, proposal conversion, engine admission, and the typed Python backtest flow. End-to-end smoke covers all three output modes; focused engine tests cover financial rules beyond those smoke paths.
 
 The [MVP scope](../product/mvp-scope.md) defines which output types exist. This document makes their selection and conversion behavior precise while preserving the rule that a proposal, order, and fill are separate events. Wire shapes and correlation identity are specified in the [MVP model exchange](../interfaces/model-exchanges.md).
 

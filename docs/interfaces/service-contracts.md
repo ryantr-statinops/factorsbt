@@ -2,7 +2,7 @@
 
 **Status:** Accepted MVP 1 contract design. Data, engine, orchestration and run API slices have local implementation evidence; public stability is not established.
 
-This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents. The Rust backend and controlled local fixtures implement the Stage 03–06 slices; Stage 07 still needs to connect the typed Python backtest SDK and pass the full MVP acceptance gate.
+This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents. Stages 03–07 implement and locally verify the data, engine, orchestration, Rust API, and typed Python SDK slices for the synthetic MVP. The service is local/loopback and has no public stability guarantee.
 
 The [MVP 1 HTTP API](mvp-http-api.md) selects the initial operation paths and run lifecycle. The shared shapes and [compatibility rules](mvp-contract-compatibility.md) are documented. The four run operations are implemented and locally verified, but are not declared stable.
 
@@ -69,6 +69,6 @@ Result serialization and local artifact references are selected in [results and 
 
 ## Contract acceptance checklist
 
-The MVP contract decisions and shared examples are recorded in this interface set. Before runtime implementation, verify each producer and consumer against the shared fixtures. A stable API claim still requires implemented behavior, compatibility evidence, and appropriate tests.
+The MVP contract decisions and shared examples are recorded in this interface set. The local MVP implementation has been checked across Rust producers/consumers, the typed Python SDK, schemas, and controlled fixtures. Any future contract change still needs coordinated compatibility evidence and tests; current verification does not establish a stable public API.
 
 See the [architecture](../architecture/overview.md), [simulation lifecycle](../architecture/simulation-lifecycle.md), and [development workflow](../development/workflow.md).

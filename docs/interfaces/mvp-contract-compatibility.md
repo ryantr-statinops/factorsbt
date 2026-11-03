@@ -34,6 +34,6 @@ Submission equality is separate from schema compatibility. It ignores JSON objec
 
 ## Implementation boundary
 
-The exact operation paths, schemas, lifecycle, error envelope, and compatibility policy are selected for the MVP contract. Phase A implemented `GET /healthz`. Phase B Stage 06 implemented the four `/v1` run operations, local configuration validation, lifecycle and result retrieval, and evidence-integrity checks. These are local implementations without a public stability guarantee. Local artifact references do not define remote artifact retrieval; the typed Python backtest SDK and full MVP acceptance remain in Stage 07.
+The exact operation paths, schemas, lifecycle, error envelope, and compatibility policy are selected for the MVP contract. Phase A implemented `GET /healthz`. Phase B Stages 06–07 implement and locally verify the four `/v1` run operations, Python SDK flow, local configuration validation, lifecycle, result retrieval, and evidence-integrity checks. These are local implementations without a public stability guarantee. Local artifact references do not define remote artifact retrieval.
 
 See the [MVP HTTP API](mvp-http-api.md), [submission behavior](mvp-submissions.md), and [service contract overview](service-contracts.md).

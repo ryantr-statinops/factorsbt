@@ -2,7 +2,7 @@
 
 **Design status:** Accepted scope for the first implementation slice.
 
-**Implementation status:** Phase B has implemented and locally verified data snapshots, engine primitives, model orchestration, and the Rust run API (Stages 03–06). The typed Python backtest SDK and full acceptance outcome remain in Stage 07; this scope is not yet accepted as a completed MVP release.
+**Implementation status:** Phase B Stages 03–07 are implemented and locally verified for the controlled synthetic scope, including data snapshots, engine, model orchestration, Rust run API, typed Python SDK, and end-to-end acceptance flows. This is a local MVP verification result, not a public release, hosted service, or guarantee of real-market behavior. See the [Phase B verification record](../development/phase-b-local.md).
 
 ## User and outcome
 

@@ -2,7 +2,7 @@
 
 **Design status:** Accepted for the synthetic MVP only.
 
-**Implementation status:** The Rust engine implements controlled margin, collateral, settlement, maintenance, and liquidation primitives with acceptance tests. Full end-to-end MVP acceptance remains in Stage 07.
+**Implementation status:** The Rust engine implements controlled margin, collateral, settlement, maintenance, and liquidation primitives with acceptance tests. These rules are included in the verified local Phase B synthetic MVP; end-to-end smoke coverage is bounded to controlled fixture flows, with instrument-specific engine behavior covered by focused tests.
 
 This document defines fixed, transparent controls for synthetic fixtures. It does not model exchange/broker risk parameters or guarantee real-world solvency. Read it with the [instrument model](instrument-model.md), [synthetic accounting](synthetic-accounting.md), and [accepted MVP scope](../product/mvp-scope.md).
 

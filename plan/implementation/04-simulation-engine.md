@@ -1,6 +1,6 @@
 # Stage 04 — Engine mô phỏng danh mục và thực thi
 
-**Status:** Implemented — engine primitives and controlled spot path verified; orchestration remains in Stage 05.
+**Status:** Implemented — engine rules and the controlled multi-instrument MVP path are locally verified; focused derivative edge cases also have unit/reference coverage.
 
 **Phase:** B — Backtest xuyên suốt
 
@@ -59,9 +59,8 @@ Triển khai engine Rust có chuyển trạng thái danh mục giải thích đ�
 
 ## Giới hạn đã xác minh
 
-- Chưa có simulation runner nối mọi event tự động; engine cung cấp các transition và kiểm tra để orchestrator Stage 05 gọi đúng thứ tự.
-- Controlled acceptance integration hiện chạy nhánh spot. Futures/options, pricing, margin, settlement và liquidation được xác minh bằng unit/reference tests riêng.
-- Chưa lưu run evidence trên disk; chưa gọi HTTP model service; chưa có `POST /v1/runs`, Python backtest SDK hoặc replay.
+- Engine primitives được nối vào simulation runner/orchestrator và HTTP model fixture trong Stage 05–07. End-to-end acceptance smoke bao phủ ba output modes; các quy tắc futures/options, pricing, margin, settlement, capital admission và liquidation còn được kiểm tra ở unit/reference tests riêng, không suy rộng thành end-to-end cho mọi nhánh instrument.
+- Phase B lưu evidence local và cung cấp run API/SDK, nhưng chưa có recorded replay, scenario comparison, provider thật, market connectivity, database, restart recovery, hosted service hoặc public API stability.
 - Kiểm tra vốn tại open dùng execution prices; các fill vẫn tính phí/slippage/tick rounding. Nếu chi phí thực tế khiến nhóm không thể hoàn tất, candidate group thất bại nguyên tử và portfolio gốc không đổi.
 
 ## Tài liệu liên quan
