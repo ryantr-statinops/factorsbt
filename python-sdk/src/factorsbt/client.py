@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 import socket
+import time
 from typing import Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
@@ -15,8 +17,10 @@ from .errors import (
     HttpStatusError,
     ProtocolError,
     RequestTimeout,
+    RunFailedError,
     SubmissionAcknowledgementUnknown,
     TransportError,
+    WaitTimeout,
 )
 from .responses import RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .types import validate_uuid
@@ -155,12 +159,61 @@ class Client:
 
     def get_run(self, run_id: str) -> RunStatus:
         """Read one run's lifecycle and any recorded failure context."""
+        return self._get_run(run_id)
+
+    def _get_run(self, run_id: str, *, request_timeout: float | None = None) -> RunStatus:
         key = validate_uuid(run_id)
-        response = self._get_json(f"/v1/runs/{key}")
+        response = self._get_json(f"/v1/runs/{key}", timeout=request_timeout)
         result = RunStatus.from_wire(response)
         if result.run_id != key:
             raise ProtocolError("run response identity does not match the requested ID")
         return result
+
+    def wait(
+        self,
+        run_id: str,
+        *,
+        timeout: float = 60.0,
+        poll_interval: float = 0.25,
+    ) -> RunStatus:
+        """Poll to a terminal status; the local deadline never cancels backend work."""
+        key = validate_uuid(run_id)
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be a finite number greater than zero")
+        if (
+            isinstance(poll_interval, bool)
+            or not isinstance(poll_interval, (int, float))
+            or not math.isfinite(poll_interval)
+            or poll_interval <= 0
+        ):
+            raise ValueError("poll_interval must be a finite number greater than zero")
+
+        deadline = time.monotonic() + timeout
+        last_status: RunStatus | None = None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise WaitTimeout(key, last_status)
+            try:
+                status = self._get_run(key, request_timeout=min(self.timeout, remaining))
+            except RequestTimeout as exc:
+                if time.monotonic() >= deadline:
+                    raise WaitTimeout(key, last_status) from exc
+                raise
+            last_status = status
+            if status.status == "succeeded":
+                return status
+            if status.status == "failed":
+                raise RunFailedError(status)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise WaitTimeout(key, last_status)
+            time.sleep(min(poll_interval, remaining))
 
     def get_results(self, run_id: str) -> RunResult:
         """Read a successful result and its validated local evidence references."""
@@ -171,14 +224,16 @@ class Client:
             raise ProtocolError("result response identity does not match the requested ID")
         return result
 
-    def _get_json(self, path: str) -> object:
+    def _get_json(self, path: str, *, timeout: float | None = None) -> object:
         request = Request(
             self.base_url.rstrip("/") + path,
             headers={"Accept": "application/json"},
             method="GET",
         )
         try:
-            with build_opener(_NoRedirect()).open(request, timeout=self.timeout) as response:
+            with build_opener(_NoRedirect()).open(
+                request, timeout=self.timeout if timeout is None else timeout
+            ) as response:
                 status = response.getcode()
                 body = response.read()
         except HTTPError as exc:

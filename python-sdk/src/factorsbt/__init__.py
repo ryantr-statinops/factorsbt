@@ -15,8 +15,10 @@ from .errors import (
     HttpStatusError,
     ProtocolError,
     RequestTimeout,
+    RunFailedError,
     SubmissionAcknowledgementUnknown,
     TransportError,
+    WaitTimeout,
 )
 from .instruments import LinearFutureInstrument, OptionInstrument, SpotInstrument
 from .configuration import (
@@ -69,6 +71,7 @@ __all__ = [
     "PortfolioSnapshot",
     "PositionSnapshot",
     "RequestTimeout",
+    "RunFailedError",
     "ResultCounts",
     "ResultProvenance",
     "RunFailure",
@@ -84,6 +87,7 @@ __all__ = [
     "SubmissionAcknowledgementUnknown",
     "SubmissionStatus",
     "UnderlyingReservation",
+    "WaitTimeout",
     "SpotInstrument",
     "UtcInstant",
     "WireDecimal",

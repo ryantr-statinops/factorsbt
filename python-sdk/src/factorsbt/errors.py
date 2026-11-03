@@ -1,5 +1,12 @@
 """Public exception types for SDK transport and contract failures."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .responses import RunStatus
+
 
 class FactorsBTError(Exception):
     """Base class for errors raised by the FactorsBT SDK."""
@@ -48,4 +55,26 @@ class SubmissionAcknowledgementUnknown(TransportError):
         self.reason = reason
         super().__init__(
             f"run submission acknowledgment is unknown; look up submission_id {submission_id}"
+        )
+
+
+class RunFailedError(FactorsBTError):
+    """A run reached its failed terminal state while the caller was waiting."""
+
+    def __init__(self, status: RunStatus):
+        self.status = status
+        self.run_id = status.run_id
+        self.failure = status.failure
+        code = status.failure.code if status.failure is not None else "UNKNOWN_RUN_FAILURE"
+        super().__init__(f"run {status.run_id} failed ({code})")
+
+
+class WaitTimeout(RequestTimeout):
+    """The local wait deadline expired; the backend run continues independently."""
+
+    def __init__(self, run_id: str, last_status: RunStatus | None):
+        self.run_id = run_id
+        self.last_status = last_status
+        super().__init__(
+            f"local wait deadline expired for run {run_id}; backend work was not cancelled"
         )
