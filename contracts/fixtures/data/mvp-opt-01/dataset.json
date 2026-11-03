@@ -1,0 +1,222 @@
+{
+  "format_version": "1.0.0",
+  "fixture_id": "mvp-opt-01",
+  "fixture_version": "v1",
+  "calendar_id": "synthetic-daily-utc-v1",
+  "observations": [
+    {
+      "observation_id": "OPT01-SPOT_A",
+      "kind": "bar",
+      "instrument_id": "SPOT_A",
+      "source_id": "opt-01-reference",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "interval_start": "2026-01-05T09:00:00Z",
+        "interval_end": "2026-01-05T16:00:00Z",
+        "open": "100",
+        "high": "100",
+        "low": "100",
+        "close": "100"
+      }
+    },
+    {
+      "observation_id": "OPT01-EU_CALL_A",
+      "kind": "quote",
+      "instrument_id": "EU_CALL_A",
+      "source_id": "opt-01-reference",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "bid": "10.45058357",
+        "ask": "10.45058357",
+        "mark": "10.45058357"
+      }
+    },
+    {
+      "observation_id": "OPT01-INPUT-EU_CALL_A",
+      "kind": "option_pricing_input",
+      "instrument_id": "EU_CALL_A",
+      "source_id": "opt-01-pricing",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "risk_free_rate": "0.05",
+        "annualized_volatility": "0.2"
+      }
+    },
+    {
+      "observation_id": "OPT01-EU_PUT_A",
+      "kind": "quote",
+      "instrument_id": "EU_PUT_A",
+      "source_id": "opt-01-reference",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "bid": "5.57352602",
+        "ask": "5.57352602",
+        "mark": "5.57352602"
+      }
+    },
+    {
+      "observation_id": "OPT01-INPUT-EU_PUT_A",
+      "kind": "option_pricing_input",
+      "instrument_id": "EU_PUT_A",
+      "source_id": "opt-01-pricing",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "risk_free_rate": "0.05",
+        "annualized_volatility": "0.2"
+      }
+    },
+    {
+      "observation_id": "OPT01-AM_CALL_A",
+      "kind": "quote",
+      "instrument_id": "AM_CALL_A",
+      "source_id": "opt-01-reference",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "bid": "10.44277600",
+        "ask": "10.44277600",
+        "mark": "10.44277600"
+      }
+    },
+    {
+      "observation_id": "OPT01-INPUT-AM_CALL_A",
+      "kind": "option_pricing_input",
+      "instrument_id": "AM_CALL_A",
+      "source_id": "opt-01-pricing",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "risk_free_rate": "0.05",
+        "annualized_volatility": "0.2"
+      }
+    },
+    {
+      "observation_id": "OPT01-AM_PUT_A",
+      "kind": "quote",
+      "instrument_id": "AM_PUT_A",
+      "source_id": "opt-01-reference",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "bid": "6.08725833",
+        "ask": "6.08725833",
+        "mark": "6.08725833"
+      }
+    },
+    {
+      "observation_id": "OPT01-INPUT-AM_PUT_A",
+      "kind": "option_pricing_input",
+      "instrument_id": "AM_PUT_A",
+      "source_id": "opt-01-pricing",
+      "source_version": "v1",
+      "revision": 1,
+      "event_time": "2026-01-05T16:00:00Z",
+      "available_at": "2026-01-05T16:00:00Z",
+      "payload": {
+        "risk_free_rate": "0.05",
+        "annualized_volatility": "0.2"
+      }
+    }
+  ],
+  "initial_marks": [
+    {
+      "instrument_id": "SPOT_A",
+      "mark": "100",
+      "available_at": "2026-01-05T16:00:00Z",
+      "observation_id": "OPT01-SPOT_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "EU_CALL_A",
+      "mark": "10.45058357",
+      "available_at": "2026-01-05T16:00:00Z",
+      "observation_id": "OPT01-EU_CALL_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "EU_PUT_A",
+      "mark": "5.57352602",
+      "available_at": "2026-01-05T16:00:00Z",
+      "observation_id": "OPT01-EU_PUT_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "AM_CALL_A",
+      "mark": "10.44277600",
+      "available_at": "2026-01-05T16:00:00Z",
+      "observation_id": "OPT01-AM_CALL_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "AM_PUT_A",
+      "mark": "6.08725833",
+      "available_at": "2026-01-05T16:00:00Z",
+      "observation_id": "OPT01-AM_PUT_A",
+      "source_revision": 1
+    }
+  ],
+  "execution_prices": [
+    {
+      "instrument_id": "SPOT_A",
+      "session_open": "2026-01-06T09:00:00Z",
+      "price": "100",
+      "available_at": "2026-01-06T09:00:00Z",
+      "observation_id": "OPT01-OPEN-SPOT_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "EU_CALL_A",
+      "session_open": "2026-01-06T09:00:00Z",
+      "price": "10.45058357",
+      "available_at": "2026-01-06T09:00:00Z",
+      "observation_id": "OPT01-OPEN-EU_CALL_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "EU_PUT_A",
+      "session_open": "2026-01-06T09:00:00Z",
+      "price": "5.57352602",
+      "available_at": "2026-01-06T09:00:00Z",
+      "observation_id": "OPT01-OPEN-EU_PUT_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "AM_CALL_A",
+      "session_open": "2026-01-06T09:00:00Z",
+      "price": "10.44277600",
+      "available_at": "2026-01-06T09:00:00Z",
+      "observation_id": "OPT01-OPEN-AM_CALL_A",
+      "source_revision": 1
+    },
+    {
+      "instrument_id": "AM_PUT_A",
+      "session_open": "2026-01-06T09:00:00Z",
+      "price": "6.08725833",
+      "available_at": "2026-01-06T09:00:00Z",
+      "observation_id": "OPT01-OPEN-AM_PUT_A",
+      "source_revision": 1
+    }
+  ],
+  "settlement_events": []
+}

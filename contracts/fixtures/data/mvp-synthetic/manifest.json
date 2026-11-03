@@ -1,0 +1,7 @@
+{
+  "format_version": "1.0.0",
+  "fixture_id": "mvp-synthetic",
+  "fixture_version": "v1",
+  "dataset_path": "dataset.json",
+  "dataset_sha256": "7345dc12607c8ea15c47cb6868979144a77b0f1b7b88c231cb9454fcec17496b"
+}

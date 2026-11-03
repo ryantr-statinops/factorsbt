@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 import unittest
 
@@ -9,6 +10,7 @@ from referencing import Registry, Resource
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "contracts" / "schemas"
 FIXTURE_SCHEMA_DIR = ROOT / "contracts" / "fixtures" / "schemas"
+FIXTURE_DATA_DIR = ROOT / "contracts" / "fixtures" / "data"
 EXAMPLE_DIR = ROOT / "contracts" / "examples"
 
 
@@ -125,6 +127,52 @@ class ContractExampleTests(unittest.TestCase):
         self.assertEqual(list(dataset_validator.iter_errors(dataset)), [])
         manifest["dataset_path"] = "../outside.json"
         self.assertTrue(list(manifest_validator.iter_errors(manifest)))
+
+    def test_versioned_fixture_files_match_schemas_and_content_digests(self):
+        manifest_validator = Draft202012Validator(
+            self.schemas["manifest.v1.schema.json"], registry=self.registry, format_checker=FormatChecker()
+        )
+        dataset_validator = Draft202012Validator(
+            self.schemas["dataset.v1.schema.json"], registry=self.registry, format_checker=FormatChecker()
+        )
+        manifests = sorted(FIXTURE_DATA_DIR.glob("*/manifest.json"))
+        self.assertGreaterEqual(len(manifests), 7)
+        for manifest_path in manifests:
+            with self.subTest(fixture=manifest_path.parent.name):
+                manifest = load_document(manifest_path)
+                self.assertEqual(list(manifest_validator.iter_errors(manifest)), [])
+                dataset_path = manifest_path.parent / manifest["dataset_path"]
+                dataset_bytes = dataset_path.read_bytes()
+                self.assertEqual(hashlib.sha256(dataset_bytes).hexdigest(), manifest["dataset_sha256"])
+                dataset = json.loads(dataset_bytes)
+                self.assertEqual(list(dataset_validator.iter_errors(dataset)), [])
+                self.assertEqual(dataset["fixture_id"], manifest["fixture_id"])
+                self.assertEqual(dataset["fixture_version"], manifest["fixture_version"])
+
+        baseline = load_document(FIXTURE_DATA_DIR / "mvp-synthetic" / "dataset.json")
+        self.assertEqual({row["instrument_id"] for row in baseline["initial_marks"]},
+                         {"SPOT_A", "SPOT_B", "FUT_A", "EU_CALL_A", "EU_PUT_A", "AM_CALL_A", "AM_PUT_A"})
+        self.assertTrue(any(row["observation_id"] == "NEWS-TIME01" and row["revision"] == 2
+                            and row["available_at"] == "2026-01-07T17:00:00Z" for row in baseline["observations"]))
+        jan6_spot_open = next(row for row in baseline["execution_prices"]
+                              if row["instrument_id"] == "SPOT_A" and row["session_open"] == "2026-01-06T09:00:00Z")
+        self.assertEqual(jan6_spot_open["price"], "100.50")
+        self.assertTrue(load_document(FIXTURE_DATA_DIR / "mvp-settle-01" / "dataset.json")["settlement_events"])
+        self.assertFalse(load_document(FIXTURE_DATA_DIR / "mvp-settle-02-itm" / "dataset.json")["settlement_events"])
+        risk = load_document(FIXTURE_DATA_DIR / "mvp-risk-02" / "dataset.json")
+        future_seed = next(row for row in risk["initial_marks"] if row["instrument_id"] == "FUT_A")
+        recovery_open = next(row for row in risk["execution_prices"]
+                             if row["instrument_id"] == "FUT_A" and row["session_open"] == "2026-01-08T09:00:00Z")
+        self.assertEqual(future_seed["mark"], "20")
+        self.assertEqual(recovery_open["price"], "20")
+        failed_recovery = load_document(FIXTURE_DATA_DIR / "mvp-risk-02-fail" / "dataset.json")
+        failed_open = next(row for row in failed_recovery["execution_prices"]
+                           if row["instrument_id"] == "FUT_A" and row["session_open"] == "2026-01-08T09:00:00Z")
+        self.assertEqual(failed_open["price"], "18")
+        option_pricing = load_document(FIXTURE_DATA_DIR / "mvp-opt-01" / "dataset.json")
+        rates = [row["payload"]["risk_free_rate"] for row in option_pricing["observations"]
+                 if row["kind"] == "option_pricing_input"]
+        self.assertEqual(set(rates), {"0.05"})
 
 
 if __name__ == "__main__":
