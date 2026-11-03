@@ -1,6 +1,8 @@
 """Run typed SDK configurations through the local Rust backend and HTTP fixture."""
 
 from datetime import datetime, timezone
+from decimal import Decimal
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -252,6 +254,41 @@ def start_backend(binary, environment):
         raise
 
 
+def verify_nav_and_evidence(result, configuration, evidence_directory):
+    instruments_by_id = {
+        item["instrument_id"]: item for item in configuration.to_wire()["instruments"]
+    }
+    independently_calculated_nav = result.portfolio.cash.value
+    for position in result.portfolio.positions:
+        instrument = instruments_by_id[position.instrument_id]
+        if instrument["instrument_type"] == "linear_future":
+            expected_market_value = Decimal("0")
+        else:
+            expected_market_value = (
+                position.quantity.value
+                * position.mark.value
+                * Decimal(instrument["contract_multiplier"])
+            )
+        if expected_market_value != position.market_value.value:
+            raise RuntimeError(
+                f"independent market-value calculation disagreed for {position.instrument_id}"
+            )
+        independently_calculated_nav += expected_market_value
+    if independently_calculated_nav != result.portfolio.nav.value:
+        raise RuntimeError("independent NAV calculation disagreed with the run result")
+
+    run_root = (Path(evidence_directory) / "runs" / result.run_id).resolve()
+    for reference in result.evidence:
+        artifact = (run_root / Path(*reference.relative_path.split("/"))).resolve()
+        if not artifact.is_relative_to(run_root) or not artifact.is_file():
+            raise RuntimeError(f"evidence reference is missing or escapes its run: {reference.kind}")
+        content = artifact.read_bytes()
+        if len(content) != reference.size_bytes:
+            raise RuntimeError(f"evidence size mismatch: {reference.relative_path}")
+        if hashlib.sha256(content).hexdigest() != reference.sha256:
+            raise RuntimeError(f"evidence digest mismatch: {reference.relative_path}")
+
+
 def main() -> int:
     cargo = shutil.which("cargo")
     if cargo is None:
@@ -318,6 +355,7 @@ def main() -> int:
                     )
                 if not result.evidence:
                     raise RuntimeError(f"{expected_mode} result has no evidence references")
+                verify_nav_and_evidence(result, config, environment["FACTORSBT_EVIDENCE_DIR"])
                 print(
                     f"{expected_mode}: run={result.run_id} fills={result.counts.fills} "
                     f"positions={len(result.portfolio.positions)} evidence={len(result.evidence)}"
