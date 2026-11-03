@@ -1,6 +1,6 @@
 # Development workflow
 
-**Status:** Working guidance for the documentation-stage repository.
+**Status:** Working guidance for implementation and documentation.
 
 ## Establish the task
 
@@ -26,7 +26,7 @@ This guide establishes no automatic commit, publication, deployment, or delegati
 
 ## Verify using repository evidence
 
-The repository now has a Rust workspace and a standard-library Python SDK for the Phase A health slice. Use the [Phase A local development instructions](phase-a-local.md) for the commands that were run and their current prerequisites. A documented command is not evidence that an unverified Rust build or endpoint works.
+The repository has a Rust workspace and a standard-library Python SDK. Use the [Phase A local development instructions](phase-a-local.md) for the original health-only checks and the [Phase B local verification guide](phase-b-local.md) for the typed run flow, current toolchain prerequisites, and recorded commands. A documented command is not evidence that an unverified build or endpoint works.
 
 When tooling changes, document verified prerequisites and commands. Add checks appropriate to observable behavior, concentrating on temporal visibility, portfolio transitions, scenario isolation, replay, and API failure semantics.
 

@@ -42,6 +42,7 @@ Documents state the status of their content where relevant. Moving a statement t
 - Durable architecture choices belong in ADRs. Planned work and its dependencies belong in the roadmap.
 - Accepted synthetic instrument and accounting rules live in the owning architecture documents linked from the [MVP 1 scope](product/mvp-scope.md). Real-market behavior remains open unless separately accepted.
 - The sequence and progress evidence for implementation phases live in the [implementation plan](../plan/implementation/README.md).
+- Verified local build, test, and smoke commands live in the [development guides](development/workflow.md), including the [Phase B local verification record](development/phase-b-local.md).
 - Workflow instructions belong in the development guide and agent instructions, not in public interface descriptions.
 
 Keep related documents linked instead of duplicating detailed rules. Record open questions near their owning topic.
