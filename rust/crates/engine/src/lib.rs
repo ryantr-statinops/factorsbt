@@ -11,5 +11,7 @@ mod portfolio;
 pub use clock::{ClockError, ClockEvent, SimulationClock, SimulationEventKind};
 pub use execution::SpotExecution;
 pub use futures::{FutureExecution, FutureSettlement};
-pub use options::{OptionExecution, OptionSettlement};
+pub use options::{
+    AmericanWorthlessExpiry, OptionExecution, OptionSettlement, PhysicalOptionSettlement,
+};
 pub use portfolio::{EngineError, InstrumentPosition, LedgerPosting, PortfolioState};

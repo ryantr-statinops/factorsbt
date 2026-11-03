@@ -29,7 +29,7 @@ pub use inputs::{
 };
 pub use snapshot::{assemble_snapshot, observations_available_at, SnapshotContext, SnapshotError};
 
-const FIXTURE_FORMAT_VERSION: &str = "1.0.0";
+const FIXTURE_FORMAT_VERSION: &str = "1.1.0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,6 +83,7 @@ pub struct FixtureSettlementEvent {
     pub event_type: FixtureSettlementType,
     pub event_time: UtcTimestamp,
     pub available_at: UtcTimestamp,
+    pub contracts: u64,
     pub underlying_price: DecimalString,
     pub observation_id: Identifier,
     pub source_revision: u64,

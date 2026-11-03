@@ -10,7 +10,12 @@ use factorsbt_contracts::{
 };
 use factorsbt_data::{initial_marks_available_at, Fixture};
 use rust_decimal::{Decimal, RoundingStrategy};
-use std::{collections::HashMap, error::Error, fmt, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt,
+    str::FromStr,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EngineError {
@@ -32,6 +37,11 @@ pub enum EngineError {
     InvalidOptionTrade(String),
     NotEuropeanCashOption(String),
     OptionNotExpired(String),
+    InvalidAmericanSettlement(String),
+    SettlementEventMismatch(String),
+    DuplicateSettlementEvent(String),
+    ExcessSettlementQuantity(String),
+    MissingPhysicalSettlement(String),
     InvalidExecutionPrice,
     MissingPosition(String),
     InsufficientInitialMargin,
@@ -70,6 +80,24 @@ impl fmt::Display for EngineError {
                 write!(f, "option {id} is not a European cash-settled contract")
             }
             Self::OptionNotExpired(id) => write!(f, "option {id} has not reached expiry"),
+            Self::InvalidAmericanSettlement(id) => {
+                write!(f, "option {id} is not American physical-settled")
+            }
+            Self::SettlementEventMismatch(id) => {
+                write!(f, "settlement event does not match position {id}")
+            }
+            Self::DuplicateSettlementEvent(id) => {
+                write!(f, "settlement event {id} was already applied")
+            }
+            Self::ExcessSettlementQuantity(id) => {
+                write!(f, "settlement event exceeds open contracts for {id}")
+            }
+            Self::MissingPhysicalSettlement(id) => {
+                write!(
+                    f,
+                    "in-the-money American option {id} lacks a settlement event"
+                )
+            }
             Self::InvalidExecutionPrice => f.write_str("execution price must be positive"),
             Self::MissingPosition(id) => write!(f, "posting references unknown instrument {id}"),
             Self::InsufficientInitialMargin => {
@@ -135,6 +163,7 @@ pub struct PortfolioState {
     reserved_underlying: HashMap<String, Decimal>,
     cash_encumbrance: Decimal,
     maintenance_cash_encumbrance: Decimal,
+    pub(super) consumed_settlement_event_ids: HashSet<String>,
     start_at: UtcTimestamp,
 }
 
@@ -240,6 +269,7 @@ impl PortfolioState {
             reserved_underlying,
             cash_encumbrance,
             maintenance_cash_encumbrance,
+            consumed_settlement_event_ids: HashSet::new(),
             start_at: configuration.simulation.start_at.clone(),
         })
     }

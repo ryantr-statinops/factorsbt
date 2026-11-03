@@ -2,7 +2,7 @@
 
 **Status:** Implemented fixture v1 data format, datasets, local registry, digest validation, and availability-aware selectors.
 
-Each folder under [`data`](data) contains a `manifest.json` and `dataset.json`. The manifest identifies fixture format, fixture ID/version, a relative dataset path, and SHA-256 of the exact dataset bytes. The dataset keeps decision observations separate from open execution prices, initial marks, and settlement events.
+Each folder under [`data`](data) contains a `manifest.json` and `dataset.json`. Fixture format `1.1.0` records a positive contract count on each explicit American exercise/assignment event so partial and excessive settlement quantities are unambiguous. The manifest identifies fixture format, fixture ID/version, a relative dataset path, and SHA-256 of the exact dataset bytes. The dataset keeps decision observations separate from open execution prices, initial marks, and settlement events.
 
 | Fixture | Acceptance use |
 | --- | --- |

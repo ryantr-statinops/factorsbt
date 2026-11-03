@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["format_version", "fixture_id", "fixture_version", "calendar_id", "observations", "initial_marks", "execution_prices", "settlement_events"],
   "properties": {
-    "format_version": { "const": "1.0.0" },
+      "format_version": { "const": "1.1.0" },
     "fixture_id": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/Identifier" },
     "fixture_version": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/Identifier" },
     "calendar_id": { "const": "synthetic-daily-utc-v1" },
@@ -58,13 +58,14 @@
     "SettlementEvent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fixture_event_id", "instrument_id", "event_type", "event_time", "available_at", "underlying_price", "observation_id", "source_revision"],
+        "required": ["fixture_event_id", "instrument_id", "event_type", "event_time", "available_at", "contracts", "underlying_price", "observation_id", "source_revision"],
       "properties": {
         "fixture_event_id": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/Identifier" },
         "instrument_id": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/InstrumentId" },
         "event_type": { "enum": ["american_exercise", "american_assignment"] },
         "event_time": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/UtcTimestamp" },
         "available_at": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/UtcTimestamp" },
+          "contracts": { "type": "integer", "minimum": 1 },
         "underlying_price": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/NonNegativeDecimal" },
         "observation_id": { "$ref": "https://schemas.factorsbt.invalid/v1/common.schema.json#/$defs/Identifier" },
         "source_revision": { "type": "integer", "minimum": 1 }

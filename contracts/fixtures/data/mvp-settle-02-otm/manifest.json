@@ -1,7 +1,7 @@
 {
-  "format_version": "1.0.0",
+  "format_version": "1.1.0",
   "fixture_id": "mvp-settle-02-otm",
   "fixture_version": "v1",
   "dataset_path": "dataset.json",
-  "dataset_sha256": "f1ccc539842420f34bed6b3440140307244a4a5be37d8e9a38ff14afe45f6075"
+  "dataset_sha256": "0676847f10625fe810c15401b37a86f6327a6df6050e72bae5dd2742c756f030"
 }

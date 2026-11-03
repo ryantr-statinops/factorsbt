@@ -1,7 +1,7 @@
 {
-  "format_version": "1.0.0",
+  "format_version": "1.1.0",
   "fixture_id": "mvp-opt-01",
   "fixture_version": "v1",
   "dataset_path": "dataset.json",
-  "dataset_sha256": "4f1a5c0503a919b2b6990a07b2a1a79b0c8138ba56106911c83a72045cf441c1"
+  "dataset_sha256": "e9e56d7ef1973c7a7ceb529aaa7673e88028ea6ca09abde7a1ccbbd9337fc87d"
 }

@@ -1,7 +1,7 @@
 {
-  "format_version": "1.0.0",
+  "format_version": "1.1.0",
   "fixture_id": "mvp-risk-02-fail",
   "fixture_version": "v1",
   "dataset_path": "dataset.json",
-  "dataset_sha256": "646a66254dcc3073634cb9424afcf428776e71862d2b64942093186c71fef7eb"
+  "dataset_sha256": "b739d4b8cc3e0d440782ee79ed2796914fba742cb7a63e3c8d7a58a64b3b1801"
 }

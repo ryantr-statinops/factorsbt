@@ -1,5 +1,5 @@
 {
-  "format_version": "1.0.0",
+  "format_version": "1.1.0",
   "fixture_id": "mvp-settle-01",
   "fixture_version": "v1",
   "calendar_id": "synthetic-daily-utc-v1",
@@ -1091,6 +1091,7 @@
       "event_type": "american_assignment",
       "event_time": "2026-01-07T16:00:00Z",
       "available_at": "2026-01-07T16:00:00Z",
+        "contracts": 1,
       "underlying_price": "102",
       "observation_id": "BAR-SPOT_A-20260107",
       "source_revision": 1

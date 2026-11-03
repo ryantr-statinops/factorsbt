@@ -93,16 +93,16 @@ class ContractExampleTests(unittest.TestCase):
             with self.subTest(example=example_name):
                 self.check_example(schema_name, example_name, expected_valid)
 
-    def test_internal_fixture_v1_schemas_accept_controlled_shape_and_reject_traversal(self):
+    def test_internal_fixture_v1_1_schemas_accept_controlled_shape_and_reject_traversal(self):
         manifest = {
-            "format_version": "1.0.0",
+            "format_version": "1.1.0",
             "fixture_id": "mvp-synthetic",
             "fixture_version": "v1",
             "dataset_path": "datasets/baseline.json",
             "dataset_sha256": "a" * 64,
         }
         dataset = {
-            "format_version": "1.0.0",
+            "format_version": "1.1.0",
             "fixture_id": "mvp-synthetic",
             "fixture_version": "v1",
             "calendar_id": "synthetic-daily-utc-v1",
@@ -125,6 +125,22 @@ class ContractExampleTests(unittest.TestCase):
         )
         self.assertEqual(list(manifest_validator.iter_errors(manifest)), [])
         self.assertEqual(list(dataset_validator.iter_errors(dataset)), [])
+        dataset["settlement_events"] = [{
+            "fixture_event_id": "ASSIGN-1",
+            "instrument_id": "AM_CALL_A",
+            "event_type": "american_assignment",
+            "event_time": "2026-01-07T16:00:00Z",
+            "available_at": "2026-01-07T16:00:00Z",
+            "contracts": 1,
+            "underlying_price": "102",
+            "observation_id": "SPOT-A-CLOSE",
+            "source_revision": 1,
+        }]
+        self.assertEqual(list(dataset_validator.iter_errors(dataset)), [])
+        dataset["settlement_events"][0]["contracts"] = 0
+        self.assertTrue(list(dataset_validator.iter_errors(dataset)))
+        del dataset["settlement_events"][0]["contracts"]
+        self.assertTrue(list(dataset_validator.iter_errors(dataset)))
         manifest["dataset_path"] = "../outside.json"
         self.assertTrue(list(manifest_validator.iter_errors(manifest)))
 
