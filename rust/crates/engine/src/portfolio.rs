@@ -6,7 +6,7 @@ use factorsbt_contracts::{
     InstrumentId, UtcTimestamp,
 };
 use factorsbt_data::{initial_marks_available_at, Fixture};
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use std::{collections::HashMap, error::Error, fmt, str::FromStr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +19,8 @@ pub enum EngineError {
     DuplicatePosition(String),
     InvalidInitialCash,
     InvalidInitialPosition(String),
+    InvalidPostingQuantity(String),
+    MissingPosition(String),
     InsufficientInitialMargin,
     ArithmeticOverflow(&'static str),
     FixtureTimeline(String),
@@ -37,6 +39,8 @@ impl fmt::Display for EngineError {
             Self::DuplicatePosition(id) => write!(f, "duplicate initial position for {id}"),
             Self::InvalidInitialCash => f.write_str("initial cash cannot be negative"),
             Self::InvalidInitialPosition(id) => write!(f, "invalid initial quantity for {id}"),
+            Self::InvalidPostingQuantity(id) => write!(f, "invalid posting quantity for {id}"),
+            Self::MissingPosition(id) => write!(f, "posting references unknown instrument {id}"),
             Self::InsufficientInitialMargin => {
                 f.write_str("initial cash does not cover initial margin")
             }
@@ -61,6 +65,17 @@ pub struct InstrumentPosition {
     pub settlement_basis: Option<Decimal>,
     pub mark_observation_id: String,
     pub mark_revision: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LedgerPosting {
+    pub cash_before: Decimal,
+    /// Effective cash delta after cent rounding of the resulting ledger balance.
+    pub cash_delta: Decimal,
+    pub cash_after: Decimal,
+    pub quantity_before: Decimal,
+    pub quantity_delta: Decimal,
+    pub quantity_after: Decimal,
 }
 
 /// Mutable state owned by one run/scenario. Constructing another value creates
@@ -101,7 +116,8 @@ impl PortfolioState {
             );
         }
 
-        let cash = decimal(configuration.initial_portfolio.cash.as_str())?;
+        let cash = decimal(configuration.initial_portfolio.cash.as_str())?
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         if cash < Decimal::ZERO {
             return Err(EngineError::InvalidInitialCash);
         }
@@ -209,6 +225,64 @@ impl PortfolioState {
 
     pub fn maintenance_margin_requirement(&self) -> Decimal {
         self.maintenance_margin_requirement
+    }
+
+    /// Apply a cash and optional position posting atomically. Cash is rounded
+    /// half-even to cents; invalid quantities or arithmetic overflow leave the
+    /// state untouched.
+    pub fn apply_ledger_posting(
+        &mut self,
+        instrument_id: Option<&str>,
+        cash_delta: Decimal,
+        quantity_delta: Decimal,
+    ) -> Result<LedgerPosting, EngineError> {
+        let position = match instrument_id {
+            Some(id) => Some((
+                id,
+                self.instruments
+                    .get(id)
+                    .ok_or_else(|| EngineError::MissingPosition(id.to_owned()))?,
+                self.positions
+                    .get(id)
+                    .ok_or_else(|| EngineError::MissingPosition(id.to_owned()))?,
+            )),
+            None if quantity_delta.is_zero() => None,
+            None => return Err(EngineError::MissingPosition("<none>".to_owned())),
+        };
+
+        let cash_before = self.cash;
+        let cash_after = cash_before
+            .checked_add(cash_delta)
+            .ok_or(EngineError::ArithmeticOverflow("cash posting"))?
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        let (quantity_before, quantity_after) = if let Some((id, instrument, current)) = position {
+            let next = current
+                .quantity
+                .checked_add(quantity_delta)
+                .ok_or(EngineError::ArithmeticOverflow("quantity posting"))?;
+            validate_quantity(instrument, next)
+                .map_err(|()| EngineError::InvalidPostingQuantity(id.to_owned()))?;
+            (current.quantity, next)
+        } else {
+            (Decimal::ZERO, Decimal::ZERO)
+        };
+
+        if let Some((id, _, _)) = position {
+            self.positions
+                .get_mut(id)
+                .expect("position was validated")
+                .quantity = quantity_after;
+        }
+        self.cash = cash_after;
+
+        Ok(LedgerPosting {
+            cash_before,
+            cash_delta: cash_after - cash_before,
+            cash_after,
+            quantity_before,
+            quantity_delta,
+            quantity_after,
+        })
     }
 }
 
@@ -371,5 +445,49 @@ mod tests {
             PortfolioState::initialize(&configuration, &fixture),
             Err(EngineError::InsufficientInitialMargin)
         ));
+    }
+
+    #[test]
+    fn ledger_postings_round_cash_half_even_and_apply_positions_together() {
+        let (configuration, fixture) = baseline();
+        let mut state = PortfolioState::initialize(&configuration, &fixture).unwrap();
+        let posting = state
+            .apply_ledger_posting(Some("SPOT_A"), Decimal::new(-100005, 3), Decimal::ONE)
+            .unwrap();
+        assert_eq!(posting.cash_before, Decimal::from(100000));
+        assert_eq!(posting.cash_delta, Decimal::from(-100));
+        assert_eq!(posting.cash_after, Decimal::from(99900));
+        assert_eq!(posting.quantity_after, Decimal::ONE);
+
+        let half_even = state
+            .apply_ledger_posting(None, Decimal::new(5, 3), Decimal::ZERO)
+            .unwrap();
+        assert_eq!(half_even.cash_after, Decimal::from(99900));
+        assert_eq!(half_even.cash_delta, Decimal::ZERO);
+    }
+
+    #[test]
+    fn invalid_position_posting_is_atomic() {
+        let (configuration, fixture) = baseline();
+        let mut state = PortfolioState::initialize(&configuration, &fixture).unwrap();
+        let result =
+            state.apply_ledger_posting(Some("SPOT_A"), Decimal::from(100), Decimal::from(-1));
+        assert!(matches!(
+            result,
+            Err(EngineError::InvalidPostingQuantity(_))
+        ));
+        assert_eq!(state.cash(), Decimal::from(100000));
+        assert_eq!(state.position("SPOT_A").unwrap().quantity, Decimal::ZERO);
+    }
+
+    #[test]
+    fn cash_overflow_leaves_the_ledger_unchanged() {
+        let (configuration, fixture) = baseline();
+        let mut state = PortfolioState::initialize(&configuration, &fixture).unwrap();
+        assert!(matches!(
+            state.apply_ledger_posting(None, Decimal::MAX, Decimal::ZERO),
+            Err(EngineError::ArithmeticOverflow("cash posting"))
+        ));
+        assert_eq!(state.cash(), Decimal::from(100000));
     }
 }

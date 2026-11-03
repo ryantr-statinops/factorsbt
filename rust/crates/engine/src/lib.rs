@@ -4,4 +4,4 @@
 
 mod portfolio;
 
-pub use portfolio::{EngineError, InstrumentPosition, PortfolioState};
+pub use portfolio::{EngineError, InstrumentPosition, LedgerPosting, PortfolioState};
