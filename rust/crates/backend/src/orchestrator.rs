@@ -88,6 +88,102 @@ impl fmt::Display for OrchestrationError {
 
 impl Error for OrchestrationError {}
 
+#[derive(Debug)]
+pub struct RunExecutionFailure {
+    pub identity: RunIdentity,
+    pub error: OrchestrationError,
+    pub partial_report: Option<Box<OrchestrationReport>>,
+    pub failed_inference: Option<Box<FailedInferenceExchange>>,
+}
+
+#[derive(Debug)]
+pub struct FailedInferenceExchange {
+    pub request: ModelRequest,
+    pub request_body: Vec<u8>,
+    pub response_body: Option<Vec<u8>>,
+}
+
+impl fmt::Display for RunExecutionFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.error.fmt(formatter)
+    }
+}
+
+impl Error for RunExecutionFailure {}
+
+struct RunProgress {
+    identity: RunIdentity,
+    fixture_id: String,
+    fixture_version: String,
+    fixture_digest_sha256: String,
+    last_valid_portfolio: Option<PortfolioState>,
+    pending_groups: Vec<PendingOrderGroup>,
+    liquidation_group: Option<PendingOrderGroup>,
+    cycles: Vec<DecisionCycleRecord>,
+    execution_events: Vec<Value>,
+    liquidation_events: Vec<Value>,
+    settlement_events: Vec<Value>,
+    risk_events: Vec<Value>,
+    failed_request: Option<ModelRequest>,
+    failed_request_body: Option<Vec<u8>>,
+    failed_response_body: Option<Vec<u8>>,
+}
+
+impl RunProgress {
+    fn new(identity: RunIdentity, fixture: &Fixture) -> Self {
+        Self {
+            identity,
+            fixture_id: fixture.manifest.fixture_id.as_str().to_owned(),
+            fixture_version: fixture.manifest.fixture_version.as_str().to_owned(),
+            fixture_digest_sha256: fixture.digest_sha256.clone(),
+            last_valid_portfolio: None,
+            pending_groups: Vec::new(),
+            liquidation_group: None,
+            cycles: Vec::new(),
+            execution_events: Vec::new(),
+            liquidation_events: Vec::new(),
+            settlement_events: Vec::new(),
+            risk_events: Vec::new(),
+            failed_request: None,
+            failed_request_body: None,
+            failed_response_body: None,
+        }
+    }
+
+    fn capture_state(
+        &mut self,
+        portfolio: &PortfolioState,
+        pending_groups: &[PendingOrderGroup],
+        liquidation_group: Option<&PendingOrderGroup>,
+    ) {
+        self.last_valid_portfolio = Some(portfolio.clone());
+        self.pending_groups = pending_groups.to_vec();
+        self.liquidation_group = liquidation_group.cloned();
+    }
+
+    fn failure_report(&self, error: &OrchestrationError) -> Option<OrchestrationReport> {
+        let portfolio = self.last_valid_portfolio.as_ref()?;
+        let mut pending = self.pending_groups.clone();
+        if let Some(group) = &self.liquidation_group {
+            pending.push(group.clone());
+        }
+        let finalization =
+            finalize_run_state(portfolio, &mut pending, Some(error.to_string())).ok()?;
+        Some(OrchestrationReport {
+            identity: self.identity.clone(),
+            fixture_id: self.fixture_id.clone(),
+            fixture_version: self.fixture_version.clone(),
+            fixture_digest_sha256: self.fixture_digest_sha256.clone(),
+            cycles: self.cycles.clone(),
+            execution_events: self.execution_events.clone(),
+            liquidation_events: self.liquidation_events.clone(),
+            settlement_events: self.settlement_events.clone(),
+            risk_events: self.risk_events.clone(),
+            finalization,
+        })
+    }
+}
+
 /// Run one isolated scenario. Fixture data is immutable and can be shared;
 /// every mutable engine, pending-order, inference, and trace value is local.
 pub async fn run_simulation(
@@ -97,6 +193,46 @@ pub async fn run_simulation(
     configuration: &RunConfiguration,
     fixture: &Fixture,
     identity: RunIdentity,
+) -> Result<OrchestrationReport, Box<RunExecutionFailure>> {
+    let mut progress = RunProgress::new(identity.clone(), fixture);
+    match run_simulation_inner(
+        client,
+        endpoint,
+        timeout,
+        configuration,
+        fixture,
+        identity,
+        &mut progress,
+    )
+    .await
+    {
+        Ok(report) => Ok(report),
+        Err(error) => Err(Box::new(RunExecutionFailure {
+            identity: progress.identity.clone(),
+            partial_report: progress.failure_report(&error).map(Box::new),
+            failed_inference: progress
+                .failed_request
+                .zip(progress.failed_request_body)
+                .map(|(request, request_body)| {
+                    Box::new(FailedInferenceExchange {
+                        request,
+                        request_body,
+                        response_body: progress.failed_response_body,
+                    })
+                }),
+            error,
+        })),
+    }
+}
+
+async fn run_simulation_inner(
+    client: &ModelHttpClient,
+    endpoint: &str,
+    timeout: Duration,
+    configuration: &RunConfiguration,
+    fixture: &Fixture,
+    identity: RunIdentity,
+    progress: &mut RunProgress,
 ) -> Result<OrchestrationReport, OrchestrationError> {
     validate_run_coverage(&fixture.dataset, configuration)
         .map_err(|issues| OrchestrationError::at("fixture coverage", format_issues(&issues)))?;
@@ -114,11 +250,7 @@ pub async fn run_simulation(
     let mut liquidation_group = None::<PendingOrderGroup>;
     let mut inference_guard = InferenceGuard::default();
     let mut processed_settlement_ids = HashSet::<String>::new();
-    let mut cycles = Vec::new();
-    let mut execution_events = Vec::new();
-    let mut liquidation_events = Vec::new();
-    let mut settlement_events = Vec::new();
-    let mut risk_events = Vec::new();
+    progress.capture_state(&portfolio, &pending_groups, liquidation_group.as_ref());
     let mut step_number = 0_u64;
 
     for (event_index, event) in schedule.iter().enumerate() {
@@ -126,21 +258,23 @@ pub async fn run_simulation(
             SimulationEventKind::Open => {
                 let prices = execution_prices_available_at(&fixture.dataset, &event.at)
                     .map_err(|error| OrchestrationError::at("execution inputs", error))?;
-                if let Some(group) = liquidation_group.take() {
+                if let Some(group) = liquidation_group.clone() {
                     let outcome =
                         execute_liquidation_group(&mut portfolio, &group, &event.at, &prices)
                             .map_err(|error| OrchestrationError::at("forced liquidation", error))?;
                     match &outcome {
                         LiquidationOutcome::Completed { fills, .. } => {
-                            liquidation_events.push(json!({
+                            progress.liquidation_events.push(json!({
                                 "type":"liquidation_completed",
                                 "step_id":group.step_id.as_str(),
                                 "execution_time":event.at.as_str(),
                                 "fills":fills.iter().map(fill_value).collect::<Vec<_>>(),
                             }));
+                            liquidation_group = None;
+                            progress.capture_state(&portfolio, &pending_groups, None);
                         }
                         LiquidationOutcome::Failed { reason, .. } => {
-                            liquidation_events.push(json!({
+                            progress.liquidation_events.push(json!({
                                 "type":"liquidation_failed",
                                 "step_id":group.step_id.as_str(),
                                 "execution_time":event.at.as_str(),
@@ -160,13 +294,17 @@ pub async fn run_simulation(
                         }
                     }
                     pending_groups = remaining;
-                    for group in due {
+                    while !due.is_empty() {
+                        let group = due.remove(0);
                         let executed =
                             execute_pending_group(&mut portfolio, &group, &event.at, &prices)
                                 .map_err(|error| {
                                     OrchestrationError::at("next-open execution", error)
                                 })?;
-                        execution_events.push(execution_value(&executed));
+                        progress.execution_events.push(execution_value(&executed));
+                        let mut not_yet_executed = pending_groups.clone();
+                        not_yet_executed.extend(due.iter().cloned());
+                        progress.capture_state(&portfolio, &not_yet_executed, None);
                     }
                 }
             }
@@ -181,21 +319,29 @@ pub async fn run_simulation(
                 portfolio
                     .apply_valuation_marks(&marks)
                     .map_err(|error| OrchestrationError::at("portfolio marks", error))?;
+                progress.capture_state(&portfolio, &pending_groups, liquidation_group.as_ref());
                 settle_close(
-                    configuration,
-                    fixture,
-                    &event.at,
-                    &marks,
+                    SettlementContext {
+                        configuration,
+                        fixture,
+                        at: &event.at,
+                        marks: &marks,
+                        pending_groups: &pending_groups,
+                        liquidation_group: liquidation_group.as_ref(),
+                    },
                     &mut portfolio,
                     &mut processed_settlement_ids,
-                    &mut settlement_events,
+                    progress,
                 )?;
 
-                if let Some(breach) =
+                let maintenance_breach =
                     factorsbt_engine::enforce_maintenance(&portfolio, &mut pending_groups)
-                        .map_err(|error| OrchestrationError::at("maintenance check", error))?
-                {
-                    risk_events.push(maintenance_value(&event.at, &breach));
+                        .map_err(|error| OrchestrationError::at("maintenance check", error))?;
+                progress.capture_state(&portfolio, &pending_groups, liquidation_group.as_ref());
+                if let Some(breach) = maintenance_breach {
+                    progress
+                        .risk_events
+                        .push(maintenance_value(&event.at, &breach));
                     let next_open = schedule
                         .get(event_index + 1)
                         .filter(|next| next.kind == SimulationEventKind::Open);
@@ -211,6 +357,7 @@ pub async fn run_simulation(
                                 OrchestrationError::at("maintenance liquidation schedule", error)
                             })?,
                     );
+                    progress.capture_state(&portfolio, &pending_groups, liquidation_group.as_ref());
                     continue;
                 }
 
@@ -259,13 +406,22 @@ pub async fn run_simulation(
                 };
                 let request_body = serde_json::to_vec(&request)
                     .map_err(|error| OrchestrationError::at("model request encoding", error))?;
+                progress.failed_request = Some(request.clone());
+                progress.failed_request_body = Some(request_body.clone());
+                progress.failed_response_body = None;
                 inference_guard.begin(&request).map_err(|error| {
                     OrchestrationError::at("inference guard", format!("{error:?}"))
                 })?;
-                let exchange = client
-                    .infer(endpoint, timeout, &request)
-                    .await
-                    .map_err(|error| model_error("model request", error))?;
+                let exchange =
+                    client
+                        .infer(endpoint, timeout, &request)
+                        .await
+                        .map_err(|error| {
+                            progress.failed_response_body =
+                                error.response_body().map(ToOwned::to_owned);
+                            model_error("model request", error)
+                        })?;
+                progress.failed_response_body = Some(exchange.response_body.clone());
                 validate_model_response(&request, &exchange.response).map_err(|error| {
                     OrchestrationError::at("model response validation", format!("{error:?}"))
                 })?;
@@ -302,7 +458,7 @@ pub async fn run_simulation(
                 if let Some(group) = group {
                     pending_groups.push(group);
                 }
-                cycles.push(DecisionCycleRecord {
+                progress.cycles.push(DecisionCycleRecord {
                     snapshot,
                     request,
                     request_body,
@@ -312,6 +468,10 @@ pub async fn run_simulation(
                     admission,
                     queued_order_ids,
                 });
+                progress.failed_request = None;
+                progress.failed_request_body = None;
+                progress.failed_response_body = None;
+                progress.capture_state(&portfolio, &pending_groups, liquidation_group.as_ref());
             }
         }
     }
@@ -329,14 +489,14 @@ pub async fn run_simulation(
     }
     Ok(OrchestrationReport {
         identity,
-        fixture_id: fixture.manifest.fixture_id.as_str().to_owned(),
-        fixture_version: fixture.manifest.fixture_version.as_str().to_owned(),
-        fixture_digest_sha256: fixture.digest_sha256.clone(),
-        cycles,
-        execution_events,
-        liquidation_events,
-        settlement_events,
-        risk_events,
+        fixture_id: progress.fixture_id.clone(),
+        fixture_version: progress.fixture_version.clone(),
+        fixture_digest_sha256: progress.fixture_digest_sha256.clone(),
+        cycles: progress.cycles.clone(),
+        execution_events: progress.execution_events.clone(),
+        liquidation_events: progress.liquidation_events.clone(),
+        settlement_events: progress.settlement_events.clone(),
+        risk_events: progress.risk_events.clone(),
         finalization,
     })
 }
@@ -375,15 +535,29 @@ fn queue_decision(
     }
 }
 
+struct SettlementContext<'a> {
+    configuration: &'a RunConfiguration,
+    fixture: &'a Fixture,
+    at: &'a UtcTimestamp,
+    marks: &'a [factorsbt_engine::ValuationMark],
+    pending_groups: &'a [PendingOrderGroup],
+    liquidation_group: Option<&'a PendingOrderGroup>,
+}
+
 fn settle_close(
-    configuration: &RunConfiguration,
-    fixture: &Fixture,
-    at: &UtcTimestamp,
-    marks: &[factorsbt_engine::ValuationMark],
+    context: SettlementContext<'_>,
     portfolio: &mut PortfolioState,
     processed_settlement_ids: &mut HashSet<String>,
-    settlement_trace: &mut Vec<Value>,
+    progress: &mut RunProgress,
 ) -> Result<(), OrchestrationError> {
+    let SettlementContext {
+        configuration,
+        fixture,
+        at,
+        marks,
+        pending_groups,
+        liquidation_group,
+    } = context;
     let marks_by_id = marks
         .iter()
         .map(|mark| (mark.instrument_id.as_str(), mark))
@@ -422,7 +596,7 @@ fn settle_close(
             )
         }
         .map_err(|error| OrchestrationError::at("futures settlement", error))?;
-        settlement_trace.push(json!({
+        progress.settlement_events.push(json!({
             "type":"future_settlement",
             "instrument_id":result.instrument_id.as_str(),
             "settled_quantity":result.settled_quantity.to_string(),
@@ -433,6 +607,7 @@ fn settle_close(
             "source_revision":result.source_revision,
             "ledger_posting":posting_value(result.posting),
         }));
+        progress.capture_state(portfolio, pending_groups, liquidation_group);
     }
 
     let available_events = settlement_events_available_at(&fixture.dataset, at)
@@ -446,7 +621,7 @@ fn settle_close(
             .apply_american_settlement_event(event)
             .map_err(|error| OrchestrationError::at("American option settlement", error))?;
         processed_settlement_ids.insert(id);
-        settlement_trace.push(json!({
+        progress.settlement_events.push(json!({
             "type":"american_physical_settlement",
             "fixture_event_id":result.fixture_event_id,
             "instrument_id":result.instrument_id.as_str(),
@@ -461,6 +636,7 @@ fn settle_close(
             "option_posting":posting_value(result.option_posting),
             "underlying_posting":posting_value(result.underlying_posting),
         }));
+        progress.capture_state(portfolio, pending_groups, liquidation_group);
     }
 
     for instrument in &configuration.instruments {
@@ -493,7 +669,7 @@ fn settle_close(
                         provenance.source_revision,
                     )
                     .map_err(|error| OrchestrationError::at("European option expiry", error))?;
-                settlement_trace.push(json!({
+                progress.settlement_events.push(json!({
                     "type":"european_cash_expiry",
                     "instrument_id":result.instrument_id.as_str(),
                     "settled_contracts":result.settled_contracts.to_string(),
@@ -504,6 +680,7 @@ fn settle_close(
                     "source_revision":result.source_revision,
                     "ledger_posting":posting_value(result.posting),
                 }));
+                progress.capture_state(portfolio, pending_groups, liquidation_group);
             }
             (ExerciseStyle::American, SettlementStyle::Physical) => {
                 let result = portfolio
@@ -515,7 +692,7 @@ fn settle_close(
                         provenance.source_revision,
                     )
                     .map_err(|error| OrchestrationError::at("American option expiry", error))?;
-                settlement_trace.push(json!({
+                progress.settlement_events.push(json!({
                     "type":"american_worthless_expiry",
                     "instrument_id":result.instrument_id.as_str(),
                     "expired_contracts":result.expired_contracts.to_string(),
@@ -525,6 +702,7 @@ fn settle_close(
                     "source_revision":result.source_revision,
                     "ledger_posting":posting_value(result.posting),
                 }));
+                progress.capture_state(portfolio, pending_groups, liquidation_group);
             }
             _ => {
                 return Err(OrchestrationError::at(
@@ -912,7 +1090,21 @@ mod tests {
         .await
         .unwrap_err();
         server.abort();
-        assert_eq!(error.stage, "model response validation");
+        assert_eq!(error.error.stage, "model response validation");
+        let partial = error.partial_report.unwrap();
+        assert_eq!(partial.finalization.status, FinalRunStatus::Failed);
+        assert_eq!(
+            partial.finalization.failure_reason.as_deref(),
+            Some("model response validation failed: ModeMismatch")
+        );
+        assert_eq!(partial.finalization.cash, Decimal::from(100_000));
+        let failed_exchange = error.failed_inference.unwrap();
+        assert_eq!(failed_exchange.request.step_id.as_str(), "step-0001");
+        assert!(!failed_exchange.request_body.is_empty());
+        assert!(failed_exchange
+            .response_body
+            .as_ref()
+            .is_some_and(|body| !body.is_empty()));
     }
 
     #[test]

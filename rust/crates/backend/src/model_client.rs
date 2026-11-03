@@ -17,11 +17,28 @@ pub enum ModelServiceErrorKind {
 pub struct ModelServiceError {
     kind: ModelServiceErrorKind,
     status: Option<StatusCode>,
+    response_body: Option<Vec<u8>>,
 }
 
 impl ModelServiceError {
     fn new(kind: ModelServiceErrorKind, status: Option<StatusCode>) -> Self {
-        Self { kind, status }
+        Self {
+            kind,
+            status,
+            response_body: None,
+        }
+    }
+
+    fn with_response_body(
+        kind: ModelServiceErrorKind,
+        status: Option<StatusCode>,
+        response_body: Vec<u8>,
+    ) -> Self {
+        Self {
+            kind,
+            status,
+            response_body: Some(response_body),
+        }
     }
 
     pub fn kind(&self) -> &ModelServiceErrorKind {
@@ -30,6 +47,10 @@ impl ModelServiceError {
 
     pub fn status(&self) -> Option<StatusCode> {
         self.status
+    }
+
+    pub fn response_body(&self) -> Option<&[u8]> {
+        self.response_body.as_deref()
     }
 }
 
@@ -95,9 +116,20 @@ impl ModelHttpClient {
             })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(ModelServiceError::new(
+            let body = response.bytes().await.map_err(|error| {
+                ModelServiceError::new(
+                    if error.is_timeout() {
+                        ModelServiceErrorKind::Timeout
+                    } else {
+                        ModelServiceErrorKind::Transport
+                    },
+                    Some(status),
+                )
+            })?;
+            return Err(ModelServiceError::with_response_body(
                 ModelServiceErrorKind::HttpStatus,
                 Some(status),
+                body.to_vec(),
             ));
         }
         let response_body = response.bytes().await.map_err(|error| {
@@ -110,8 +142,13 @@ impl ModelHttpClient {
                 None,
             )
         })?;
-        let response = serde_json::from_slice(&response_body)
-            .map_err(|_| ModelServiceError::new(ModelServiceErrorKind::InvalidResponse, None))?;
+        let response = serde_json::from_slice(&response_body).map_err(|_| {
+            ModelServiceError::with_response_body(
+                ModelServiceErrorKind::InvalidResponse,
+                Some(status),
+                response_body.to_vec(),
+            )
+        })?;
         Ok(ModelExchange {
             response,
             response_body: response_body.to_vec(),
@@ -222,7 +259,28 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.kind(), &ModelServiceErrorKind::HttpStatus);
         assert_eq!(error.status(), Some(StatusCode::SERVICE_UNAVAILABLE));
+        assert_eq!(
+            error.response_body(),
+            Some(b"controlled failure".as_slice())
+        );
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn malformed_success_response_retains_exact_bytes_for_failure_evidence() {
+        let router = Router::new().route(
+            "/infer",
+            post(|| async { (StatusCode::OK, "{malformed-json") }),
+        );
+        let (endpoint, server) = serve(router).await;
+        let error = ModelHttpClient::new()
+            .unwrap()
+            .infer(&endpoint, Duration::from_secs(1), &request())
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), &ModelServiceErrorKind::InvalidResponse);
+        assert_eq!(error.response_body(), Some(b"{malformed-json".as_slice()));
         server.abort();
     }
 

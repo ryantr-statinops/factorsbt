@@ -1,6 +1,9 @@
 //! Local per-run evidence writing and integrity verification.
 
-use crate::orchestrator::{DecisionCycleRecord, OrchestrationReport};
+use crate::orchestrator::{
+    DecisionCycleRecord, FailedInferenceExchange, OrchestrationError, OrchestrationReport,
+    RunExecutionFailure,
+};
 use factorsbt_contracts::{
     outcomes::{EvidenceArtifactRef, EvidenceKind},
     RunConfiguration, UtcTimestamp, Uuid,
@@ -26,6 +29,7 @@ pub enum EvidenceError {
     PathEscapesRunRoot,
     InvalidRunIdentity,
     RunNotSuccessful,
+    RunNotFailed,
     FixtureIdentityMismatch,
     FixtureDigestMismatch,
     Serialization(&'static str),
@@ -49,6 +53,9 @@ impl fmt::Display for EvidenceError {
             }
             Self::RunNotSuccessful => {
                 formatter.write_str("successful evidence writer requires a succeeded run")
+            }
+            Self::RunNotFailed => {
+                formatter.write_str("failure evidence writer requires a failed run")
             }
             Self::FixtureIdentityMismatch => {
                 formatter.write_str("run report and fixture identity differ")
@@ -89,6 +96,49 @@ pub fn write_successful_run(
     if report.finalization.status != FinalRunStatus::Succeeded {
         return Err(EvidenceError::RunNotSuccessful);
     }
+    write_report_artifacts(root, configuration, fixture, report, None, None)
+}
+
+/// Persist a failed run's last valid portfolio, trace, and in-flight model
+/// exchange. Failures before engine initialization still retain config, source
+/// fixtures, the error, and any request/response bytes that were available.
+pub fn write_failed_run(
+    root: impl AsRef<Path>,
+    configuration: &RunConfiguration,
+    fixture: &Fixture,
+    failure: &RunExecutionFailure,
+) -> Result<EvidenceBundle, EvidenceError> {
+    if let Some(report) = failure.partial_report.as_deref() {
+        if report.finalization.status != FinalRunStatus::Failed {
+            return Err(EvidenceError::RunNotFailed);
+        }
+        write_report_artifacts(
+            root,
+            configuration,
+            fixture,
+            report,
+            Some(&failure.error),
+            failure.failed_inference.as_deref(),
+        )
+    } else {
+        write_uninitialized_failure(root, configuration, fixture, failure)
+    }
+}
+
+fn write_report_artifacts(
+    root: impl AsRef<Path>,
+    configuration: &RunConfiguration,
+    fixture: &Fixture,
+    report: &OrchestrationReport,
+    failure: Option<&OrchestrationError>,
+    failed_inference: Option<&FailedInferenceExchange>,
+) -> Result<EvidenceBundle, EvidenceError> {
+    if failure.is_none() && report.finalization.status != FinalRunStatus::Succeeded {
+        return Err(EvidenceError::RunNotSuccessful);
+    }
+    if failure.is_some() && report.finalization.status != FinalRunStatus::Failed {
+        return Err(EvidenceError::RunNotFailed);
+    }
     if report.fixture_id != fixture.manifest.fixture_id.as_str()
         || report.fixture_version != fixture.manifest.fixture_version.as_str()
         || report.fixture_digest_sha256 != fixture.digest_sha256
@@ -108,32 +158,7 @@ pub fn write_successful_run(
     {
         return Err(EvidenceError::InvalidRunIdentity);
     }
-    let root = root.as_ref();
-    fs::create_dir_all(root).map_err(|_| EvidenceError::Io("root creation"))?;
-    let root = fs::canonicalize(root).map_err(|_| EvidenceError::Io("root resolution"))?;
-    let runs = root.join("runs");
-    fs::create_dir_all(&runs).map_err(|_| EvidenceError::Io("runs directory creation"))?;
-    let runs =
-        fs::canonicalize(&runs).map_err(|_| EvidenceError::Io("runs directory resolution"))?;
-    if !runs.starts_with(&root) {
-        return Err(EvidenceError::PathEscapesRunRoot);
-    }
-    let run_directory = runs.join(run_id);
-    match fs::create_dir(&run_directory) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(EvidenceError::ExistingRun)
-        }
-        Err(_) => return Err(EvidenceError::Io("run directory creation")),
-    }
-    let evidence_directory = run_directory.join("evidence");
-    fs::create_dir(&evidence_directory)
-        .map_err(|_| EvidenceError::Io("evidence directory creation"))?;
-    let evidence_directory = fs::canonicalize(&evidence_directory)
-        .map_err(|_| EvidenceError::Io("evidence directory resolution"))?;
-    if !evidence_directory.starts_with(&run_directory) {
-        return Err(EvidenceError::PathEscapesRunRoot);
-    }
+    let run_directory = create_run_directory(root, run_id)?;
 
     let created_at = system_timestamp()?;
     let mut artifacts = Vec::new();
@@ -242,14 +267,27 @@ pub fn write_successful_run(
         &created_at,
         EvidenceKind::Summary,
         "evidence/summary.json",
-        &summary_value(report),
+        &summary_value(report, failure),
         &mut artifacts,
     )?;
+
+    if let Some(failure) = failure {
+        write_failure_artifacts(
+            &run_directory,
+            &created_at,
+            failure,
+            failed_inference,
+            true,
+            &mut artifacts,
+        )?;
+    }
 
     let manifest_bytes = serde_json::to_vec_pretty(&json!({
         "format_version":"1.0.0",
         "run_id":report.identity.run_id.as_str(),
         "scenario_id":report.identity.scenario_id.as_str(),
+        "status":status_name(report.finalization.status),
+        "failure":failure.map(|error| json!({"stage":error.stage,"reason":error.reason})),
         "fixture":{
             "fixture_id":report.fixture_id,
             "fixture_version":report.fixture_version,
@@ -272,6 +310,164 @@ pub fn write_successful_run(
         run_directory,
         artifacts,
     })
+}
+
+fn write_uninitialized_failure(
+    root: impl AsRef<Path>,
+    configuration: &RunConfiguration,
+    fixture: &Fixture,
+    failure: &RunExecutionFailure,
+) -> Result<EvidenceBundle, EvidenceError> {
+    if configuration.data.fixture_id != fixture.manifest.fixture_id
+        || configuration.data.fixture_version != fixture.manifest.fixture_version
+    {
+        return Err(EvidenceError::FixtureIdentityMismatch);
+    }
+    if sha256(&fixture.dataset_bytes) != fixture.digest_sha256 {
+        return Err(EvidenceError::FixtureDigestMismatch);
+    }
+    let run_directory = create_run_directory(root, failure.identity.run_id.as_str())?;
+    let created_at = system_timestamp()?;
+    let mut artifacts = Vec::new();
+    write_artifact(
+        &run_directory,
+        &created_at,
+        EvidenceKind::Configuration,
+        "evidence/configuration.json",
+        json_bytes(configuration, "configuration")?,
+        &mut artifacts,
+    )?;
+    write_artifact(
+        &run_directory,
+        &created_at,
+        EvidenceKind::Observation,
+        "evidence/fixture/manifest.json",
+        fixture.manifest_bytes.to_vec(),
+        &mut artifacts,
+    )?;
+    write_artifact(
+        &run_directory,
+        &created_at,
+        EvidenceKind::Observation,
+        "evidence/fixture/dataset.json",
+        fixture.dataset_bytes.to_vec(),
+        &mut artifacts,
+    )?;
+    write_failure_artifacts(
+        &run_directory,
+        &created_at,
+        &failure.error,
+        failure.failed_inference.as_deref(),
+        false,
+        &mut artifacts,
+    )?;
+    let manifest_bytes = serde_json::to_vec_pretty(&json!({
+        "format_version":"1.0.0",
+        "run_id":failure.identity.run_id.as_str(),
+        "scenario_id":failure.identity.scenario_id.as_str(),
+        "status":"failed",
+        "failure":{"stage":failure.error.stage,"reason":failure.error.reason},
+        "fixture":{
+            "fixture_id":fixture.manifest.fixture_id,
+            "fixture_version":fixture.manifest.fixture_version,
+            "dataset_sha256":fixture.digest_sha256,
+        },
+        "artifacts":artifacts,
+    }))
+    .map_err(|_| EvidenceError::Serialization("run manifest"))?;
+    write_artifact(
+        &run_directory,
+        &created_at,
+        EvidenceKind::RunManifest,
+        "evidence/run-manifest.json",
+        manifest_bytes,
+        &mut artifacts,
+    )?;
+    verify_artifacts(&run_directory, &artifacts)?;
+    Ok(EvidenceBundle {
+        run_directory,
+        artifacts,
+    })
+}
+
+fn write_failure_artifacts(
+    run_directory: &Path,
+    created_at: &UtcTimestamp,
+    failure: &OrchestrationError,
+    failed_inference: Option<&FailedInferenceExchange>,
+    last_valid_portfolio_present: bool,
+    artifacts: &mut Vec<EvidenceArtifactRef>,
+) -> Result<(), EvidenceError> {
+    if let Some(failed_inference) = failed_inference {
+        write_artifact(
+            run_directory,
+            created_at,
+            EvidenceKind::ModelRequest,
+            "evidence/model-requests/failed-inference.json",
+            failed_inference.request_body.clone(),
+            artifacts,
+        )?;
+        if let Some(response_body) = &failed_inference.response_body {
+            write_artifact(
+                run_directory,
+                created_at,
+                EvidenceKind::ModelResponse,
+                "evidence/model-responses/failed-inference.json",
+                response_body.clone(),
+                artifacts,
+            )?;
+        }
+    }
+    write_json_artifact(
+        run_directory,
+        created_at,
+        EvidenceKind::Risk,
+        "evidence/failure.json",
+        &json!({
+            "stage":failure.stage,
+            "reason":failure.reason,
+            "last_valid_portfolio_present":last_valid_portfolio_present,
+            "failed_inference_id":failed_inference.map(|exchange| exchange.request.inference_id.as_str()),
+        }),
+        artifacts,
+    )
+}
+
+fn create_run_directory(root: impl AsRef<Path>, run_id: &str) -> Result<PathBuf, EvidenceError> {
+    if run_id.len() != 36
+        || run_id
+            .bytes()
+            .any(|byte| !(byte.is_ascii_hexdigit() || byte == b'-'))
+    {
+        return Err(EvidenceError::InvalidRunIdentity);
+    }
+    let root = root.as_ref();
+    fs::create_dir_all(root).map_err(|_| EvidenceError::Io("root creation"))?;
+    let root = fs::canonicalize(root).map_err(|_| EvidenceError::Io("root resolution"))?;
+    let runs = root.join("runs");
+    fs::create_dir_all(&runs).map_err(|_| EvidenceError::Io("runs directory creation"))?;
+    let runs =
+        fs::canonicalize(&runs).map_err(|_| EvidenceError::Io("runs directory resolution"))?;
+    if !runs.starts_with(&root) {
+        return Err(EvidenceError::PathEscapesRunRoot);
+    }
+    let run_directory = runs.join(run_id);
+    match fs::create_dir(&run_directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(EvidenceError::ExistingRun)
+        }
+        Err(_) => return Err(EvidenceError::Io("run directory creation")),
+    }
+    let evidence_directory = run_directory.join("evidence");
+    fs::create_dir(&evidence_directory)
+        .map_err(|_| EvidenceError::Io("evidence directory creation"))?;
+    let evidence_directory = fs::canonicalize(&evidence_directory)
+        .map_err(|_| EvidenceError::Io("evidence directory resolution"))?;
+    if !evidence_directory.starts_with(&run_directory) {
+        return Err(EvidenceError::PathEscapesRunRoot);
+    }
+    Ok(run_directory)
 }
 
 /// Recheck every local reference's normalized path, exact byte size, and SHA-256.
@@ -392,11 +588,12 @@ fn order_record(cycle: &DecisionCycleRecord) -> Value {
     })
 }
 
-fn summary_value(report: &OrchestrationReport) -> Value {
+fn summary_value(report: &OrchestrationReport, failure: Option<&OrchestrationError>) -> Value {
     json!({
         "run_id":report.identity.run_id.as_str(),
         "scenario_id":report.identity.scenario_id.as_str(),
-        "status":"succeeded",
+        "status":status_name(report.finalization.status),
+        "failure":failure.map(|error| json!({"stage":error.stage,"reason":error.reason})),
         "fixture_id":report.fixture_id,
         "fixture_version":report.fixture_version,
         "fixture_digest_sha256":report.fixture_digest_sha256,
@@ -417,6 +614,13 @@ fn summary_value(report: &OrchestrationReport) -> Value {
             "canceled_order_ids":report.finalization.canceled_order_ids,
         },
     })
+}
+
+fn status_name(status: FinalRunStatus) -> &'static str {
+    match status {
+        FinalRunStatus::Succeeded => "succeeded",
+        FinalRunStatus::Failed => "failed",
+    }
 }
 
 fn collect_ledger_postings(value: &Value) -> Vec<Value> {
@@ -601,6 +805,7 @@ fn civil_from_days(day_number: i64) -> (i64, i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orchestrator::{RunExecutionFailure, RunIdentity};
     use factorsbt_contracts::Identifier;
     use factorsbt_data::FixtureRegistry;
     use factorsbt_engine::{OpenPositionSummary, RunFinalization};
@@ -710,6 +915,107 @@ mod tests {
             write_successful_run(&root, &configuration, &fixture, &report),
             Err(EvidenceError::ExistingRun)
         ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn persists_partial_failure_and_in_flight_model_exchange() {
+        let root = test_root();
+        let (configuration, fixture, mut report) = input();
+        report.finalization.status = FinalRunStatus::Failed;
+        report.finalization.failure_reason = Some("model output rejected".to_owned());
+        let request: factorsbt_contracts::ModelRequest = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/model/scores-request.inline-snapshot.json"
+        ))
+        .unwrap();
+        let failure = RunExecutionFailure {
+            identity: report.identity.clone(),
+            error: OrchestrationError {
+                stage: "model response validation",
+                reason: "mode mismatch".to_owned(),
+            },
+            partial_report: Some(Box::new(report)),
+            failed_inference: Some(Box::new(FailedInferenceExchange {
+                request,
+                request_body: br#"{"request":"exact"}"#.to_vec(),
+                response_body: Some(br#"{"response":"raw"}"#.to_vec()),
+            })),
+        };
+        let bundle = write_failed_run(&root, &configuration, &fixture, &failure).unwrap();
+        let manifest_bytes =
+            fs::read(bundle.run_directory.join("evidence/run-manifest.json")).unwrap();
+        let manifest: Value = serde_json::from_slice(&manifest_bytes).unwrap();
+        assert_eq!(manifest["status"], "failed");
+        let manifest_paths = manifest["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|artifact| artifact["relative_path"].as_str())
+            .collect::<Vec<_>>();
+        assert!(manifest_paths.contains(&"evidence/failure.json"));
+        assert!(manifest_paths.contains(&"evidence/model-requests/failed-inference.json"));
+        assert!(manifest_paths.contains(&"evidence/model-responses/failed-inference.json"));
+        assert!(bundle
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.relative_path == "evidence/run-manifest.json"));
+        let summary: Value = serde_json::from_slice(
+            &fs::read(bundle.run_directory.join("evidence/summary.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(summary["status"], "failed");
+        let failure_evidence: Value = serde_json::from_slice(
+            &fs::read(bundle.run_directory.join("evidence/failure.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(failure_evidence["last_valid_portfolio_present"], true);
+        assert_eq!(
+            fs::read(
+                bundle
+                    .run_directory
+                    .join("evidence/model-responses/failed-inference.json")
+            )
+            .unwrap(),
+            br#"{"response":"raw"}"#
+        );
+        verify_artifacts(&bundle.run_directory, &bundle.artifacts).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn persists_configuration_and_failure_when_engine_never_initializes() {
+        let root = test_root();
+        let (configuration, fixture, _) = input();
+        let failure = RunExecutionFailure {
+            identity: RunIdentity {
+                run_id: Uuid::new("a4ab8716-3d8c-42d7-857c-83e94df28ff6").unwrap(),
+                scenario_id: Identifier::new("baseline").unwrap(),
+            },
+            error: OrchestrationError {
+                stage: "fixture coverage",
+                reason: "required price is missing".to_owned(),
+            },
+            partial_report: None,
+            failed_inference: None,
+        };
+        let bundle = write_failed_run(&root, &configuration, &fixture, &failure).unwrap();
+        let evidence: Value = serde_json::from_slice(
+            &fs::read(bundle.run_directory.join("evidence/failure.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(evidence["last_valid_portfolio_present"], false);
+        let manifest: Value = serde_json::from_slice(
+            &fs::read(bundle.run_directory.join("evidence/run-manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["status"], "failed");
+        assert_eq!(manifest["failure"]["stage"], "fixture coverage");
+        assert!(manifest["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact["relative_path"] == "evidence/failure.json"));
+        verify_artifacts(&bundle.run_directory, &bundle.artifacts).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 }
