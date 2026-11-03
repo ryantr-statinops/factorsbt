@@ -1,7 +1,12 @@
 //! Loopback service entry point. The run operations are registered in Stage 06.
 
-use axum::{routing::get, Json, Router};
-use factorsbt_backend::{backend_config::BackendConfig, runtime::BackendRuntime};
+use axum::{middleware, routing::get, Json, Router};
+use factorsbt_backend::{
+    api::{run_routes, ApiState},
+    api_errors::request_id_middleware,
+    backend_config::BackendConfig,
+    runtime::BackendRuntime,
+};
 use factorsbt_contracts::outcomes::{BackendService, HealthResponse, HealthStatus};
 use std::error::Error;
 use tokio::net::TcpListener;
@@ -19,7 +24,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = BackendConfig::from_env()?;
     let listener = TcpListener::bind(config.bind_address).await?;
     let runtime = BackendRuntime::start(&config)?;
-    let app = Router::new().route("/healthz", get(healthz));
+    let state = ApiState::new(
+        runtime.store(),
+        runtime.fixtures(),
+        config.evidence_directory.clone(),
+    );
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .merge(run_routes(state))
+        .layer(middleware::from_fn(request_id_middleware));
 
     println!("FactorsBT backend listening on {}", config.bind_address);
     let serve_result = axum::serve(listener, app)

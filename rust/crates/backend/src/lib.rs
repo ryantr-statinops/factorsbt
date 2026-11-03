@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod api;
 pub mod api_errors;
 pub mod backend_config;
 pub mod dispatcher;
