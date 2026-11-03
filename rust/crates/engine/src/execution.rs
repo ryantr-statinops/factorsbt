@@ -1,7 +1,7 @@
 //! Controlled fixture-priced executions.
 
 use crate::{
-    portfolio::{decimal, validate_quantity},
+    portfolio::{decimal, validate_lot_quantity, validate_quantity},
     EngineError, LedgerPosting, PortfolioState,
 };
 use factorsbt_contracts::{instruments::Instrument, InstrumentId};
@@ -40,7 +40,7 @@ impl PortfolioState {
                 instrument_id.to_owned(),
             ));
         };
-        validate_quantity(&Instrument::Spot(instrument.clone()), signed_quantity)
+        validate_lot_quantity(&Instrument::Spot(instrument.clone()), signed_quantity)
             .map_err(|()| EngineError::InvalidTradeQuantity(instrument_id.to_owned()))?;
         if signed_quantity.is_zero() {
             return Err(EngineError::InvalidTradeQuantity(instrument_id.to_owned()));
@@ -48,6 +48,15 @@ impl PortfolioState {
         if quote_price <= Decimal::ZERO {
             return Err(EngineError::InvalidExecutionPrice);
         }
+        let current_quantity = self
+            .position(instrument_id)
+            .ok_or_else(|| EngineError::MissingPosition(instrument_id.to_owned()))?
+            .quantity;
+        let next_quantity = current_quantity
+            .checked_add(signed_quantity)
+            .ok_or(EngineError::ArithmeticOverflow("spot quantity"))?;
+        validate_quantity(&Instrument::Spot(instrument.clone()), next_quantity)
+            .map_err(|()| EngineError::InvalidTradeQuantity(instrument_id.to_owned()))?;
 
         let tick = decimal(instrument.price_tick.as_str())?;
         let multiplier = decimal(instrument.contract_multiplier.as_str())?;

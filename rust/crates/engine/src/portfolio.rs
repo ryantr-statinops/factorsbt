@@ -22,6 +22,9 @@ pub enum EngineError {
     InvalidPostingQuantity(String),
     InvalidTradeQuantity(String),
     UnsupportedTradeInstrument(String),
+    InvalidFutureTrade(String),
+    NotFutureInstrument(String),
+    FutureNotExpired(String),
     InvalidExecutionPrice,
     MissingPosition(String),
     InsufficientInitialMargin,
@@ -48,6 +51,9 @@ impl fmt::Display for EngineError {
             Self::UnsupportedTradeInstrument(id) => {
                 write!(f, "spot execution requested for non-spot instrument {id}")
             }
+            Self::InvalidFutureTrade(id) => write!(f, "invalid futures trade for {id}"),
+            Self::NotFutureInstrument(id) => write!(f, "instrument {id} is not a future"),
+            Self::FutureNotExpired(id) => write!(f, "future {id} has not reached expiry"),
             Self::InvalidExecutionPrice => f.write_str("execution price must be positive"),
             Self::MissingPosition(id) => write!(f, "posting references unknown instrument {id}"),
             Self::InsufficientInitialMargin => {
@@ -229,6 +235,18 @@ impl PortfolioState {
         &self.positions
     }
 
+    pub(super) fn position_mut(&mut self, instrument_id: &str) -> Option<&mut InstrumentPosition> {
+        self.positions.get_mut(instrument_id)
+    }
+
+    pub(super) fn refresh_margin_requirements(&mut self) -> Result<(), EngineError> {
+        let (initial, maintenance) =
+            calculate_margin_requirements(&self.instruments, &self.positions, None)?;
+        self.initial_margin_requirement = initial;
+        self.maintenance_margin_requirement = maintenance;
+        Ok(())
+    }
+
     pub fn initial_margin_requirement(&self) -> Decimal {
         self.initial_margin_requirement
     }
@@ -276,6 +294,9 @@ impl PortfolioState {
         } else {
             (Decimal::ZERO, Decimal::ZERO)
         };
+        let margin_override = instrument_id.map(|id| (id, quantity_after));
+        let (initial_margin_requirement, maintenance_margin_requirement) =
+            calculate_margin_requirements(&self.instruments, &self.positions, margin_override)?;
 
         if let Some((id, _, _)) = position {
             self.positions
@@ -284,6 +305,8 @@ impl PortfolioState {
                 .quantity = quantity_after;
         }
         self.cash = cash_after;
+        self.initial_margin_requirement = initial_margin_requirement;
+        self.maintenance_margin_requirement = maintenance_margin_requirement;
 
         Ok(LedgerPosting {
             cash_before,
@@ -309,11 +332,16 @@ fn instrument_id(instrument: &Instrument) -> &InstrumentId {
 }
 
 pub(super) fn validate_quantity(instrument: &Instrument, quantity: Decimal) -> Result<(), ()> {
-    let step = decimal(instrument_fields(instrument).1.as_str()).map_err(|_| ())?;
-    if step <= Decimal::ZERO || quantity % step != Decimal::ZERO {
+    validate_lot_quantity(instrument, quantity)?;
+    if matches!(instrument, Instrument::Spot(_)) && quantity < Decimal::ZERO {
         return Err(());
     }
-    if matches!(instrument, Instrument::Spot(_)) && quantity < Decimal::ZERO {
+    Ok(())
+}
+
+pub(super) fn validate_lot_quantity(instrument: &Instrument, quantity: Decimal) -> Result<(), ()> {
+    let step = decimal(instrument_fields(instrument).1.as_str()).map_err(|_| ())?;
+    if step <= Decimal::ZERO || quantity % step != Decimal::ZERO {
         return Err(());
     }
     if !matches!(instrument, Instrument::Spot(_)) && quantity.fract() != Decimal::ZERO {
@@ -370,6 +398,50 @@ fn margin(value: &impl MarginFields) -> Result<(Decimal, Decimal), EngineError> 
         decimal(value.initial().as_str())?,
         decimal(value.maintenance().as_str())?,
     ))
+}
+
+fn calculate_margin_requirements(
+    instruments: &HashMap<String, Instrument>,
+    positions: &HashMap<String, InstrumentPosition>,
+    override_position: Option<(&str, Decimal)>,
+) -> Result<(Decimal, Decimal), EngineError> {
+    let mut initial_total = Decimal::ZERO;
+    let mut maintenance_total = Decimal::ZERO;
+    for (id, instrument) in instruments {
+        let quantity = match override_position {
+            Some((override_id, quantity)) if override_id == id => quantity,
+            _ => {
+                positions
+                    .get(id)
+                    .expect("configured position exists")
+                    .quantity
+            }
+        };
+        let (initial_per_unit, maintenance_per_unit) = margin_per_unit(instrument)?;
+        initial_total = initial_total
+            .checked_add(
+                checked_magnitude(quantity)
+                    .and_then(|value| value.checked_mul(initial_per_unit))
+                    .ok_or(EngineError::ArithmeticOverflow("initial margin"))?,
+            )
+            .ok_or(EngineError::ArithmeticOverflow("initial margin"))?;
+        maintenance_total = maintenance_total
+            .checked_add(
+                checked_magnitude(quantity)
+                    .and_then(|value| value.checked_mul(maintenance_per_unit))
+                    .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?,
+            )
+            .ok_or(EngineError::ArithmeticOverflow("maintenance margin"))?;
+    }
+    Ok((initial_total, maintenance_total))
+}
+
+fn checked_magnitude(value: Decimal) -> Option<Decimal> {
+    if value < Decimal::ZERO {
+        Decimal::ZERO.checked_sub(value)
+    } else {
+        Some(value)
+    }
 }
 
 #[cfg(test)]
