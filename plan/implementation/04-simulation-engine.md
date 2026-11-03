@@ -1,6 +1,6 @@
 # Stage 04 — Engine mô phỏng danh mục và thực thi
 
-**Status:** Proposed
+**Status:** Implemented — engine primitives and controlled spot path verified; orchestration remains in Stage 05.
 
 **Phase:** B — Backtest xuyên suốt
 
@@ -10,11 +10,14 @@ Triển khai engine Rust có chuyển trạng thái danh mục giải thích đ�
 
 ## Phạm vi và đầu ra
 
-- Quản lý đồng hồ mô phỏng, thứ tự sự kiện, tiền, vị thế và lệnh chờ theo phạm vi công cụ đã chốt.
-- Cung cấp portfolio snapshot; xét toàn bộ decision group trên cùng trạng thái trước khi áp dụng thay đổi.
-- Áp dụng chính sách vốn/rủi ro và chuyển đề xuất được chấp nhận thành order; ghi lý do từ chối hoặc giảm quy mô.
-- Tạo fill theo điều kiện khớp, phí, trượt giá, latency và kế toán đã chốt; lưu state transition và kết quả từng bước.
-- Tách engine khỏi HTTP, provider I/O và transport retries; mỗi scenario sở hữu trạng thái mutable riêng.
+- Đồng hồ synthetic và portfolio state riêng theo run; ledger dùng decimal checked arithmetic, tiền làm tròn half-even và futures lấy start mark làm settlement basis.
+- Định giá quote/Black–Scholes/CRR với provenance; snapshot valuation yêu cầu input đúng simulation time, không carry-forward mark cũ.
+- Chuyển scores, targets và market intents thành target/order proposals; scores Top K giải tie theo instrument ID.
+- Xét target group trên shared capital; xử lý giảm vị thế trước, scale tăng exposure chung trong 60 vòng và làm tròn về lot.
+- Tạo lệnh chỉ khớp ở open tiếp theo; recheck vốn theo giá open thực tế và áp dụng fill, phí, slippage, tick rounding.
+- Đánh giá maintenance/collateral, hủy lệnh chờ, lên kế hoạch thanh lý toàn danh mục và giữ state nguyên vẹn nếu không có giá hoặc tài khoản không phục hồi.
+- Kết thúc run bằng cách hủy pending orders, báo vị thế còn mở và giữ nguyên failure/last-valid state; engine không tạo fill tổng kết.
+- Tách engine khỏi HTTP, provider I/O và retries; orchestration kết nối chuỗi xử lý ở Stage 05.
 
 ## Phụ thuộc
 
@@ -29,27 +32,37 @@ Triển khai engine Rust có chuyển trạng thái danh mục giải thích đ�
 - Ledger dùng decimal checked arithmetic, làm tròn USD theo half-even đến cent; quantity làm tròn về zero theo lot. BS/CRR dùng `f64` chỉ để tính mark rồi chuyển một lần sang decimal 12 chữ số.
 - Futures ban đầu lấy mark hợp lệ tại `start_at` làm settlement basis, không tạo fill hay P&L trước run. Không thêm partial fill, vay spot, FX, corporate actions hoặc netting.
 
-## Task → Commit
+## Task → Commit đã thực hiện
 
-| Thứ tự | Task và phạm vi commit | Commit dự kiến |
-| --- | --- | --- |
-| 1 | Xây clock, portfolio state và xử lý sự kiện theo quy tắc | `feat(engine): add simulation clock and portfolio state` |
-| 2 | Xét decision group và admission dùng chung vốn | `feat(engine): evaluate grouped decisions against shared capital` |
-| 3 | Xử lý order/fill, kế toán và bằng chứng chuyển trạng thái | `feat(engine): simulate execution and record portfolio transitions` |
+| Commit | Kết quả |
+| --- | --- |
+| 11–18 | Khởi tạo portfolio, ledger, synthetic clock, spot/futures/options accounting, margin/collateral và physical settlement |
+| 19–21 | Pricing input validation, Black–Scholes European và CRR American |
+| 22–24 | Mark/provenance, scores → Top K → targets, target và market-intent validation |
+| 25–26 | Shared-capital scaling và execution group tại next open với giá fixture |
+| 27–29 | Maintenance breach, whole-portfolio liquidation và end-of-run finalization |
+| 30 | Engine acceptance path qua controlled fixture, quyết định spot, admission, open fill, mark, risk check và finalization |
 
-## Kiểm chứng dự kiến
+## Kiểm chứng đã chạy
 
-- Hoán đổi thứ tự tài sản trong đầu vào không làm thay đổi phân bổ chỉ vì thứ tự vòng lặp.
-- Hai đề xuất vượt vốn được giải quyết theo đúng chính sách và cùng snapshot; quyết định không được coi là fill.
-- Dùng giá đóng bar không tạo khớp lệnh bất khả thi theo execution model đã chọn.
-- Kiểm tra cash/positions, phí, rounding, lệnh chờ và sự kiện cùng timestamp bằng ví dụ tính tay trong phạm vi công cụ đã chốt.
-- Khởi tạo hai scenario với cùng immutable data nhưng không chia sẻ trạng thái mutable.
+- `cargo fmt --all` hoàn tất; `cargo test -p factorsbt-engine --offline` pass: 52 unit tests và 1 controlled acceptance integration test.
+- `cargo clippy --workspace --all-targets --offline -- -D warnings` pass.
+- Unit tests bao phủ decimal ledger, margin/delivery, spot/futures/options accounting, European/physical option settlement, Black–Scholes/CRR references, shared capital, next-open eligibility, maintenance cancellation, liquidation recovery/failure và end-of-run state.
+- Integration test xác nhận Top K → target weights → close-time admission → next-open gap recheck/fills → close marks → maintenance → finalization; thứ tự input không làm thay đổi kết quả admission trong test riêng.
+- Acceptance evidence dùng fixture synthetic; không chứng minh provider thật, HTTP model call, service orchestration, stored evidence hay API/SDK run flow.
 
 ## Điều kiện hoàn thành
 
-- Engine chạy một chuỗi sự kiện controlled và cho đúng danh mục kỳ vọng cùng chuỗi decision/order/fill/transition.
-- Các trường hợp cạnh tranh vốn, thời gian khớp và kết thúc run có bằng chứng kiểm chứng.
-- Không có quy tắc tài chính quan trọng được quyết định ngầm trong code hoặc transport layer.
+- Các thành phần engine được gọi xuyên suốt trong controlled spot acceptance test; phần giao tiếp model, scheduler/orchestrator và ghi evidence được xác minh ở Stage 05.
+- Accounting, pricing, collateral, capital admission, next-open execution, liquidation và finalization có unit/reference evidence trong engine crate.
+- Các giả định tài chính quan trọng theo MVP được giữ trong contracts/docs; implementation không thêm provider hay transport policy.
+
+## Giới hạn đã xác minh
+
+- Chưa có simulation runner nối mọi event tự động; engine cung cấp các transition và kiểm tra để orchestrator Stage 05 gọi đúng thứ tự.
+- Controlled acceptance integration hiện chạy nhánh spot. Futures/options, pricing, margin, settlement và liquidation được xác minh bằng unit/reference tests riêng.
+- Chưa lưu run evidence trên disk; chưa gọi HTTP model service; chưa có `POST /v1/runs`, Python backtest SDK hoặc replay.
+- Kiểm tra vốn tại open dùng execution prices; các fill vẫn tính phí/slippage/tick rounding. Nếu chi phí thực tế khiến nhóm không thể hoàn tất, candidate group thất bại nguyên tử và portfolio gốc không đổi.
 
 ## Tài liệu liên quan
 

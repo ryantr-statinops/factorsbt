@@ -2,7 +2,7 @@
 
 **Status:** Kế hoạch theo dõi công việc; trạng thái từng stage phản ánh bằng chứng đã có.
 
-**Mốc đối chiếu:** 2026-11-03. Phase A đã qua đủ cổng Stage 00–02. Stage 03 đã triển khai fixture registry, point-in-time snapshots, execution/settlement inputs và coverage validation. Engine, model orchestration, run API và backtest SDK flow vẫn chưa được triển khai.
+**Mốc đối chiếu:** 2026-11-03. Phase A đã qua đủ cổng Stage 00–02. Stage 03 data và Stage 04 engine primitives đã qua kiểm chứng local. Model orchestration, run API và backtest SDK flow vẫn chưa được triển khai; MVP xuyên suốt chưa hoàn tất.
 
 ## Cách đọc và phạm vi
 
@@ -25,7 +25,7 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | A | [01 — Contracts](01-contracts.md) | Accepted | Có | [OpenAPI](../../contracts/openapi.json), [run schema](../../contracts/schemas/run-configuration.schema.json), [shared example](../../contracts/examples/instruments/minimal-valid-spot-run.json), [contract docs](../../docs/interfaces/service-contracts.md) |
 | A | [02 — Nền tảng dự án](02-project-foundation.md) | Implemented | Có | [Lệnh và bằng chứng local](../../docs/development/phase-a-local.md), [toolchain và kết quả kiểm chứng](../../docs/decisions/0002-phase-a-tooling.md#follow-up-verification-2026-11-03) |
 | B | [03 — Data snapshots](03-data-snapshots.md) | Implemented | Có | [Fixture registry](../../rust/crates/data/src/lib.rs), [snapshot selector](../../rust/crates/data/src/snapshot.rs), [coverage checks](../../rust/crates/data/src/coverage.rs), [fixtures](../../contracts/fixtures/README.md) |
-| B | [04 — Simulation engine](04-simulation-engine.md) | Proposed | Chưa | Chưa có |
+| B | [04 — Simulation engine](04-simulation-engine.md) | Implemented — engine primitives | Có | [Rust engine](../../rust/crates/engine/src/lib.rs), [controlled acceptance](../../rust/crates/engine/tests/controlled_acceptance.rs), [tests](../../rust/crates/engine/src) |
 | B | [05 — Model orchestration](05-model-orchestration.md) | Proposed | Chưa | Chưa có |
 | B | [06 — Backend API](06-backend-api.md) | Proposed | Chưa | Chưa có |
 | B | [07 — Python SDK và nghiệm thu MVP](07-python-sdk-mvp.md) | Proposed | Chưa | Chưa có |
@@ -35,7 +35,7 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | D | [11 — RL interface](11-rl-interface.md) | Proposed | Chưa | Chưa có |
 | E | [12 — Ý tưởng CLI / console application](12-cli-console-ideas.md) | Proposed — brainstorm | Không áp dụng | Chưa chốt triển khai |
 
-Hiện có **4/12 stage đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **4/8**; Phase A là **3/3** và Phase B là **1/5**. Stage 03 chỉ tính hoàn thành cho dữ liệu fixture local, snapshot và coverage đã kiểm chứng. Engine, model orchestration, run API và end-to-end SDK chưa Implemented. Đây là số stage đạt cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
+Hiện có **5/12 stage đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **5/8**; Phase A là **3/3** và Phase B là **2/5**. Stage 04 có các transition engine, accounting/pricing/risk tests và controlled spot path. Chưa có model orchestration, run API hay end-to-end Python SDK flow. Đây là số stage đạt cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
 
 Trạng thái thiết kế dùng đúng từ vựng của [documentation index](../../docs/README.md#status-vocabulary): Accepted, Proposed, Open và Implemented. Cột hoàn thành là theo dõi công việc riêng. Stage thiết kế có thể hoàn thành bằng quyết định được Accepted và tài liệu đã kiểm tra; điều đó không làm tính năng thành Implemented. Chỉ mô tả hành vi là Implemented khi có code và kiểm chứng phù hợp.
 
@@ -47,7 +47,7 @@ Mũi tên liền biểu thị trình tự triển khai chính được đề xu�
 
 ```mermaid
 flowchart TD
-    NOW["Phase A hoàn tất<br/>Stage 03 data đã kiểm chứng"]
+    NOW["Đã xong: Phase A<br/>Stage 03–04 verified"]
     NOW --> A0
 
     subgraph A["Phase A — Thiết kế MVP · 3/3"]
@@ -55,9 +55,9 @@ flowchart TD
         A1 --> A2["02 · Nền tảng và health flow — verified"]
     end
 
-    subgraph B["Phase B — MVP xuyên suốt · 1/5"]
-        B0["03 · Data snapshots — verified"] --> B1["04 · Engine"]
-        B1 --> B2["05 · Model orchestration"]
+    subgraph B["Phase B — MVP xuyên suốt · 2/5"]
+        B0["03 · Data snapshots — verified"] --> B1["04 · Engine — verified"]
+        B1 --> B2["05 · Model orchestration — tiếp theo"]
         B2 --> B3["06 · Backend API"]
         B3 --> B4["07 · Python SDK + MVP"]
     end
@@ -85,7 +85,8 @@ flowchart TD
     classDef implemented fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef idea fill:#fff7ed,stroke:#c2410c,color:#7c2d12,stroke-dasharray:5 5
     class NOW current
-    class B0 implemented
+    class B0,B1 implemented
+    class B2 current
     class E0 idea
 ```
 
