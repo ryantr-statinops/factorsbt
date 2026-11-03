@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod clock;
+mod decisions;
 mod execution;
 mod futures;
 mod marks;
@@ -11,6 +12,7 @@ mod portfolio;
 mod pricing;
 
 pub use clock::{ClockError, ClockEvent, SimulationClock, SimulationEventKind};
+pub use decisions::{scores_to_targets, DecisionError, InstrumentTarget};
 pub use execution::SpotExecution;
 pub use futures::{FutureExecution, FutureSettlement};
 pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};

@@ -282,6 +282,34 @@ impl PortfolioState {
         self.cash
     }
 
+    /// Marked net asset value excludes settled futures notional; daily futures
+    /// P&L belongs to the cash ledger after variation settlement.
+    pub fn net_asset_value(&self) -> Result<Decimal, EngineError> {
+        let mut ids = self.positions.keys().collect::<Vec<_>>();
+        ids.sort();
+        let mut nav = self.cash;
+        for id in ids {
+            let instrument = self
+                .instruments
+                .get(id)
+                .expect("each configured position has an instrument");
+            if matches!(instrument, Instrument::LinearFuture(_)) {
+                continue;
+            }
+            let position = self.positions.get(id).expect("position key exists");
+            let multiplier = decimal(instrument_multiplier(instrument).as_str())?;
+            let market_value = position
+                .quantity
+                .checked_mul(position.mark)
+                .and_then(|value| value.checked_mul(multiplier))
+                .ok_or(EngineError::ArithmeticOverflow("position market value"))?;
+            nav = nav
+                .checked_add(market_value)
+                .ok_or(EngineError::ArithmeticOverflow("net asset value"))?;
+        }
+        Ok(nav)
+    }
+
     pub fn start_at(&self) -> &UtcTimestamp {
         &self.start_at
     }
@@ -485,6 +513,14 @@ fn instrument_id(instrument: &Instrument) -> &InstrumentId {
         Instrument::Spot(value) => &value.instrument_id,
         Instrument::LinearFuture(value) => &value.instrument_id,
         Instrument::Option(value) => &value.instrument_id,
+    }
+}
+
+fn instrument_multiplier(instrument: &Instrument) -> &factorsbt_contracts::DecimalString {
+    match instrument {
+        Instrument::Spot(value) => &value.contract_multiplier,
+        Instrument::LinearFuture(value) => &value.contract_multiplier,
+        Instrument::Option(value) => &value.contract_multiplier,
     }
 }
 
