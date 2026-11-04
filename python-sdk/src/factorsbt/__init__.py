@@ -10,7 +10,7 @@ from .types import (
     validate_uuid,
 )
 from .client import Client, HealthResponse
-from .comparison import ComparisonReport, ComparisonRun, ComparisonScenario, ComparisonSpec
+from .comparison import ComparisonReport, ComparisonRun, ComparisonScenario, ComparisonSpec, RunMetrics
 from .errors import (
     FactorsBTError,
     HttpStatusError,
@@ -58,6 +58,7 @@ __all__ = [
     "ComparisonSpec",
     "ComparisonRun",
     "ComparisonReport",
+    "RunMetrics",
     "ContractValueError",
     "DataFixtureConfiguration",
     "DataFixtureReference",

@@ -24,7 +24,7 @@ from .errors import (
     TransportError,
     WaitTimeout,
 )
-from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec
+from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec, RunMetrics
 from .responses import EvidenceIndex, EvidenceReference, RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .types import validate_uuid
 
@@ -253,6 +253,15 @@ class Client:
             try:
                 self.wait(run_id, timeout=timeout_per_run)
                 result = self.get_results(run_id)
+                index = self.get_evidence(run_id)
+                summary_ref = next((item for item in index.artifacts if item.relative_path == "evidence/summary.json"), None)
+                if summary_ref is None:
+                    raise ProtocolError("run evidence lacks a summary artifact")
+                try:
+                    summary = json.loads(self.get_artifact(run_id, summary_ref))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ProtocolError("run summary artifact is not valid JSON") from exc
+                metrics = RunMetrics.from_summary(summary, result)
             except RunFailedError as error:
                 code = error.failure.code if error.failure is not None else "RUN_FAILED"
                 runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "failed", None, code))
@@ -263,7 +272,7 @@ class Client:
             except FactorsBTError:
                 runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "unavailable", None, "RESULT_UNAVAILABLE"))
                 continue
-            runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "succeeded", result))
+            runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "succeeded", result, metrics=metrics))
         return ComparisonReport(spec.baseline.label, tuple(runs))
 
     def get_evidence(self, run_id: str) -> EvidenceIndex:
