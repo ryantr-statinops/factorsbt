@@ -136,14 +136,22 @@ impl ReplaySource {
                 return Err(ReplaySourceError::Incomplete("terminal failure identity"));
             }
         }
-        if self.index.status == "succeeded"
-            || self
-                .index
-                .artifacts
-                .iter()
-                .any(|a| a.relative_path == "evidence/summary.json")
-        {
+        let has_summary = self
+            .index
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.relative_path == "evidence/summary.json");
+        if self.index.status == "succeeded" || has_summary {
             self.artifact(root, "evidence/summary.json")?;
+            for path in [
+                "evidence/admissions.json",
+                "evidence/orders.json",
+                "evidence/executions.json",
+                "evidence/settlements.json",
+                "evidence/ledger-postings.json",
+            ] {
+                self.artifact(root, path)?;
+            }
         }
         for request in self.index.artifacts.iter().filter(|a| {
             a.relative_path.starts_with("evidence/model-requests/")

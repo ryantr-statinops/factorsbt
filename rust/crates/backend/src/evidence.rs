@@ -1120,13 +1120,32 @@ mod tests {
     fn loads_sealed_source_without_process_run_metadata() {
         let root = test_root();
         let (configuration, fixture, report) = input();
-        write_successful_run(&root, &configuration, &fixture, &report).unwrap();
+        let bundle = write_successful_run(&root, &configuration, &fixture, &report).unwrap();
         let source =
             crate::replay_source::ReplaySource::load(&root, &report.identity.run_id).unwrap();
         assert_eq!(source.configuration, configuration);
         assert_eq!(source.fixture.digest_sha256, fixture.digest_sha256);
         assert_eq!(source.index.status, "succeeded");
         source.verify_replay_eligibility(&root).unwrap();
+
+        let manifest_path = bundle.run_directory.join("evidence/run-manifest.json");
+        let mut manifest: Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|artifact| artifact["relative_path"] != "evidence/ledger-postings.json");
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        let incomplete =
+            crate::replay_source::ReplaySource::load(&root, &report.identity.run_id).unwrap();
+        assert!(matches!(
+            incomplete.verify_replay_eligibility(&root),
+            Err(crate::replay_source::ReplaySourceError::MissingArtifact(_))
+        ));
         fs::remove_dir_all(root).unwrap();
     }
 
