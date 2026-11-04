@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn loads_versioned_fixture_data_and_computes_digest() {
         let registry = FixtureRegistry::load(fixture_root()).unwrap();
-        assert_eq!(registry.len(), 7);
+        assert_eq!(registry.len(), 9);
         let baseline = registry.get_by("mvp-synthetic", "v1").unwrap();
         assert_eq!(baseline.dataset.initial_marks.len(), 7);
         assert_eq!(baseline.dataset.observations.len(), 53);
