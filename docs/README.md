@@ -20,6 +20,7 @@ The accepted technology direction is a pure Python SDK and a Rust backend/engine
 8. [MVP 1 scope](product/mvp-scope.md): accepted first synthetic implementation slice and its explicit limits.
 9. [MVP 1 acceptance fixtures](examples/mvp/acceptance-cases.md): controlled expected behaviors used to check implementations.
 10. [MVP 1 OpenAPI and compatibility rules](interfaces/mvp-contract-compatibility.md): shared [OpenAPI](../contracts/openapi.json), JSON Schemas, examples, and version policy.
+11. [Phase C recorded replay design](interfaces/recorded-replay.md): source evidence, verification lifecycle, and compatibility boundary.
 
 Contributors should also read [AGENTS.md](../AGENTS.md). Agent-specific responsibilities live in [.agents](../.agents/README.md).
 
