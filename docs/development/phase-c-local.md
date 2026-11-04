@@ -46,7 +46,7 @@ $testPython = Join-Path (Join-Path $env:TEMP 'factorsbt-phase-c-python') 'Script
 & $testPython -B python-sdk/tests/smoke_sdk_failures.py
 ~~~
 
-The success smoke passed for `scores`, `targets`, and `order_intents`. It restarts the backend before the first replay, then loads the source from sealed local evidence. Each replay matched and returned isolated evidence whose size and SHA-256 were checked. Model fixture request counts did not increase during replay. Repeated replay submission returned the original acknowledgment; reusing the key for a different source returned the expected conflict. Source evidence was checked again after replay.
+The success smoke passed for `scores`, `targets`, and `order_intents`. It restarts the backend before the first replay, then loads the source from sealed local evidence. Each replay matched and returned isolated evidence whose size and SHA-256 were checked. Model fixture request counts did not increase during replay. After comparison, the model fixture was shut down completely; a replay still matched while the source endpoint was offline. Repeated replay submission returned the original acknowledgment; reusing the key for a different source returned the expected conflict. Source evidence was checked again after replay.
 
 The same smoke used `Client.compare()` for controlled baseline, price-only, and delayed-event fixtures. The scenarios completed sequentially, each had metrics and trace/timeline artifact links, and the report was saved locally. Baseline and price-only timelines shared 28 time/instrument points with no unmatched points.
 
