@@ -24,7 +24,7 @@ from .errors import (
     TransportError,
     WaitTimeout,
 )
-from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec, RunMetrics, timeline_from_snapshots
+from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec, RunMetrics, timeline_from_snapshots, trace_from_artifacts
 from .responses import EvidenceIndex, EvidenceReference, RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .types import validate_uuid
 
@@ -263,14 +263,18 @@ class Client:
                     raise ProtocolError("run summary artifact is not valid JSON") from exc
                 metrics = RunMetrics.from_summary(summary, result)
                 snapshots = []
+                trace_artifacts = []
                 for reference in index.artifacts:
-                    if reference.kind == "snapshot":
+                    if reference.kind in {"snapshot", "decision_admission", "model_response", "fill"}:
                         try:
-                            snapshot = json.loads(self.get_artifact(run_id, reference))
+                            document = json.loads(self.get_artifact(run_id, reference))
                         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                            raise ProtocolError("snapshot artifact is not valid JSON") from exc
-                        snapshots.append((reference.artifact_id, snapshot))
+                            raise ProtocolError("trace artifact is not valid JSON") from exc
+                        trace_artifacts.append((reference.kind, reference.artifact_id, document))
+                        if reference.kind == "snapshot":
+                            snapshots.append((reference.artifact_id, document))
                 timeline = timeline_from_snapshots(tuple(snapshots))
+                trace = trace_from_artifacts(tuple(trace_artifacts))
             except RunFailedError as error:
                 code = error.failure.code if error.failure is not None else "RUN_FAILED"
                 runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "failed", None, code))
@@ -281,7 +285,7 @@ class Client:
             except FactorsBTError:
                 runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "unavailable", None, "RESULT_UNAVAILABLE"))
                 continue
-            runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "succeeded", result, metrics=metrics, timeline=timeline))
+            runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "succeeded", result, metrics=metrics, timeline=timeline, trace=trace))
         return ComparisonReport(spec.baseline.label, tuple(runs))
 
     def get_evidence(self, run_id: str) -> EvidenceIndex:
