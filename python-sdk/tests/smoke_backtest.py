@@ -356,9 +356,16 @@ def main() -> int:
                 if not result.evidence:
                     raise RuntimeError(f"{expected_mode} result has no evidence references")
                 verify_nav_and_evidence(result, config, environment["FACTORSBT_EVIDENCE_DIR"])
+                replay = client.submit_replay(result.run_id)
+                replay_status = client.wait_replay(replay.replay_id, timeout=30)
+                if replay_status.status != "succeeded":
+                    raise RuntimeError(f"{expected_mode} recorded replay did not succeed")
+                replay_report = client.get_replay_report(replay.replay_id)
+                if not replay_report.matched or replay_report.source_run_id != result.run_id:
+                    raise RuntimeError(f"{expected_mode} recorded replay diverged")
                 print(
                     f"{expected_mode}: run={result.run_id} fills={result.counts.fills} "
-                    f"positions={len(result.portfolio.positions)} evidence={len(result.evidence)}"
+                    f"positions={len(result.portfolio.positions)} evidence={len(result.evidence)} replay=matched"
                 )
 
             observed_modes = {mode for mode, _ids in ControlledModelHandler.requests}

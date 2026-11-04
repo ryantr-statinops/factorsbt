@@ -200,13 +200,19 @@ async fn execute_replay(
     .await;
     match replayed {
         Ok(report) => {
+            let replay_orders = report.cycles.iter().map(|cycle| serde_json::json!({
+                "orders": cycle.proposal.order_intents.iter().map(|item| serde_json::json!({
+                    "instrument_id": item.instrument_id.as_str(), "signed_quantity": item.signed_quantity.to_string()
+                })).collect::<Vec<_>>(),
+                "target_positions": cycle.proposal.target_positions.iter().map(|item| serde_json::json!({
+                    "instrument_id": item.instrument_id.as_str(), "target_quantity": item.target_quantity.to_string()
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>();
             let replay_state = serde_json::json!({
                 "cash": report.finalization.cash.to_string(),
                 "nav": report.finalization.nav.to_string(),
                 "positions": report.final_portfolio.positions,
-                "orders": report.cycles.iter().map(|cycle| cycle.proposal.order_intents.iter().map(|item| serde_json::json!({
-                    "instrument_id": item.instrument_id.as_str(), "signed_quantity": item.signed_quantity.to_string()
-                })).collect::<Vec<_>>()).collect::<Vec<_>>(),
+                "orders": replay_orders,
                 "executions": report.execution_events,
                 "settlements": report.settlement_events,
             });
@@ -215,7 +221,10 @@ async fn execute_replay(
                 "nav": summary["final_portfolio"]["nav"],
                 "positions": summary["final_portfolio"]["snapshot"]["positions"],
                 "orders": source.artifact(&evidence_root, "evidence/orders.json").ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                    .and_then(|value| value.as_array().map(|rows| rows.iter().map(|row| serde_json::json!({
+                        "orders": row["orders"], "target_positions": row["target_positions"]
+                    })).collect::<Vec<_>>())).unwrap_or_default(),
                 "executions": source.artifact(&evidence_root, "evidence/executions.json").ok()
                     .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
                 "settlements": source.artifact(&evidence_root, "evidence/settlements.json").ok()
@@ -288,7 +297,10 @@ fn normalize_replay_value(value: serde_json::Value) -> serde_json::Value {
         serde_json::Value::Object(object) => serde_json::Value::Object(
             object
                 .into_iter()
-                .filter(|(key, _)| !IGNORED.contains(&key.as_str()))
+                .filter(|(key, _)| {
+                    !IGNORED.contains(&key.as_str())
+                        && !(key.ends_with("_id") && key != "instrument_id")
+                })
                 .map(|(key, value)| (key, normalize_replay_value(value)))
                 .collect(),
         ),
