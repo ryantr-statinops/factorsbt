@@ -21,6 +21,7 @@ import smoke_backtest as smoke
 from factorsbt import (
     Client,
     OrderIntentsPolicy,
+    ReplayFailedError,
     RunFailedError,
     ScoresPolicy,
     SubmissionAcknowledgementUnknown,
@@ -198,6 +199,14 @@ def main() -> int:
                     raise RuntimeError("model failure did not retain typed failure context")
             else:
                 raise RuntimeError("model HTTP 503 did not fail the run")
+            failed_replay = backend_client.submit_replay(failed_ack.run_id)
+            try:
+                verified_failure = backend_client.wait_replay(failed_replay.replay_id, timeout=15)
+            except ReplayFailedError as error:
+                raise RuntimeError(f"failed-source replay failed: {error.status.failure_code}: {error.status.failure_message}") from error
+            failed_report = backend_client.get_replay_report(failed_replay.replay_id)
+            if verified_failure.status != "succeeded" or not failed_report.matched or failed_report.source_outcome != "failed":
+                raise RuntimeError("recorded replay did not reproduce the failed source outcome")
 
             slow_config = with_model(
                 smoke.run_configuration(ScoresPolicy(1), model_endpoint), "slow-model"
@@ -217,7 +226,7 @@ def main() -> int:
                 raise RuntimeError("backend work did not continue after local wait timeout")
             print(
                 "SDK failure paths verified: lost acknowledgment lookup, "
-                "idempotency conflict, model failure, and non-cancelling local wait timeout."
+                "idempotency conflict, model failure replay, and non-cancelling local wait timeout."
             )
         finally:
             if proxy is not None:

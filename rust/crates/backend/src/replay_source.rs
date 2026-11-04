@@ -94,6 +94,7 @@ impl ReplaySource {
             .filter(|item| {
                 item.kind == factorsbt_contracts::outcomes::EvidenceKind::ModelResponse
                     && item.relative_path.starts_with("evidence/model-responses/")
+                    && item.relative_path != "evidence/model-responses/failed-inference.json"
             })
             .collect::<Vec<_>>();
         refs.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
