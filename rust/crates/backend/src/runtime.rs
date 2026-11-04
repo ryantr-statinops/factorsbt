@@ -316,7 +316,7 @@ async fn execute_replay(
                 failure["stage"] == error.error.stage && failure["reason"] == error.error.reason
             });
             if matched_source_failure {
-                let replay_root = evidence_root.join("replays");
+                let replay_root = evidence_root.join("replays").join(replay_id.as_str());
                 let evidence_refs = match write_failed_run(
                     &replay_root,
                     &source.configuration,
