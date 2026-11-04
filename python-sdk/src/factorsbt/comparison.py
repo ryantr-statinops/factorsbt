@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 import json
+from pathlib import Path
 
 from .configuration import RunConfiguration
 from .errors import ProtocolError
@@ -234,6 +235,66 @@ class ComparisonReport:
                 aligned,
             ))
         return tuple(differences)
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize identities and observed deltas without copying run configurations."""
+        return {
+            "format_version": "1.0.0",
+            "baseline_label": self.baseline_label,
+            "runs": [
+                {
+                    "label": run.label,
+                    "submission_id": run.submission_id,
+                    "run_id": run.run_id,
+                    "status": run.status,
+                    "error_code": run.error_code,
+                    "metrics": None if run.metrics is None else {
+                        "simulation_start": run.metrics.simulation_start.to_wire(),
+                        "simulation_end": run.metrics.simulation_end.to_wire(),
+                        "initial_nav": str(run.metrics.initial_nav),
+                        "final_nav": str(run.metrics.final_nav),
+                        "pnl_usd": str(run.metrics.pnl_usd),
+                        "return_fraction": None if run.metrics.return_fraction is None else str(run.metrics.return_fraction),
+                    },
+                }
+                for run in self.runs
+            ],
+            "configuration_changes": [
+                {"variant_label": change.variant_label, "path": change.path}
+                for change in self.configuration_changes
+            ],
+            "metric_differences": [
+                {
+                    "variant_label": difference.variant_label,
+                    "final_nav_usd": None if difference.final_nav_usd is None else str(difference.final_nav_usd),
+                    "pnl_usd": None if difference.pnl_usd is None else str(difference.pnl_usd),
+                    "return_fraction": None if difference.return_fraction is None else str(difference.return_fraction),
+                    "same_interval": difference.same_interval,
+                }
+                for difference in self.metric_differences
+            ],
+            "trace_differences": {
+                run.label: [
+                    {
+                        "key": list(difference.key),
+                        "baseline_value": difference.baseline_value,
+                        "variant_value": difference.variant_value,
+                        "baseline_artifact_id": difference.baseline_artifact_id,
+                        "variant_artifact_id": difference.variant_artifact_id,
+                    }
+                    for difference in self.trace_differences(run.label)
+                ]
+                for run in self.runs if run.label != self.baseline_label
+            },
+        }
+
+    def save(self, path: str | Path) -> Path:
+        """Save a local report without overwriting an existing file."""
+        target = Path(path)
+        with target.open("x", encoding="utf-8", newline="\n") as stream:
+            json.dump(self.to_dict(), stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+        return target
 
     def overlap(self, variant_label: str) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
         baseline = next(run for run in self.runs if run.label == self.baseline_label)
