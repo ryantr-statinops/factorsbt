@@ -155,6 +155,47 @@
         }
       }
     },
+    "/v1/replays": {
+      "post": {
+        "operationId": "submitReplay",
+        "summary": "Enqueue verification from sealed recorded evidence",
+        "parameters": [ { "$ref": "#/components/parameters/IdempotencyKey" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "schemas/replay-request.schema.json" } } } },
+        "responses": {
+          "202": { "description": "Accepted or previously acknowledged replay.", "content": { "application/json": { "schema": { "$ref": "schemas/replay-acknowledgement.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/SubmissionConflict" },
+          "422": { "$ref": "#/components/responses/InvalidRequest" },
+          "503": { "$ref": "#/components/responses/BackendUnavailable" }
+        }
+      }
+    },
+    "/v1/replays/{replay_id}": {
+      "get": {
+        "operationId": "getReplay",
+        "summary": "Inspect replay verification lifecycle",
+        "parameters": [ { "$ref": "#/components/parameters/ReplayId" } ],
+        "responses": {
+          "200": { "description": "Replay status.", "content": { "application/json": { "schema": { "$ref": "schemas/replay-status.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/replays/{replay_id}/report": {
+      "get": {
+        "operationId": "getReplayReport",
+        "summary": "Read terminal recorded replay verification report",
+        "parameters": [ { "$ref": "#/components/parameters/ReplayId" } ],
+        "responses": {
+          "200": { "description": "Replay comparison and evidence references.", "content": { "application/json": { "schema": { "$ref": "schemas/replay-report.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/ResultsUnavailable" }
+        }
+      }
+    },
     "/v1/runs/{run_id}/results": {
       "get": {
         "operationId": "getRunResults",
@@ -198,6 +239,12 @@
       },
       "RunId": {
         "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "schemas/common.schema.json#/$defs/Uuid" }
+      },
+      "ReplayId": {
+        "name": "replay_id",
         "in": "path",
         "required": true,
         "schema": { "$ref": "schemas/common.schema.json#/$defs/Uuid" }

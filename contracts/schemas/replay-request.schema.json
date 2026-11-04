@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/v1/replay-request.schema.json",
+  "title": "FactorsBT recorded replay request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "source_run_id"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "source_run_id": { "$ref": "common.schema.json#/$defs/Uuid" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/v1/replay-report.schema.json",
+  "title": "FactorsBT recorded replay verification report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "replay_id", "source_run_id", "source_outcome", "matched", "first_mismatch", "source_transition_count", "replay_transition_count", "evidence_refs"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "replay_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+    "source_run_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+    "source_outcome": { "enum": ["succeeded", "failed"] },
+    "matched": { "type": "boolean" },
+    "first_mismatch": { "type": ["string", "null"] },
+    "source_transition_count": { "type": "integer", "minimum": 0 },
+    "replay_transition_count": { "type": "integer", "minimum": 0 },
+    "evidence_refs": { "type": "array", "items": { "$ref": "run-result.schema.json#/$defs/EvidenceArtifactRef" } }
+  }
+}

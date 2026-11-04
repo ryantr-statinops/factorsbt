@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/v1/replay-status.schema.json",
+  "title": "FactorsBT replay verification lifecycle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "replay_id", "source_run_id", "status", "submitted_at", "started_at", "finished_at", "failure"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "replay_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+    "source_run_id": { "$ref": "common.schema.json#/$defs/Uuid" },
+    "status": { "enum": ["queued", "running", "succeeded", "failed"] },
+    "submitted_at": { "$ref": "common.schema.json#/$defs/UtcTimestamp" },
+    "started_at": { "type": ["string", "null"], "format": "date-time", "pattern": "Z$" },
+    "finished_at": { "type": ["string", "null"], "format": "date-time", "pattern": "Z$" },
+    "failure": { "oneOf": [ { "type": "null" }, { "type": "object", "additionalProperties": false, "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } } ] }
+  }
+}
