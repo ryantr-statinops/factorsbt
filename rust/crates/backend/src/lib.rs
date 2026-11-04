@@ -15,6 +15,7 @@ pub mod model_fixture;
 pub mod model_validation;
 pub mod orchestrator;
 pub mod replay_source;
+pub mod replay_types;
 pub mod results;
 pub mod run_store;
 pub mod runtime;

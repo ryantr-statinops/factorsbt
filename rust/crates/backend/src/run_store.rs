@@ -3,6 +3,7 @@
 
 use crate::backend_config::QueueLimits;
 use crate::ids::new_uuid_v4;
+use crate::replay_types::{ReplayAcknowledgement, ReplayFailure, ReplayReport, ReplayStatus};
 use factorsbt_contracts::{
     outcomes::{
         RunFailure, RunLifecycle, RunProgress, RunResult, RunStatus, SubmissionAccepted,
@@ -32,6 +33,7 @@ struct QueueState {
     active: HashSet<Uuid>,
     submissions: HashMap<Uuid, StoredSubmission>,
     runs: HashMap<Uuid, StoredRun>,
+    replays: HashMap<Uuid, StoredReplay>,
 }
 
 impl Default for QueueState {
@@ -43,6 +45,7 @@ impl Default for QueueState {
             active: HashSet::new(),
             submissions: HashMap::new(),
             runs: HashMap::new(),
+            replays: HashMap::new(),
         }
     }
 }
@@ -59,6 +62,18 @@ pub struct StoredRun {
     pub configuration: RunConfiguration,
     pub status: RunStatus,
     pub result: Option<RunResult>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoredReplay {
+    pub status: ReplayStatus,
+    pub report: Option<ReplayReport>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplaySubmissionOutcome {
+    pub acknowledgement: ReplayAcknowledgement,
+    pub created: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +175,136 @@ impl RunStore {
             .runs
             .get(run_id)
             .cloned()
+    }
+
+    pub fn get_replay(&self, replay_id: &Uuid) -> Option<StoredReplay> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .replays
+            .get(replay_id)
+            .cloned()
+    }
+
+    /// The idempotency key is also the replay ID, allowing lookup after an
+    /// uncertain POST acknowledgement without adding a separate submission API.
+    pub fn accept_replay(
+        &self,
+        replay_id: Uuid,
+        source_run_id: Uuid,
+        submitted_at: UtcTimestamp,
+    ) -> Result<ReplaySubmissionOutcome, SubmissionStoreError> {
+        let mut notify_count = 0;
+        let outcome = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(existing) = state.replays.get(&replay_id) {
+                return if existing.status.source_run_id == source_run_id {
+                    Ok(ReplaySubmissionOutcome {
+                        acknowledgement: replay_acknowledgement(&existing.status),
+                        created: false,
+                    })
+                } else {
+                    Err(SubmissionStoreError::SubmissionIdReused)
+                };
+            }
+            if !state.accepting {
+                return Err(SubmissionStoreError::BackendUnavailable);
+            }
+            notify_count += promote_waiting_runs(&mut state, self.limits);
+            if state.active.len() < self.limits.max_active_runs {
+                state.active.insert(replay_id.clone());
+                state.starting.push_back(replay_id.clone());
+                notify_count += 1;
+            } else if state.queued.len() < self.limits.max_queued_runs {
+                state.queued.push_back(replay_id.clone());
+            } else {
+                return Err(SubmissionStoreError::QueueFull);
+            }
+            let status = ReplayStatus {
+                contract_version: "1.0.0".to_owned(),
+                replay_id: replay_id.clone(),
+                source_run_id,
+                status: "queued".to_owned(),
+                submitted_at,
+                started_at: None,
+                finished_at: None,
+                failure: None,
+            };
+            let acknowledgement = replay_acknowledgement(&status);
+            state.replays.insert(
+                replay_id,
+                StoredReplay {
+                    status,
+                    report: None,
+                },
+            );
+            ReplaySubmissionOutcome {
+                acknowledgement,
+                created: true,
+            }
+        };
+        self.notify_workers(notify_count);
+        Ok(outcome)
+    }
+
+    pub fn mark_replay_running(
+        &self,
+        replay_id: &Uuid,
+        at: UtcTimestamp,
+    ) -> Result<(), RunStoreTransitionError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(replay_id) {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        let replay = state
+            .replays
+            .get_mut(replay_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if replay.status.status != "queued" {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        replay.status.status = "running".to_owned();
+        replay.status.started_at = Some(at);
+        Ok(())
+    }
+
+    pub fn mark_replay_terminal(
+        &self,
+        replay_id: &Uuid,
+        at: UtcTimestamp,
+        report: Option<ReplayReport>,
+        failure: Option<ReplayFailure>,
+    ) -> Result<(), RunStoreTransitionError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(replay_id) {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        let replay = state
+            .replays
+            .get_mut(replay_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if replay.status.status != "running" {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        replay.status.status = if failure.is_none() {
+            "succeeded"
+        } else {
+            "failed"
+        }
+        .to_owned();
+        replay.status.finished_at = Some(at);
+        replay.status.failure = failure;
+        replay.report = report;
+        Ok(())
     }
 
     pub fn get_result(&self, run_id: &Uuid) -> Result<RunResult, RunResultLookupError> {
@@ -434,6 +579,16 @@ fn promote_waiting_runs(state: &mut QueueState, limits: QueueLimits) -> usize {
         promoted += 1;
     }
     promoted
+}
+
+fn replay_acknowledgement(status: &ReplayStatus) -> ReplayAcknowledgement {
+    ReplayAcknowledgement {
+        contract_version: status.contract_version.clone(),
+        replay_id: status.replay_id.clone(),
+        source_run_id: status.source_run_id.clone(),
+        status: "queued",
+        submitted_at: status.submitted_at.clone(),
+    }
 }
 
 #[cfg(test)]
