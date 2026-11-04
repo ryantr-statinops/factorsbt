@@ -9,7 +9,7 @@ use factorsbt_contracts::{
     RunConfiguration, UtcTimestamp, Uuid,
 };
 use factorsbt_data::Fixture;
-use factorsbt_engine::FinalRunStatus;
+use factorsbt_engine::{FinalRunStatus, PortfolioState};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -32,6 +32,7 @@ pub enum EvidenceError {
     RunNotFailed,
     FixtureIdentityMismatch,
     FixtureDigestMismatch,
+    InvalidInitialPortfolio,
     Serialization(&'static str),
     ArtifactIntegrity(String),
     TimestampUnavailable,
@@ -62,6 +63,9 @@ impl fmt::Display for EvidenceError {
             }
             Self::FixtureDigestMismatch => {
                 formatter.write_str("fixture source bytes do not match the registered digest")
+            }
+            Self::InvalidInitialPortfolio => {
+                formatter.write_str("initial portfolio cannot be valued")
             }
             Self::Serialization(context) => {
                 write!(formatter, "evidence {context} serialization failed")
@@ -150,6 +154,10 @@ fn write_report_artifacts(
     if sha256(&fixture.dataset_bytes) != fixture.digest_sha256 {
         return Err(EvidenceError::FixtureDigestMismatch);
     }
+    let initial_nav = PortfolioState::initialize(configuration, fixture)
+        .and_then(|portfolio| portfolio.net_asset_value())
+        .map_err(|_| EvidenceError::InvalidInitialPortfolio)?
+        .to_string();
     let run_id = report.identity.run_id.as_str();
     if run_id.len() != 36
         || run_id
@@ -276,7 +284,7 @@ fn write_report_artifacts(
         &created_at,
         EvidenceKind::Summary,
         "evidence/summary.json",
-        &summary_value(report, failure),
+        &summary_value(report, failure, configuration, &initial_nav),
         &mut artifacts,
     )?;
 
@@ -597,7 +605,12 @@ fn order_record(cycle: &DecisionCycleRecord) -> Value {
     })
 }
 
-fn summary_value(report: &OrchestrationReport, failure: Option<&OrchestrationError>) -> Value {
+fn summary_value(
+    report: &OrchestrationReport,
+    failure: Option<&OrchestrationError>,
+    configuration: &RunConfiguration,
+    initial_nav: &str,
+) -> Value {
     json!({
         "run_id":report.identity.run_id.as_str(),
         "scenario_id":report.identity.scenario_id.as_str(),
@@ -606,6 +619,9 @@ fn summary_value(report: &OrchestrationReport, failure: Option<&OrchestrationErr
         "fixture_id":report.fixture_id,
         "fixture_version":report.fixture_version,
         "fixture_digest_sha256":report.fixture_digest_sha256,
+        "simulation_start":configuration.simulation.start_at.as_str(),
+        "simulation_end":configuration.simulation.end_at.as_str(),
+        "initial_nav":initial_nav,
         "decision_steps":report.cycles.len(),
         "execution_events":report.execution_events.len(),
         "settlement_events":report.settlement_events.len(),
