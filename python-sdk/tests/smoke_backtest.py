@@ -375,6 +375,7 @@ def main() -> int:
                 if not result.evidence:
                     raise RuntimeError(f"{expected_mode} result has no evidence references")
                 verify_nav_and_evidence(result, config, environment["FACTORSBT_EVIDENCE_DIR"])
+                model_request_count = len(ControlledModelHandler.requests)
                 replay = client.submit_replay(result.run_id)
                 replay_status = client.wait_replay(replay.replay_id, timeout=30)
                 if replay_status.status != "succeeded":
@@ -382,6 +383,8 @@ def main() -> int:
                 replay_report = client.get_replay_report(replay.replay_id)
                 if not replay_report.matched or replay_report.source_run_id != result.run_id:
                     raise RuntimeError(f"{expected_mode} recorded replay diverged")
+                if len(ControlledModelHandler.requests) != model_request_count:
+                    raise RuntimeError("recorded replay made a fresh HTTP model call")
                 verify_replay_evidence(replay_report, environment["FACTORSBT_EVIDENCE_DIR"])
                 verify_nav_and_evidence(result, config, environment["FACTORSBT_EVIDENCE_DIR"])
                 if first_replay_id is None:

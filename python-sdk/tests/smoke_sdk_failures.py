@@ -200,6 +200,7 @@ def main() -> int:
                     raise RuntimeError("model failure did not retain typed failure context")
             else:
                 raise RuntimeError("model HTTP 503 did not fail the run")
+            failed_model_request_count = len(smoke.ControlledModelHandler.requests)
             failed_replay = backend_client.submit_replay(failed_ack.run_id)
             try:
                 verified_failure = backend_client.wait_replay(failed_replay.replay_id, timeout=15)
@@ -208,6 +209,8 @@ def main() -> int:
             failed_report = backend_client.get_replay_report(failed_replay.replay_id)
             if verified_failure.status != "succeeded" or not failed_report.matched or failed_report.source_outcome != "failed":
                 raise RuntimeError("recorded replay did not reproduce the failed source outcome")
+            if len(smoke.ControlledModelHandler.requests) != failed_model_request_count:
+                raise RuntimeError("failed-source replay made a fresh HTTP model call")
             replay_root = (
                 Path(environment["FACTORSBT_EVIDENCE_DIR"])
                 / "replays"
