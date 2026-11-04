@@ -2,9 +2,9 @@
 
 **Status:** Accepted MVP 1 contract design. Data, engine, orchestration and run API slices have local implementation evidence; public stability is not established.
 
-This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents. Stages 03–07 implement and locally verify the data, engine, orchestration, Rust API, and typed Python SDK slices for the synthetic MVP. The service is local/loopback and has no public stability guarantee.
+This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents. Stages 03–07 implement and locally verify data, engine, orchestration, run API, and typed Python SDK; Phase C adds local recorded replay and sequential SDK comparison. The service is loopback/local and has no public stability guarantee.
 
-The [MVP 1 HTTP API](mvp-http-api.md) selects the initial operation paths and run lifecycle. The shared shapes and [compatibility rules](mvp-contract-compatibility.md) are documented. The four run operations are implemented and locally verified, but are not declared stable.
+The [MVP 1 HTTP API](mvp-http-api.md) selects the initial run operation paths and lifecycle. The shared shapes and [compatibility rules](mvp-contract-compatibility.md) are documented. The four run operations and three recorded replay operations are implemented and locally verified, but are not declared stable. Replay compatibility is restricted to sealed evidence with matching executable digest and contract version; see [recorded replay](recorded-replay.md).
 
 The current request shape and type-specific instrument requirements are summarized in [MVP run and instrument configuration](instrument-configuration.md); the JSON Schema files under `contracts/schemas/` are the wire-shape authority.
 

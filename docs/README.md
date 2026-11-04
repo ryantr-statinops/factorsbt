@@ -4,7 +4,7 @@ FactorsBT is API-first infrastructure for multi-asset backtesting, synchronized 
 
 ## Project status
 
-Phase A and Phase B have passed their local verification gates, including the typed Python SDK and a synthetic Python-to-Rust backtest flow across Stages 00–07. The backend exposes `GET /healthz` and the four `/v1` run operations; the SDK provides typed configuration, submission, polling, and results. The service remains loopback/local with process-local metadata and filesystem evidence; no public API stability or hosted deployment is claimed. See the [Phase B verification record](development/phase-b-local.md).
+Phases A–C have passed their local verification gates across Stages 00–09. The backend provides the local run and replay operations; the Python SDK provides typed run/replay operations and sequential scenario comparison. Comparison and replay remain controlled local workflows: metadata is process-local, evidence is local, replay requires the same executable digest, and no public API stability or hosted deployment is claimed. See the [Phase B verification record](development/phase-b-local.md) and [Phase C verification record](development/phase-c-local.md).
 
 The accepted technology direction is a pure Python SDK and a Rust backend/engine, communicating initially over HTTP/JSON. Acceptance records design intent, not implementation completion.
 
@@ -43,7 +43,7 @@ Documents state the status of their content where relevant. Moving a statement t
 - Durable architecture choices belong in ADRs. Planned work and its dependencies belong in the roadmap.
 - Accepted synthetic instrument and accounting rules live in the owning architecture documents linked from the [MVP 1 scope](product/mvp-scope.md). Real-market behavior remains open unless separately accepted.
 - The sequence and progress evidence for implementation phases live in the [implementation plan](../plan/implementation/README.md).
-- Verified local build, test, and smoke commands live in the [development guides](development/workflow.md), including the [Phase B local verification record](development/phase-b-local.md).
+- Verified local build, test, and smoke commands live in the [development guides](development/workflow.md), including the [Phase B](development/phase-b-local.md) and [Phase C](development/phase-c-local.md) local verification records.
 - Workflow instructions belong in the development guide and agent instructions, not in public interface descriptions.
 
 Keep related documents linked instead of duplicating detailed rules. Record open questions near their owning topic.

@@ -1,6 +1,8 @@
 # Phase C recorded-response replay
 
-**Design status:** Accepted for the controlled local synthetic scope. Implementation requires the Phase C verification gate.
+**Design status:** Accepted for the controlled local synthetic scope.
+
+**Implementation status:** Implemented and locally verified within the limits below; see the [Phase C verification record](../development/phase-c-local.md).
 
 ## Source and compatibility
 
