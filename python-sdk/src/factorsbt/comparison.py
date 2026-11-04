@@ -85,3 +85,42 @@ class RunMetrics:
 class ComparisonReport:
     baseline_label: str
     runs: tuple[ComparisonRun, ...]
+
+    @property
+    def configuration_changes(self) -> tuple[ConfigurationChange, ...]:
+        baseline = next(run for run in self.runs if run.label == self.baseline_label)
+        original = baseline.configuration.to_wire()
+        changes = []
+        for run in self.runs:
+            if run.label == self.baseline_label:
+                continue
+            for path in _changed_paths(original, run.configuration.to_wire()):
+                changes.append(ConfigurationChange(run.label, path))
+        return tuple(changes)
+
+
+@dataclass(frozen=True)
+class ConfigurationChange:
+    variant_label: str
+    path: str
+
+
+def _changed_paths(left: object, right: object, prefix: str = "$") -> tuple[str, ...]:
+    if isinstance(left, dict) and isinstance(right, dict):
+        keys = sorted(left.keys() | right.keys())
+        return tuple(
+            path
+            for key in keys
+            for path in _changed_paths(left.get(key), right.get(key), f"{prefix}.{key}")
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return tuple(
+            path
+            for index in range(max(len(left), len(right)))
+            for path in _changed_paths(
+                left[index] if index < len(left) else None,
+                right[index] if index < len(right) else None,
+                f"{prefix}[{index}]",
+            )
+        )
+    return () if left == right else (prefix,)
