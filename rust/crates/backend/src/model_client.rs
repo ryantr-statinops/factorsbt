@@ -343,7 +343,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(exchange.response_body.len() > 0, true);
+        assert!(!exchange.response_body.is_empty());
         assert!(
             serde_json::from_slice::<serde_json::Value>(&exchange.response_body).unwrap()["run_id"]
                 == replay_request.run_id.as_str()

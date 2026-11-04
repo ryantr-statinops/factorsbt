@@ -658,16 +658,15 @@ mod tests {
         assert!(replay.created);
         assert_eq!(store.queue_snapshot().active_runs, 1);
         assert_eq!(store.queue_snapshot().queued_runs, 1);
-        assert_eq!(
-            store
+        assert!(
+            !store
                 .accept_replay(
                     collision.clone(),
                     replay.acknowledgement.source_run_id.clone(),
                     timestamp()
                 )
                 .unwrap()
-                .created,
-            false
+                .created
         );
         assert!(matches!(
             store.accept_replay(collision.clone(), submission_id(), timestamp()),
