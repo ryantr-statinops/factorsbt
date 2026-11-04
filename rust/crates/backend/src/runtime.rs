@@ -165,11 +165,23 @@ async fn execute_replay(
                 .map_err(|error| error.to_string())?,
         )
         .map_err(|_| "source summary is invalid".to_owned())?;
+        let terminal_failure = if source.index.status == "failed" {
+            Some(
+                serde_json::from_slice::<serde_json::Value>(
+                    &source
+                        .artifact(&evidence_root, "evidence/failure.json")
+                        .map_err(|error| error.to_string())?,
+                )
+                .map_err(|_| "source failure artifact is invalid".to_owned())?,
+            )
+        } else {
+            None
+        };
         let provider = ModelHttpClient::from_recorded_responses(responses)
             .map_err(|error| error.to_string())?;
-        Ok((source, summary, provider))
+        Ok((source, summary, terminal_failure, provider))
     })();
-    let (source, summary, provider) = match loaded {
+    let (source, summary, terminal_failure, provider) = match loaded {
         Ok(value) => value,
         Err(message) => {
             let _ = store.mark_replay_terminal(
@@ -268,6 +280,34 @@ async fn execute_replay(
             );
         }
         Err(error) => {
+            let matched_source_failure = terminal_failure.as_ref().is_some_and(|failure| {
+                failure["stage"] == error.error.stage && failure["reason"] == error.error.reason
+            });
+            if matched_source_failure {
+                let replay_report = crate::replay_types::ReplayReport {
+                    contract_version: "1.0.0".to_owned(),
+                    replay_id: replay_id.clone(),
+                    source_run_id: stored.status.source_run_id,
+                    source_outcome: "failed".to_owned(),
+                    matched: true,
+                    first_mismatch: None,
+                    source_transition_count: summary["decision_steps"].as_u64().unwrap_or(0)
+                        as usize,
+                    replay_transition_count: error.partial_report.as_ref().map_or(0, |report| {
+                        report.cycles.len()
+                            + report.execution_events.len()
+                            + report.settlement_events.len()
+                    }),
+                    evidence_refs: Vec::new(),
+                };
+                let _ = store.mark_replay_terminal(
+                    &replay_id,
+                    timestamp_or(&stored.status.submitted_at),
+                    Some(replay_report),
+                    None,
+                );
+                return;
+            }
             let _ = store.mark_replay_terminal(
                 &replay_id,
                 timestamp_or(&stored.status.submitted_at),
