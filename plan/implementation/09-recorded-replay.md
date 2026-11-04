@@ -1,6 +1,6 @@
 # Stage 09 — Recorded-response replay và provenance
 
-**Status:** Proposed
+**Status:** Implemented — the local API and typed SDK replay sealed runs with the same executable/contract, without fresh model inference.
 
 **Phase:** C — Thí nghiệm và tái lập
 
@@ -21,36 +21,38 @@ Phát lại chuyển trạng thái mô phỏng từ bằng chứng đã lưu tro
 - [Stage 07](07-python-sdk-mvp.md), [Stage 08](08-scenario-comparison.md): đường chạy hoàn chỉnh và state độc lập theo scenario.
 - Evidence được ghi từ data/engine/orchestration cần được rà soát và bổ sung trước khi công bố replay hoạt động.
 
-## Quyết định cần chốt — Open
+## Quyết định và giới hạn đã chốt
 
-- Manifest/schema, artifact identity và compatibility; engine/platform/version nào nằm trong phạm vi tái lập.
-- So sánh chính xác hay dùng tolerance nào nếu cần, ở những trường nào và theo lý do kế toán/numeric đã chấp nhận.
-- Storage, retention và khả năng giữ dữ liệu/phản hồi theo quyền sử dụng thực tế; cách báo artifact thiếu hoặc bị hạn chế truy cập.
-- Cách lựa chọn replay/fresh inference và mô tả provenance trong SDK/API/results; endpoint hoặc seed không đủ chứng minh model identity.
+- Chỉ đọc evidence đã niêm phong, có integrity-checked manifest/artifacts, contract `1.0.0` và executable digest giống binary đang chạy.
+- So sánh theo giá trị có thứ tự cho admission, order, execution/fill, settlement, ledger, cash, positions và NAV; báo nhóm mismatch đầu tiên.
+- Replay dùng recorded responses hoặc tái hiện terminal model failure; không gọi endpoint model và không fallback sang inference mới.
+- Replay job dùng bounded FIFO queue chung với run; metadata/idempotency còn trong process, evidence replay nằm trong thư mục riêng cục bộ.
+- Run nguồn thất bại vẫn có thể xác minh nếu replay tạo lại cùng stage/reason. Nguồn thất bại trước khi có summary được hỗ trợ; nguồn có summary phải có đủ financial evidence artifacts.
 
 ## Task → Commit
 
 | Thứ tự | Task và phạm vi commit | Commit dự kiến |
 | --- | --- | --- |
-| 1 | Đặc tả phạm vi reproducibility và manifest | `docs(replay): define evidence manifest and reproducibility scope` |
-| 2 | Lưu/đọc evidence có phiên bản và xử lý thiếu artifact | `feat(evidence): persist replay inputs and recorded responses` |
-| 3 | Triển khai replay và phân biệt fresh inference qua giao diện | `feat(replay): reproduce recorded simulation transitions` |
+| 1 | Bổ sung recorded inference, status/report API và typed replay SDK | `refactor(orchestrator): support recorded inference provider`; `feat(api): execute and expose recorded replay jobs`; `feat(sdk): add typed replay operations` |
+| 2 | So sánh financial transitions, yêu cầu evidence đầy đủ và lưu evidence cô lập | `feat(replay): compare normalized financial outcomes`; `fix(replay): compare admission and ledger transitions`; `fix(replay): require complete financial evidence` |
+| 3 | Kiểm tra idempotency, source failure, restart, queue, panic và model-call isolation | `test(integration): replay sealed source after backend restart`; `test(replay): cover admission queue and panic failures`; `test(integration): assert replay bypasses model service` |
 
 ## Kiểm chứng dự kiến
 
-- Phát lại run controlled và đối chiếu decision admission, order/fill, cash/positions và transitions theo tiêu chuẩn đã chọn.
-- Dịch vụ model không khả dụng trong replay vẫn không phát sinh inference request; dùng spy/fixture quan sát lời gọi.
-- Thiếu response/data version hoặc artifact không tương thích tạo lỗi/giới hạn rõ ràng, không fallback âm thầm.
-- Fresh inference với cùng input có thể nhận response khác và luôn mang provenance gọi mới.
-- Replay từng scenario không ghi đè state/evidence của run gốc hoặc scenario khác.
+- Smoke chạy lại source từ thư mục evidence sau khi restart backend; ba output mode đều matched.
+- Model fixture request count không tăng khi replay run thành công hoặc replay nguồn model-failure.
+- Smoke kiểm tra report/artifact replay integrity, key lặp lại cùng request, conflict khi đổi source, và evidence gốc sau replay.
+- Unit/integration tests kiểm tra source thiếu artifacts, queue overflow/FIFO, cùng UUID giữa run và replay, panic terminalization, comparator mismatch, và nguồn failure.
+- Kết quả chỉ xác minh cùng executable digest/contract; không khẳng định reproducibility giữa build, platform hay fresh inference.
 
 ## Điều kiện hoàn thành
 
-- Replay được xác minh trên fixture và công bố chính xác phạm vi tái lập, không hứa determinism chung cho mọi môi trường/model.
-- API/SDK/results phân biệt replay với fresh inference; manifest có identity và quy tắc tương thích được ghi rõ.
-- Đủ bằng chứng hoàn thành Phase C: comparison có thể giải thích và replay được kiểm tra trong phạm vi đã tuyên bố.
+- Replay API/SDK hoạt động với run success và terminal model failure; status/report và replay evidence có identity riêng.
+- Financial transition comparator, source integrity, same-binary rule, local evidence và không-fresh-inference được kiểm tra/công bố.
+- Các Rust/Python và SDK/backend smoke checks ghi ở [Phase C local verification](../../docs/development/phase-c-local.md) đã qua.
 
 ## Tài liệu liên quan
 
 - [Simulation lifecycle — replay](../../docs/architecture/simulation-lifecycle.md#replay-and-fresh-inference)
 - [Service contracts](../../docs/interfaces/service-contracts.md)
+- [Phase C local verification](../../docs/development/phase-c-local.md)
