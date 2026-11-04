@@ -7,7 +7,7 @@ use crate::{
     model_client::ModelHttpClient,
     orchestrator::{run_simulation_with_progress, system_utc_timestamp, RunIdentity},
     results::build_run_result,
-    run_store::RunStore,
+    run_store::{JobId, RunStore},
 };
 use factorsbt_contracts::{
     outcomes::{EvidenceKind, RunFailure},
@@ -72,17 +72,22 @@ impl BackendRuntime {
 
         let dispatcher = RunDispatcher::start_with_failure_handler(
             store.clone(),
-            move |run_id| {
+            move |job_id| {
                 let store = worker_store.clone();
                 let fixtures = Arc::clone(&worker_fixtures);
                 let client = worker_client.clone();
                 let evidence_root = worker_evidence_root.clone();
                 async move {
-                    execute_run(store, fixtures, client, evidence_root, run_id).await;
+                    match job_id {
+                        JobId::Run(run_id) => {
+                            execute_run(store, fixtures, client, evidence_root, run_id).await
+                        }
+                        JobId::Replay(_) => {}
+                    }
                 }
             },
-            move |run_id| {
-                mark_failed(
+            move |job_id| match job_id {
+                JobId::Run(run_id) => mark_failed(
                     &panic_store,
                     &run_id,
                     "RUN_WORKER_PANICKED",
@@ -90,7 +95,20 @@ impl BackendRuntime {
                     None,
                     None,
                     None,
-                );
+                ),
+                JobId::Replay(replay_id) => {
+                    if let Some(replay) = panic_store.get_replay(&replay_id) {
+                        let _ = panic_store.mark_replay_terminal(
+                            &replay_id,
+                            timestamp_or(&replay.status.submitted_at),
+                            None,
+                            Some(crate::replay_types::ReplayFailure {
+                                code: "REPLAY_WORKER_PANICKED".to_owned(),
+                                message: "The replay worker stopped unexpectedly.".to_owned(),
+                            }),
+                        );
+                    }
+                }
             },
         );
         Ok(Self {

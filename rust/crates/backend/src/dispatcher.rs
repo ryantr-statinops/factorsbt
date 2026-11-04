@@ -1,7 +1,6 @@
 //! FIFO worker pool that reserves no more than the configured active capacity.
 
-use crate::run_store::RunStore;
-use factorsbt_contracts::Uuid;
+use crate::run_store::{JobId, RunStore};
 use std::{future::Future, sync::Arc};
 use tokio::task::JoinHandle;
 
@@ -15,7 +14,7 @@ impl RunDispatcher {
     /// worker always releases its run slot before accepting another job.
     pub fn start<F, Fut>(store: RunStore, handler: F) -> Self
     where
-        F: Fn(Uuid) -> Fut + Send + Sync + 'static,
+        F: Fn(JobId) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
         Self::start_with_failure_handler(store, handler, |_| {})
@@ -25,9 +24,9 @@ impl RunDispatcher {
     /// prevent the worker from releasing its reserved run slot.
     pub fn start_with_failure_handler<F, Fut, P>(store: RunStore, handler: F, on_panic: P) -> Self
     where
-        F: Fn(Uuid) -> Fut + Send + Sync + 'static,
+        F: Fn(JobId) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
-        P: Fn(Uuid) + Send + Sync + 'static,
+        P: Fn(JobId) + Send + Sync + 'static,
     {
         let handler = Arc::new(handler);
         let on_panic = Arc::new(on_panic);
@@ -39,16 +38,16 @@ impl RunDispatcher {
                 let on_panic = Arc::clone(&on_panic);
                 tokio::spawn(async move {
                     loop {
-                        let Some(run_id) = store.next_reserved_run().await else {
+                        let Some(job_id) = store.next_reserved_run().await else {
                             return;
                         };
-                        let task = tokio::spawn(handler(run_id.clone()));
+                        let task = tokio::spawn(handler(job_id.clone()));
                         if task.await.is_err() {
                             let on_panic = Arc::clone(&on_panic);
-                            let failed_run_id = run_id.clone();
-                            let _ = tokio::spawn(async move { on_panic(failed_run_id) }).await;
+                            let failed_job_id = job_id.clone();
+                            let _ = tokio::spawn(async move { on_panic(failed_job_id) }).await;
                         }
-                        store.finish_active_run(&run_id);
+                        store.finish_active_run(&job_id);
                     }
                 })
             })
@@ -69,7 +68,7 @@ impl RunDispatcher {
 mod tests {
     use super::*;
     use crate::{backend_config::QueueLimits, run_store::SubmissionStoreError};
-    use factorsbt_contracts::{run_configuration::RunConfiguration, UtcTimestamp};
+    use factorsbt_contracts::{run_configuration::RunConfiguration, UtcTimestamp, Uuid};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::{mpsc, Semaphore};
 
@@ -137,13 +136,16 @@ mod tests {
             let release = Arc::clone(&release);
             let active = Arc::clone(&active);
             let max_active = Arc::clone(&max_active);
-            move |run_id: Uuid| {
+            move |job_id: JobId| {
                 let release = Arc::clone(&release);
                 let active = Arc::clone(&active);
                 let max_active = Arc::clone(&max_active);
                 let started_tx = started_tx.clone();
                 let finished_tx = finished_tx.clone();
                 async move {
+                    let JobId::Run(run_id) = job_id else {
+                        panic!("expected run job")
+                    };
                     let count = active.fetch_add(1, Ordering::SeqCst) + 1;
                     max_active.fetch_max(count, Ordering::SeqCst);
                     started_tx.send(run_id.clone()).unwrap();
@@ -195,10 +197,13 @@ mod tests {
         let panic_seen = Arc::new(AtomicUsize::new(0));
         let (started_tx, mut started_rx) = mpsc::unbounded_channel();
         let panic_run_id = first.clone();
-        let handler = move |run_id: Uuid| {
+        let handler = move |job_id: JobId| {
             let started_tx = started_tx.clone();
             let panic_run_id = panic_run_id.clone();
             async move {
+                let JobId::Run(run_id) = job_id else {
+                    panic!("expected run job")
+                };
                 started_tx.send(run_id.clone()).unwrap();
                 if run_id == panic_run_id {
                     panic!("controlled worker panic");
@@ -208,7 +213,10 @@ mod tests {
         let panic_seen_callback = Arc::clone(&panic_seen);
         let callback_store = store.clone();
         let dispatcher =
-            RunDispatcher::start_with_failure_handler(store.clone(), handler, move |run_id| {
+            RunDispatcher::start_with_failure_handler(store.clone(), handler, move |job_id| {
+                let JobId::Run(run_id) = job_id else {
+                    panic!("expected run job")
+                };
                 panic_seen_callback.fetch_add(1, Ordering::SeqCst);
                 callback_store
                     .mark_failed(

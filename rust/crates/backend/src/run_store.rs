@@ -25,12 +25,18 @@ pub struct RunStore {
     ready: Arc<Notify>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum JobId {
+    Run(Uuid),
+    Replay(Uuid),
+}
+
 #[derive(Debug)]
 struct QueueState {
     accepting: bool,
-    queued: VecDeque<Uuid>,
-    starting: VecDeque<Uuid>,
-    active: HashSet<Uuid>,
+    queued: VecDeque<JobId>,
+    starting: VecDeque<JobId>,
+    active: HashSet<JobId>,
     submissions: HashMap<Uuid, StoredSubmission>,
     runs: HashMap<Uuid, StoredRun>,
     replays: HashMap<Uuid, StoredReplay>,
@@ -215,11 +221,12 @@ impl RunStore {
             }
             notify_count += promote_waiting_runs(&mut state, self.limits);
             if state.active.len() < self.limits.max_active_runs {
-                state.active.insert(replay_id.clone());
-                state.starting.push_back(replay_id.clone());
+                let job = JobId::Replay(replay_id.clone());
+                state.active.insert(job.clone());
+                state.starting.push_back(job);
                 notify_count += 1;
             } else if state.queued.len() < self.limits.max_queued_runs {
-                state.queued.push_back(replay_id.clone());
+                state.queued.push_back(JobId::Replay(replay_id.clone()));
             } else {
                 return Err(SubmissionStoreError::QueueFull);
             }
@@ -259,7 +266,7 @@ impl RunStore {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !state.active.contains(replay_id) {
+        if !state.active.contains(&JobId::Replay(replay_id.clone())) {
             return Err(RunStoreTransitionError::InvalidTransition);
         }
         let replay = state
@@ -285,7 +292,7 @@ impl RunStore {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !state.active.contains(replay_id) {
+        if !state.active.contains(&JobId::Replay(replay_id.clone())) {
             return Err(RunStoreTransitionError::InvalidTransition);
         }
         let replay = state
@@ -335,7 +342,7 @@ impl RunStore {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !state.active.contains(run_id) {
+        if !state.active.contains(&JobId::Run(run_id.clone())) {
             return Err(RunStoreTransitionError::InvalidTransition);
         }
         let run = state
@@ -407,7 +414,7 @@ impl RunStore {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !state.active.contains(run_id) {
+        if !state.active.contains(&JobId::Run(run_id.clone())) {
             return Err(RunStoreTransitionError::InvalidTransition);
         }
         let run = state
@@ -464,11 +471,12 @@ impl RunStore {
                 submitted_at: submitted_at.clone(),
             };
             if state.active.len() < self.limits.max_active_runs {
-                state.active.insert(run_id.clone());
-                state.starting.push_back(run_id.clone());
+                let job = JobId::Run(run_id.clone());
+                state.active.insert(job.clone());
+                state.starting.push_back(job);
                 notify_count += 1;
             } else if state.queued.len() < self.limits.max_queued_runs {
-                state.queued.push_back(run_id.clone());
+                state.queued.push_back(JobId::Run(run_id.clone()));
             } else {
                 return Err(SubmissionStoreError::QueueFull);
             }
@@ -518,7 +526,7 @@ impl RunStore {
         self.ready.notify_waiters();
     }
 
-    pub async fn next_reserved_run(&self) -> Option<Uuid> {
+    pub async fn next_reserved_run(&self) -> Option<JobId> {
         loop {
             let notified = self.ready.notified();
             let next = {
@@ -541,13 +549,13 @@ impl RunStore {
         }
     }
 
-    pub fn finish_active_run(&self, run_id: &Uuid) -> bool {
+    pub fn finish_active_run(&self, job_id: &JobId) -> bool {
         let (promoted, drained) = {
             let mut state = self
                 .state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if !state.active.remove(run_id) {
+            if !state.active.remove(job_id) {
                 return false;
             }
             let promoted = promote_waiting_runs(&mut state, self.limits);
@@ -571,11 +579,11 @@ impl RunStore {
 fn promote_waiting_runs(state: &mut QueueState, limits: QueueLimits) -> usize {
     let mut promoted = 0;
     while state.active.len() < limits.max_active_runs {
-        let Some(run_id) = state.queued.pop_front() else {
+        let Some(job_id) = state.queued.pop_front() else {
             break;
         };
-        state.active.insert(run_id.clone());
-        state.starting.push_back(run_id);
+        state.active.insert(job_id.clone());
+        state.starting.push_back(job_id);
         promoted += 1;
     }
     promoted
