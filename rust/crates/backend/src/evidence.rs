@@ -566,10 +566,14 @@ fn write_failure_artifacts(
         EvidenceKind::Risk,
         "evidence/failure.json",
         &json!({
+            "code":"RUN_EXECUTION_FAILED",
             "stage":failure.stage,
             "reason":failure.reason,
             "last_valid_portfolio_present":last_valid_portfolio_present,
             "failed_inference_id":failed_inference.map(|exchange| exchange.request.inference_id.as_str()),
+            "step_id":failed_inference.map(|exchange| exchange.request.step_id.as_str()),
+            "snapshot_id":failed_inference.map(|exchange| exchange.request.snapshot_id.as_str()),
+            "response_recorded":failed_inference.and_then(|exchange| exchange.response_body.as_ref()).is_some(),
         }),
         artifacts,
     )
@@ -1163,6 +1167,29 @@ mod tests {
         )
         .unwrap();
         assert_eq!(failure_evidence["last_valid_portfolio_present"], true);
+        assert_eq!(failure_evidence["code"], "RUN_EXECUTION_FAILED");
+        assert_eq!(failure_evidence["stage"], "model response validation");
+        assert_eq!(failure_evidence["response_recorded"], true);
+        assert_eq!(
+            failure_evidence["step_id"],
+            failure
+                .failed_inference
+                .as_ref()
+                .unwrap()
+                .request
+                .step_id
+                .as_str()
+        );
+        assert_eq!(
+            failure_evidence["snapshot_id"],
+            failure
+                .failed_inference
+                .as_ref()
+                .unwrap()
+                .request
+                .snapshot_id
+                .as_str()
+        );
         assert_eq!(
             fs::read(
                 bundle
