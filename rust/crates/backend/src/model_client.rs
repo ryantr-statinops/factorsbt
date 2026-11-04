@@ -2,7 +2,14 @@
 
 use factorsbt_contracts::model::{ModelRequest, ModelResponse};
 use reqwest::{redirect::Policy, Client as HttpClient, StatusCode, Url};
-use std::{error::Error, fmt, net::IpAddr, time::Duration};
+use std::{
+    collections::VecDeque,
+    error::Error,
+    fmt,
+    net::IpAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModelServiceErrorKind {
@@ -11,6 +18,7 @@ pub enum ModelServiceErrorKind {
     Transport,
     HttpStatus,
     InvalidResponse,
+    RecordedResponseUnavailable,
 }
 
 #[derive(Debug)]
@@ -76,6 +84,7 @@ pub struct ModelExchange {
 #[derive(Clone)]
 pub struct ModelHttpClient {
     client: HttpClient,
+    recorded: Option<Arc<Mutex<VecDeque<Vec<u8>>>>>,
 }
 
 impl ModelHttpClient {
@@ -85,7 +94,21 @@ impl ModelHttpClient {
             .no_proxy()
             .build()
             .map_err(|_| ModelServiceError::new(ModelServiceErrorKind::Transport, None))?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            recorded: None,
+        })
+    }
+
+    /// Construct a no-network provider for deterministic evidence replay.
+    pub fn from_recorded_responses(responses: Vec<Vec<u8>>) -> Result<Self, ModelServiceError> {
+        let client = HttpClient::builder()
+            .build()
+            .map_err(|_| ModelServiceError::new(ModelServiceErrorKind::Transport, None))?;
+        Ok(Self {
+            client,
+            recorded: Some(Arc::new(Mutex::new(responses.into()))),
+        })
     }
 
     /// Send exactly one request. Redirects and automatic retries are disabled;
@@ -96,6 +119,47 @@ impl ModelHttpClient {
         timeout: Duration,
         request: &ModelRequest,
     ) -> Result<ModelExchange, ModelServiceError> {
+        if let Some(recorded) = &self.recorded {
+            let bytes = recorded
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .pop_front()
+                .ok_or_else(|| {
+                    ModelServiceError::new(ModelServiceErrorKind::RecordedResponseUnavailable, None)
+                })?;
+            let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+                ModelServiceError::with_response_body(
+                    ModelServiceErrorKind::InvalidResponse,
+                    None,
+                    bytes.clone(),
+                )
+            })?;
+            for (field, replacement) in [
+                ("inference_id", request.inference_id.as_str()),
+                ("run_id", request.run_id.as_str()),
+                ("scenario_id", request.scenario_id.as_str()),
+                ("step_id", request.step_id.as_str()),
+                ("snapshot_id", request.snapshot_id.as_str()),
+                ("model_id", request.model_id.as_str()),
+                ("model_version", request.model_version.as_str()),
+            ] {
+                value[field] = serde_json::Value::String(replacement.to_owned());
+            }
+            let body = serde_json::to_vec(&value).map_err(|_| {
+                ModelServiceError::new(ModelServiceErrorKind::InvalidResponse, None)
+            })?;
+            let response = serde_json::from_slice(&body).map_err(|_| {
+                ModelServiceError::with_response_body(
+                    ModelServiceErrorKind::InvalidResponse,
+                    None,
+                    body.clone(),
+                )
+            })?;
+            return Ok(ModelExchange {
+                response,
+                response_body: body,
+            });
+        }
         let endpoint = parse_loopback_endpoint(endpoint)?;
         let response = self
             .client
@@ -219,6 +283,37 @@ mod tests {
             json!({"scores":[{"instrument_id":"SPOT_A","score":"1"}]}),
             factorsbt_contracts::UtcTimestamp::new("2026-01-05T16:00:02Z").unwrap(),
         )
+    }
+
+    #[tokio::test]
+    async fn recorded_provider_returns_saved_output_without_contacting_endpoint() {
+        let original = request();
+        let saved = fixture().response_document(&original);
+        let mut replay_request = original.clone();
+        replay_request.run_id =
+            factorsbt_contracts::Uuid::new("c827fcbc-c5fc-48a4-b4aa-21a63f64727e").unwrap();
+        replay_request.inference_id =
+            factorsbt_contracts::Uuid::new("8a2f5ce2-a6b5-4a71-b587-fefdb4a9fbc5").unwrap();
+        let client =
+            ModelHttpClient::from_recorded_responses(vec![serde_json::to_vec(&saved).unwrap()])
+                .unwrap();
+        let exchange = client
+            .infer(
+                "http://127.0.0.1:1/infer",
+                Duration::from_millis(50),
+                &replay_request,
+            )
+            .await
+            .unwrap();
+        assert_eq!(exchange.response_body.len() > 0, true);
+        assert!(
+            serde_json::from_slice::<serde_json::Value>(&exchange.response_body).unwrap()["run_id"]
+                == replay_request.run_id.as_str()
+        );
+        assert!(matches!(
+            exchange.response,
+            factorsbt_contracts::ModelResponse::Scores { .. }
+        ));
     }
 
     #[tokio::test]
