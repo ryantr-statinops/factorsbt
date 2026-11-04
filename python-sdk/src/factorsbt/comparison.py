@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .configuration import RunConfiguration
+from .responses import RunResult
 from .types import validate_identifier
 
 
@@ -38,3 +39,18 @@ class ComparisonSpec:
     @property
     def scenarios(self) -> tuple[ComparisonScenario, ...]:
         return (self.baseline, *self.variants)
+
+
+@dataclass(frozen=True)
+class ComparisonRun:
+    label: str
+    configuration: RunConfiguration
+    submission_id: str
+    run_id: str
+    result: RunResult
+
+
+@dataclass(frozen=True)
+class ComparisonReport:
+    baseline_label: str
+    runs: tuple[ComparisonRun, ...]

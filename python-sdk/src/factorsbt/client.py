@@ -23,6 +23,7 @@ from .errors import (
     TransportError,
     WaitTimeout,
 )
+from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec
 from .responses import EvidenceIndex, EvidenceReference, RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .types import validate_uuid
 
@@ -224,6 +225,26 @@ class Client:
         if result.run_id != key:
             raise ProtocolError("result response identity does not match the requested ID")
         return result
+
+    def compare(self, spec: ComparisonSpec, *, timeout_per_run: float = 60.0) -> ComparisonReport:
+        """Execute independent scenarios sequentially and retain their run identities."""
+        if not isinstance(spec, ComparisonSpec):
+            raise TypeError("spec must be a ComparisonSpec")
+        runs = []
+        for scenario in spec.scenarios:
+            accepted = self.submit(scenario.configuration)
+            self.wait(accepted.run_id, timeout=timeout_per_run)
+            result = self.get_results(accepted.run_id)
+            runs.append(
+                ComparisonRun(
+                    scenario.label,
+                    scenario.configuration,
+                    accepted.submission_id,
+                    accepted.run_id,
+                    result,
+                )
+            )
+        return ComparisonReport(spec.baseline.label, tuple(runs))
 
     def get_evidence(self, run_id: str) -> EvidenceIndex:
         """List sealed evidence for a successful or failed local run."""
