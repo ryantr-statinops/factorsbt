@@ -546,7 +546,7 @@ mod tests {
             ..BackendConfig::default()
         };
         let runtime = BackendRuntime::start(&config).unwrap();
-        assert_eq!(runtime.fixtures().len(), 7);
+        assert_eq!(runtime.fixtures().len(), 9);
         assert!(evidence_directory.is_dir());
         runtime.shutdown().await;
         fs::remove_dir_all(evidence_directory).unwrap();
