@@ -1,0 +1,7 @@
+{
+  "format_version": "1.1.0",
+  "fixture_id": "mvp-compare-delayed-event",
+  "fixture_version": "v1",
+  "dataset_path": "dataset.json",
+  "dataset_sha256": "28e8944ee702340edf9b7504c099659f277b83c35a188187f4c27760b0490a9e"
+}

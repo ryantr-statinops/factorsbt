@@ -13,6 +13,8 @@ Each folder under [`data`](data) contains a `manifest.json` and `dataset.json`. 
 | `mvp-settle-01` | `SETTLE-01` American call assignment event at Jan 7 close. |
 | `mvp-settle-02-itm` | `SETTLE-02` in-the-money expiry with no exercise/assignment event; run must fail for incomplete settlement input. |
 | `mvp-settle-02-otm` | Out-of-the-money expiry with no event; the option may expire worthless. |
+| `mvp-compare-price-only` | Same baseline prices and execution inputs with news observations removed. |
+| `mvp-compare-delayed-event` | Same baseline observations, with both news revisions available one day later. |
 
 The baseline observations include two revisions of the delayed `TIME-01` news item. Its event time is Jan 6 at 15:00 UTC, revision 1 becomes available at 17:00 that day, and revision 2 becomes available Jan 7 at 17:00. Jan 6 execution opens are separate data rows; for example, `SPOT_A` opens at 100.50 and is not available to the Jan 5 close snapshot.
 

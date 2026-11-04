@@ -1,0 +1,7 @@
+{
+  "format_version": "1.1.0",
+  "fixture_id": "mvp-compare-price-only",
+  "fixture_version": "v1",
+  "dataset_path": "dataset.json",
+  "dataset_sha256": "fd8e5fa7de1554f2eea5f9004eb26b6754cec75cae5bff24fa651b0ecb22418e"
+}
