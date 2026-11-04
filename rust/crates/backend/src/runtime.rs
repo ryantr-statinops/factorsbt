@@ -100,6 +100,12 @@ impl BackendRuntime {
                 ),
                 JobId::Replay(replay_id) => {
                     if let Some(replay) = panic_store.get_replay(&replay_id) {
+                        if replay.status.status == "queued" {
+                            let _ = panic_store.mark_replay_running(
+                                &replay_id,
+                                timestamp_or(&replay.status.submitted_at),
+                            );
+                        }
                         let _ = panic_store.mark_replay_terminal(
                             &replay_id,
                             timestamp_or(&replay.status.submitted_at),
