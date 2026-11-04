@@ -13,6 +13,7 @@ use factorsbt_engine::{FinalRunStatus, PortfolioState};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashSet,
     error::Error,
     fmt,
     fs::{self, OpenOptions},
@@ -33,6 +34,8 @@ pub enum EvidenceError {
     FixtureIdentityMismatch,
     FixtureDigestMismatch,
     InvalidInitialPortfolio,
+    RunNotFound,
+    ManifestInvalid,
     Serialization(&'static str),
     ArtifactIntegrity(String),
     TimestampUnavailable,
@@ -67,6 +70,8 @@ impl fmt::Display for EvidenceError {
             Self::InvalidInitialPortfolio => {
                 formatter.write_str("initial portfolio cannot be valued")
             }
+            Self::RunNotFound => formatter.write_str("sealed run evidence was not found"),
+            Self::ManifestInvalid => formatter.write_str("run evidence manifest is invalid"),
             Self::Serialization(context) => {
                 write!(formatter, "evidence {context} serialization failed")
             }
@@ -82,6 +87,76 @@ impl fmt::Display for EvidenceError {
 }
 
 impl Error for EvidenceError {}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EvidenceIndex {
+    pub contract_version: String,
+    pub run_id: Uuid,
+    pub status: String,
+    pub artifacts: Vec<EvidenceArtifactRef>,
+}
+
+/// Load a sealed local run by ID, including a failed run after process restart.
+pub fn read_evidence_index(
+    evidence_root: impl AsRef<Path>,
+    run_id: &Uuid,
+) -> Result<EvidenceIndex, EvidenceError> {
+    let runs = fs::canonicalize(evidence_root.as_ref().join("runs"))
+        .map_err(|_| EvidenceError::RunNotFound)?;
+    let run_directory =
+        fs::canonicalize(runs.join(run_id.as_str())).map_err(|_| EvidenceError::RunNotFound)?;
+    if !run_directory.starts_with(&runs) {
+        return Err(EvidenceError::PathEscapesRunRoot);
+    }
+    let manifest_path = run_directory.join("evidence/run-manifest.json");
+    let manifest_bytes = fs::read(&manifest_path).map_err(|_| EvidenceError::RunNotFound)?;
+    let manifest: Value =
+        serde_json::from_slice(&manifest_bytes).map_err(|_| EvidenceError::ManifestInvalid)?;
+    if manifest["run_id"] != run_id.as_str() {
+        return Err(EvidenceError::ManifestInvalid);
+    }
+    let status = manifest["status"]
+        .as_str()
+        .filter(|value| matches!(*value, "succeeded" | "failed"))
+        .ok_or(EvidenceError::ManifestInvalid)?
+        .to_owned();
+    let mut artifacts: Vec<EvidenceArtifactRef> =
+        serde_json::from_value(manifest["artifacts"].clone())
+            .map_err(|_| EvidenceError::ManifestInvalid)?;
+    if artifacts.is_empty() {
+        return Err(EvidenceError::ManifestInvalid);
+    }
+    let mut ids = HashSet::new();
+    let mut paths = HashSet::new();
+    for artifact in &artifacts {
+        if !ids.insert(artifact.artifact_id.as_str())
+            || !paths.insert(artifact.relative_path.as_str())
+            || artifact.relative_path == "evidence/run-manifest.json"
+            || artifact.artifact_id != artifact_id(&run_directory, &artifact.relative_path)
+        {
+            return Err(EvidenceError::ManifestInvalid);
+        }
+    }
+    verify_artifacts(&run_directory, &artifacts)?;
+    let created_at = artifacts[0].created_at.clone();
+    artifacts.push(EvidenceArtifactRef {
+        artifact_id: artifact_id(&run_directory, "evidence/run-manifest.json"),
+        kind: EvidenceKind::RunManifest,
+        relative_path: "evidence/run-manifest.json".to_owned(),
+        content_type: "application/json".to_owned(),
+        sha256: sha256(&manifest_bytes),
+        size_bytes: u64::try_from(manifest_bytes.len())
+            .map_err(|_| EvidenceError::ManifestInvalid)?,
+        created_at,
+    });
+    verify_artifacts(&run_directory, &artifacts)?;
+    Ok(EvidenceIndex {
+        contract_version: "1.0.0".to_owned(),
+        run_id: run_id.clone(),
+        status,
+        artifacts,
+    })
+}
 
 #[derive(Debug, Clone)]
 pub struct EvidenceBundle {
