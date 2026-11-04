@@ -165,12 +165,18 @@ async fn execute_replay(
         let responses = source
             .recorded_responses(&evidence_root)
             .map_err(|error| error.to_string())?;
-        let summary: serde_json::Value = serde_json::from_slice(
-            &source
-                .artifact(&evidence_root, "evidence/summary.json")
-                .map_err(|error| error.to_string())?,
-        )
-        .map_err(|_| "source summary is invalid".to_owned())?;
+        let summary = match source.artifact(&evidence_root, "evidence/summary.json") {
+            Ok(bytes) => Some(
+                serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .map_err(|_| "source summary is invalid".to_owned())?,
+            ),
+            Err(crate::replay_source::ReplaySourceError::MissingArtifact(_))
+                if source.index.status == "failed" =>
+            {
+                None
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         let terminal_failure = if source.index.status == "failed" {
             Some(
                 serde_json::from_slice::<serde_json::Value>(
@@ -242,6 +248,18 @@ async fn execute_replay(
                 "executions": report.execution_events,
                 "settlements": report.settlement_events,
             });
+            let Some(summary) = summary.as_ref() else {
+                let _ = store.mark_replay_terminal(
+                    &replay_id,
+                    timestamp_or(&stored.status.submitted_at),
+                    None,
+                    Some(crate::replay_types::ReplayFailure {
+                        code: "REPLAY_SOURCE_INVALID".to_owned(),
+                        message: "successful source is missing its summary".to_owned(),
+                    }),
+                );
+                return;
+            };
             let source_state = serde_json::json!({
                 "cash": summary["final_portfolio"]["cash"],
                 "nav": summary["final_portfolio"]["nav"],
@@ -298,6 +316,27 @@ async fn execute_replay(
                 failure["stage"] == error.error.stage && failure["reason"] == error.error.reason
             });
             if matched_source_failure {
+                let replay_root = evidence_root.join("replays");
+                let evidence_refs = match write_failed_run(
+                    &replay_root,
+                    &source.configuration,
+                    &source.fixture,
+                    &error,
+                ) {
+                    Ok(bundle) => bundle.artifacts,
+                    Err(write_error) => {
+                        let _ = store.mark_replay_terminal(
+                            &replay_id,
+                            timestamp_or(&stored.status.submitted_at),
+                            None,
+                            Some(crate::replay_types::ReplayFailure {
+                                code: "REPLAY_EVIDENCE_FAILED".to_owned(),
+                                message: write_error.to_string(),
+                            }),
+                        );
+                        return;
+                    }
+                };
                 let replay_report = crate::replay_types::ReplayReport {
                     contract_version: "1.0.0".to_owned(),
                     replay_id: replay_id.clone(),
@@ -305,14 +344,16 @@ async fn execute_replay(
                     source_outcome: "failed".to_owned(),
                     matched: true,
                     first_mismatch: None,
-                    source_transition_count: summary["decision_steps"].as_u64().unwrap_or(0)
-                        as usize,
+                    source_transition_count: summary
+                        .as_ref()
+                        .and_then(|value| value["decision_steps"].as_u64())
+                        .unwrap_or(0) as usize,
                     replay_transition_count: error.partial_report.as_ref().map_or(0, |report| {
                         report.cycles.len()
                             + report.execution_events.len()
                             + report.settlement_events.len()
                     }),
-                    evidence_refs: Vec::new(),
+                    evidence_refs,
                 };
                 let _ = store.mark_replay_terminal(
                     &replay_id,
