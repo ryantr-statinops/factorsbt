@@ -126,6 +126,35 @@
         }
       }
     },
+    "/v1/runs/{run_id}/evidence": {
+      "get": {
+        "operationId": "getRunEvidence",
+        "summary": "List verified artifacts for a sealed local run",
+        "parameters": [ { "$ref": "#/components/parameters/RunId" } ],
+        "responses": {
+          "200": { "description": "Verified evidence index for a succeeded or failed run.", "content": { "application/json": { "schema": { "$ref": "schemas/evidence-index.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/ResultsUnavailable" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/runs/{run_id}/artifacts/{artifact_id}": {
+      "get": {
+        "operationId": "getRunArtifact",
+        "summary": "Read one verified local evidence artifact by ID",
+        "description": "The backend resolves the artifact ID from the sealed manifest, verifies its path, byte size and SHA-256, and returns those exact bytes. Clients do not supply paths.",
+        "parameters": [ { "$ref": "#/components/parameters/RunId" }, { "$ref": "#/components/parameters/ArtifactId" } ],
+        "responses": {
+          "200": { "description": "Verified stored artifact bytes.", "content": { "application/json": { "schema": {} } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/ResultsUnavailable" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
     "/v1/runs/{run_id}/results": {
       "get": {
         "operationId": "getRunResults",
@@ -169,6 +198,12 @@
       },
       "RunId": {
         "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "schemas/common.schema.json#/$defs/Uuid" }
+      },
+      "ArtifactId": {
+        "name": "artifact_id",
         "in": "path",
         "required": true,
         "schema": { "$ref": "schemas/common.schema.json#/$defs/Uuid" }
