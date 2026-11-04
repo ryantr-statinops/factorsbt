@@ -1126,6 +1126,7 @@ mod tests {
         assert_eq!(source.configuration, configuration);
         assert_eq!(source.fixture.digest_sha256, fixture.digest_sha256);
         assert_eq!(source.index.status, "succeeded");
+        source.verify_replay_eligibility(&root).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1244,6 +1245,10 @@ mod tests {
         .unwrap();
         assert_eq!(manifest["status"], "failed");
         assert_eq!(manifest["failure"]["stage"], "fixture coverage");
+        crate::replay_source::ReplaySource::load(&root, &failure.identity.run_id)
+            .unwrap()
+            .verify_replay_eligibility(&root)
+            .unwrap();
         assert!(manifest["artifacts"]
             .as_array()
             .unwrap()
