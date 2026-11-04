@@ -26,6 +26,7 @@ pub struct ModelServiceError {
     kind: ModelServiceErrorKind,
     status: Option<StatusCode>,
     response_body: Option<Vec<u8>>,
+    display_override: Option<String>,
 }
 
 impl ModelServiceError {
@@ -34,6 +35,7 @@ impl ModelServiceError {
             kind,
             status,
             response_body: None,
+            display_override: None,
         }
     }
 
@@ -46,6 +48,16 @@ impl ModelServiceError {
             kind,
             status,
             response_body: Some(response_body),
+            display_override: None,
+        }
+    }
+
+    fn recorded_failure(reason: String) -> Self {
+        Self {
+            kind: ModelServiceErrorKind::RecordedResponseUnavailable,
+            status: None,
+            response_body: None,
+            display_override: Some(reason),
         }
     }
 
@@ -64,6 +76,9 @@ impl ModelServiceError {
 
 impl fmt::Display for ModelServiceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(message) = &self.display_override {
+            return formatter.write_str(message);
+        }
         match (&self.kind, self.status) {
             (&ModelServiceErrorKind::HttpStatus, Some(status)) => {
                 write!(formatter, "model service returned HTTP {status}")
@@ -85,6 +100,7 @@ pub struct ModelExchange {
 pub struct ModelHttpClient {
     client: HttpClient,
     recorded: Option<Arc<Mutex<VecDeque<Vec<u8>>>>>,
+    recorded_failure: Option<String>,
 }
 
 impl ModelHttpClient {
@@ -97,6 +113,7 @@ impl ModelHttpClient {
         Ok(Self {
             client,
             recorded: None,
+            recorded_failure: None,
         })
     }
 
@@ -108,7 +125,17 @@ impl ModelHttpClient {
         Ok(Self {
             client,
             recorded: Some(Arc::new(Mutex::new(responses.into()))),
+            recorded_failure: None,
         })
+    }
+
+    pub fn from_recorded_responses_with_failure(
+        responses: Vec<Vec<u8>>,
+        reason: String,
+    ) -> Result<Self, ModelServiceError> {
+        let mut client = Self::from_recorded_responses(responses)?;
+        client.recorded_failure = Some(reason);
+        Ok(client)
     }
 
     /// Send exactly one request. Redirects and automatic retries are disabled;
@@ -120,13 +147,24 @@ impl ModelHttpClient {
         request: &ModelRequest,
     ) -> Result<ModelExchange, ModelServiceError> {
         if let Some(recorded) = &self.recorded {
-            let bytes = recorded
+            let bytes = match recorded
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .pop_front()
-                .ok_or_else(|| {
-                    ModelServiceError::new(ModelServiceErrorKind::RecordedResponseUnavailable, None)
-                })?;
+            {
+                Some(bytes) => bytes,
+                None => {
+                    return Err(self.recorded_failure.clone().map_or_else(
+                        || {
+                            ModelServiceError::new(
+                                ModelServiceErrorKind::RecordedResponseUnavailable,
+                                None,
+                            )
+                        },
+                        ModelServiceError::recorded_failure,
+                    ))
+                }
+            };
             let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
                 ModelServiceError::with_response_body(
                     ModelServiceErrorKind::InvalidResponse,

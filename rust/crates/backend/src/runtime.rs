@@ -183,8 +183,16 @@ async fn execute_replay(
         } else {
             None
         };
-        let provider = ModelHttpClient::from_recorded_responses(responses)
-            .map_err(|error| error.to_string())?;
+        let provider = match terminal_failure
+            .as_ref()
+            .and_then(|failure| failure["reason"].as_str())
+        {
+            Some(reason) => {
+                ModelHttpClient::from_recorded_responses_with_failure(responses, reason.to_owned())
+            }
+            None => ModelHttpClient::from_recorded_responses(responses),
+        }
+        .map_err(|error| error.to_string())?;
         Ok((source, summary, terminal_failure, provider))
     })();
     let (source, summary, terminal_failure, provider) = match loaded {
