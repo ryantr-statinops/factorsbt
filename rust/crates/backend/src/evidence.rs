@@ -1117,6 +1117,19 @@ mod tests {
     }
 
     #[test]
+    fn loads_sealed_source_without_process_run_metadata() {
+        let root = test_root();
+        let (configuration, fixture, report) = input();
+        write_successful_run(&root, &configuration, &fixture, &report).unwrap();
+        let source =
+            crate::replay_source::ReplaySource::load(&root, &report.identity.run_id).unwrap();
+        assert_eq!(source.configuration, configuration);
+        assert_eq!(source.fixture.digest_sha256, fixture.digest_sha256);
+        assert_eq!(source.index.status, "succeeded");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn persists_partial_failure_and_in_flight_model_exchange() {
         let root = test_root();
         let (configuration, fixture, mut report) = input();

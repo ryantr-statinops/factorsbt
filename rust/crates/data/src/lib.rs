@@ -166,6 +166,38 @@ pub struct Fixture {
     pub dataset_bytes: Arc<[u8]>,
 }
 
+impl Fixture {
+    /// Rebuild a fixture from exact, already integrity-checked evidence bytes.
+    /// The source manifest is still checked against the dataset and its digest.
+    pub fn from_evidence_bytes(
+        manifest_bytes: Vec<u8>,
+        dataset_bytes: Vec<u8>,
+    ) -> Result<Self, FixtureLoadError> {
+        let manifest_value: serde_json::Value = serde_json::from_slice(&manifest_bytes)
+            .map_err(|_| FixtureLoadError::Io("manifest JSON parse"))?;
+        validate_fixture_manifest(&manifest_value).map_err(FixtureLoadError::InvalidManifest)?;
+        let manifest: FixtureManifest = serde_json::from_value(manifest_value)
+            .map_err(|_| FixtureLoadError::Io("manifest contract parse"))?;
+        if manifest.format_version != FIXTURE_FORMAT_VERSION {
+            return Err(FixtureLoadError::UnsupportedFormat);
+        }
+        let digest = verify_digest(&manifest.dataset_sha256, &dataset_bytes)?;
+        let dataset_value: serde_json::Value = serde_json::from_slice(&dataset_bytes)
+            .map_err(|_| FixtureLoadError::Io("dataset JSON parse"))?;
+        validate_fixture_dataset(&dataset_value).map_err(FixtureLoadError::InvalidDataset)?;
+        let dataset: FixtureDataset = serde_json::from_value(dataset_value)
+            .map_err(|_| FixtureLoadError::Io("dataset contract parse"))?;
+        verify_identity(&manifest, &dataset)?;
+        Ok(Self {
+            manifest,
+            digest_sha256: digest,
+            dataset: Arc::new(dataset),
+            manifest_bytes: Arc::from(manifest_bytes),
+            dataset_bytes: Arc::from(dataset_bytes),
+        })
+    }
+}
+
 /// Process-local registry of immutable fixtures keyed by ID and version.
 #[derive(Debug, Default)]
 pub struct FixtureRegistry {
