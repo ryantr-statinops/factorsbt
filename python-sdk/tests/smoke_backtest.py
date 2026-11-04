@@ -257,6 +257,17 @@ def start_backend(binary, environment):
         raise
 
 
+def stop_backend(process):
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
 def verify_nav_and_evidence(result, configuration, evidence_directory):
     instruments_by_id = {
         item["instrument_id"]: item for item in configuration.to_wire()["instruments"]
@@ -355,6 +366,7 @@ def main() -> int:
             backend, client = start_backend(binary, environment)
             ControlledModelHandler.requests = []
             first_replay_id = None
+            restarted_for_replay = False
             for expected_mode, config in configurations(model_endpoint):
                 try:
                     accepted = client.submit(config)
@@ -376,6 +388,10 @@ def main() -> int:
                     raise RuntimeError(f"{expected_mode} result has no evidence references")
                 verify_nav_and_evidence(result, config, environment["FACTORSBT_EVIDENCE_DIR"])
                 model_request_count = len(ControlledModelHandler.requests)
+                if not restarted_for_replay:
+                    stop_backend(backend)
+                    backend, client = start_backend(binary, environment)
+                    restarted_for_replay = True
                 replay = client.submit_replay(result.run_id)
                 replay_status = client.wait_replay(replay.replay_id, timeout=30)
                 if replay_status.status != "succeeded":
@@ -450,13 +466,7 @@ def main() -> int:
             )
             print("Python typed SDK completed all three run modes through Rust and the local model fixture.")
         finally:
-            if backend is not None:
-                backend.terminate()
-                try:
-                    backend.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    backend.kill()
-                    backend.wait(timeout=5)
+            stop_backend(backend)
             model_server.shutdown()
             model_server.server_close()
             model_thread.join(timeout=5)
