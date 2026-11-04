@@ -36,6 +36,7 @@ from .configuration import (
 from .responses import (
     DataFixtureReference,
     EvidenceReference,
+    EvidenceIndex,
     ModelInvocation,
     PortfolioSnapshot,
     PositionSnapshot,
@@ -58,6 +59,7 @@ __all__ = [
     "DerivativeScoreTarget",
     "FactorsBTError",
     "EvidenceReference",
+    "EvidenceIndex",
     "HealthResponse",
     "HttpStatusError",
     "LinearFutureInstrument",

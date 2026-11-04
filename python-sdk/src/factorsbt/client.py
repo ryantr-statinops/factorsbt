@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import math
 import socket
@@ -22,7 +23,7 @@ from .errors import (
     TransportError,
     WaitTimeout,
 )
-from .responses import RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
+from .responses import EvidenceIndex, EvidenceReference, RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .types import validate_uuid
 
 
@@ -224,7 +225,32 @@ class Client:
             raise ProtocolError("result response identity does not match the requested ID")
         return result
 
+    def get_evidence(self, run_id: str) -> EvidenceIndex:
+        """List sealed evidence for a successful or failed local run."""
+        key = validate_uuid(run_id)
+        index = EvidenceIndex.from_wire(self._get_json(f"/v1/runs/{key}/evidence"))
+        if index.run_id != key:
+            raise ProtocolError("evidence index identity does not match the requested run")
+        return index
+
+    def get_artifact(self, run_id: str, reference: EvidenceReference) -> bytes:
+        """Fetch exact artifact bytes and verify them against a typed reference."""
+        key = validate_uuid(run_id)
+        if not isinstance(reference, EvidenceReference):
+            raise TypeError("reference must be an EvidenceReference")
+        body = self._get_bytes(f"/v1/runs/{key}/artifacts/{reference.artifact_id}")
+        if len(body) != reference.size_bytes or hashlib.sha256(body).hexdigest() != reference.sha256:
+            raise ProtocolError("artifact bytes do not match the evidence reference")
+        return body
+
     def _get_json(self, path: str, *, timeout: float | None = None) -> object:
+        body = self._get_bytes(path, timeout=timeout)
+        try:
+            return json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProtocolError("backend response is not valid JSON") from exc
+
+    def _get_bytes(self, path: str, *, timeout: float | None = None) -> bytes:
         request = Request(
             self.base_url.rstrip("/") + path,
             headers={"Accept": "application/json"},
@@ -249,10 +275,7 @@ class Client:
 
         if status != 200:
             raise _http_status_error(status, body)
-        try:
-            return json.loads(body)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ProtocolError("backend response is not valid JSON") from exc
+        return body
 
 
 def _http_status_error(status: int, body: bytes) -> HttpStatusError:

@@ -364,6 +364,26 @@ class EvidenceReference:
 
 
 @dataclass(frozen=True)
+class EvidenceIndex:
+    contract_version: str
+    run_id: str
+    status: str
+    artifacts: tuple[EvidenceReference, ...]
+
+    @classmethod
+    def from_wire(cls, value: object) -> EvidenceIndex:
+        row = _object(value, {"contract_version", "run_id", "status", "artifacts"})
+        if row["contract_version"] != "1.0.0" or row["status"] not in {"succeeded", "failed"}:
+            raise ProtocolError("evidence index has an unsupported version or status")
+        artifacts = tuple(
+            EvidenceReference.from_wire(item) for item in _array(row["artifacts"], "artifacts")
+        )
+        if not artifacts or len({artifact.artifact_id for artifact in artifacts}) != len(artifacts):
+            raise ProtocolError("evidence index must contain unique artifacts")
+        return cls("1.0.0", _wire(validate_uuid, row["run_id"]), row["status"], artifacts)
+
+
+@dataclass(frozen=True)
 class RunResult:
     contract_version: str
     run_id: str
