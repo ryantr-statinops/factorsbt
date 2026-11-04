@@ -220,7 +220,7 @@ async fn execute_replay(
         Ok(report) => {
             let replay_orders = report.cycles.iter().map(|cycle| serde_json::json!({
                 "orders": cycle.proposal.order_intents.iter().map(|item| serde_json::json!({
-                    "instrument_id": item.instrument_id.as_str(), "signed_quantity": item.signed_quantity.to_string()
+                    "instrument_id": item.instrument_id.as_str(), "signed_quantity": item.signed_quantity.to_string(), "order_type": "market"
                 })).collect::<Vec<_>>(),
                 "target_positions": cycle.proposal.target_positions.iter().map(|item| serde_json::json!({
                     "instrument_id": item.instrument_id.as_str(), "target_quantity": item.target_quantity.to_string()

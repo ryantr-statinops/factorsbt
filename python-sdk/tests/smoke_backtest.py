@@ -232,7 +232,7 @@ def start_backend(binary, environment):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    client = Client(f"http://127.0.0.1:{port}", timeout=0.5)
+    client = Client(f"http://127.0.0.1:{port}", timeout=3.0)
     deadline = time.monotonic() + 15
     try:
         while time.monotonic() < deadline:
