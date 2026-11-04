@@ -204,6 +204,37 @@ class ComparisonReport:
     baseline_label: str
     runs: tuple[ComparisonRun, ...]
 
+    def __post_init__(self) -> None:
+        labels = [run.label for run in self.runs]
+        if self.baseline_label not in labels or len(labels) != len(set(labels)):
+            raise ValueError("comparison report requires one baseline and unique labels")
+
+    @property
+    def metric_differences(self) -> tuple[MetricDifference, ...]:
+        baseline = next(run for run in self.runs if run.label == self.baseline_label)
+        differences = []
+        for variant in self.runs:
+            if variant.label == self.baseline_label:
+                continue
+            if baseline.metrics is None or variant.metrics is None:
+                differences.append(MetricDifference(variant.label, None, None, None, False))
+                continue
+            left, right = baseline.metrics, variant.metrics
+            aligned = left.simulation_start == right.simulation_start and left.simulation_end == right.simulation_end
+            return_delta = (
+                right.return_fraction - left.return_fraction
+                if left.return_fraction is not None and right.return_fraction is not None
+                else None
+            )
+            differences.append(MetricDifference(
+                variant.label,
+                right.final_nav - left.final_nav,
+                right.pnl_usd - left.pnl_usd,
+                return_delta,
+                aligned,
+            ))
+        return tuple(differences)
+
     def overlap(self, variant_label: str) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
         baseline = next(run for run in self.runs if run.label == self.baseline_label)
         variant = next(run for run in self.runs if run.label == variant_label and run.label != self.baseline_label)
@@ -245,6 +276,15 @@ class ComparisonReport:
 class ConfigurationChange:
     variant_label: str
     path: str
+
+
+@dataclass(frozen=True)
+class MetricDifference:
+    variant_label: str
+    final_nav_usd: Decimal | None
+    pnl_usd: Decimal | None
+    return_fraction: Decimal | None
+    same_interval: bool
 
 
 def _changed_paths(left: object, right: object, prefix: str = "$") -> tuple[str, ...]:
