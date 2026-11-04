@@ -804,6 +804,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replay_rejects_missing_source_before_queue_admission() {
+        let (state, store) = state_with_queue(1, 1);
+        let key = valid_key(77);
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/replays")
+                    .header("content-type", "application/json")
+                    .header(IDEMPOTENCY_KEY, &key)
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({
+                            "contract_version": "1.0.0",
+                            "source_run_id": "a4ab8716-3d8c-42d7-857c-83e94df28ff6"
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["error"]["code"], "REPLAY_SOURCE_INCOMPATIBLE");
+        assert_eq!(store.queue_snapshot().active_runs, 0);
+        assert_eq!(store.queue_snapshot().queued_runs, 0);
+        assert!(store.get_replay(&Uuid::new(&key).unwrap()).is_none());
+    }
+
+    #[tokio::test]
     async fn loopback_api_runs_two_isolated_simulations_and_verifies_result_evidence() {
         let fixture = HttpModelFixture::new(
             "scores",

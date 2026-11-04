@@ -672,6 +672,12 @@ mod tests {
             store.accept_replay(collision.clone(), submission_id(), timestamp()),
             Err(SubmissionStoreError::SubmissionIdReused)
         ));
+        let overflow_id = Uuid::new("b1c0e095-c4b1-4a65-a05a-1b5689911ac1").unwrap();
+        assert!(matches!(
+            store.accept_replay(overflow_id.clone(), submission_id(), timestamp()),
+            Err(SubmissionStoreError::QueueFull)
+        ));
+        assert!(store.get_replay(&overflow_id).is_none());
         assert_eq!(
             store.next_reserved_run().await,
             Some(JobId::Run(run.acknowledgement.run_id.clone()))

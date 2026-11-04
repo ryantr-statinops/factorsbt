@@ -99,23 +99,7 @@ impl BackendRuntime {
                     None,
                 ),
                 JobId::Replay(replay_id) => {
-                    if let Some(replay) = panic_store.get_replay(&replay_id) {
-                        if replay.status.status == "queued" {
-                            let _ = panic_store.mark_replay_running(
-                                &replay_id,
-                                timestamp_or(&replay.status.submitted_at),
-                            );
-                        }
-                        let _ = panic_store.mark_replay_terminal(
-                            &replay_id,
-                            timestamp_or(&replay.status.submitted_at),
-                            None,
-                            Some(crate::replay_types::ReplayFailure {
-                                code: "REPLAY_WORKER_PANICKED".to_owned(),
-                                message: "The replay worker stopped unexpectedly.".to_owned(),
-                            }),
-                        );
-                    }
+                    mark_replay_worker_panicked(&panic_store, &replay_id);
                 }
             },
         );
@@ -630,6 +614,24 @@ fn mark_failed(
     );
 }
 
+fn mark_replay_worker_panicked(store: &RunStore, replay_id: &Uuid) {
+    if let Some(replay) = store.get_replay(replay_id) {
+        let at = timestamp_or(&replay.status.submitted_at);
+        if replay.status.status == "queued" {
+            let _ = store.mark_replay_running(replay_id, at.clone());
+        }
+        let _ = store.mark_replay_terminal(
+            replay_id,
+            at,
+            None,
+            Some(crate::replay_types::ReplayFailure {
+                code: "REPLAY_WORKER_PANICKED".to_owned(),
+                message: "The replay worker stopped unexpectedly.".to_owned(),
+            }),
+        );
+    }
+}
+
 fn timestamp_or(fallback: &UtcTimestamp) -> UtcTimestamp {
     system_utc_timestamp().unwrap_or_else(|_| fallback.clone())
 }
@@ -663,6 +665,43 @@ mod tests {
             replay_mismatch(&replay, &source).as_deref(),
             Some("admissions")
         );
+    }
+
+    #[test]
+    fn replay_worker_panic_callback_terminalizes_queued_and_running_jobs() {
+        let store = RunStore::new(QueueLimits::new(2, 0).unwrap());
+        let queued_id = Uuid::new("b1c0e095-c4b1-4a65-a05a-1b5689911ac2").unwrap();
+        let running_id = Uuid::new("b1c0e095-c4b1-4a65-a05a-1b5689911ac3").unwrap();
+        let source = Uuid::new("b1c0e095-c4b1-4a65-a05a-1b5689911ac4").unwrap();
+        let queued = store
+            .accept_replay(
+                queued_id.clone(),
+                source.clone(),
+                UtcTimestamp::new("2026-01-05T09:00:00Z").unwrap(),
+            )
+            .unwrap();
+        store
+            .accept_replay(
+                running_id.clone(),
+                source,
+                UtcTimestamp::new("2026-01-05T09:00:00Z").unwrap(),
+            )
+            .unwrap();
+        store
+            .mark_replay_running(&running_id, queued.acknowledgement.submitted_at.clone())
+            .unwrap();
+
+        mark_replay_worker_panicked(&store, &queued_id);
+        mark_replay_worker_panicked(&store, &running_id);
+
+        for replay_id in [queued_id, running_id] {
+            let replay = store.get_replay(&replay_id).unwrap();
+            assert_eq!(replay.status.status, "failed");
+            assert_eq!(
+                replay.status.failure.unwrap().code,
+                "REPLAY_WORKER_PANICKED"
+            );
+        }
     }
 
     #[tokio::test]
