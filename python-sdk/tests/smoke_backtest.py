@@ -362,6 +362,7 @@ def main() -> int:
         model_thread.start()
         model_endpoint = f"http://127.0.0.1:{model_server.server_port}/infer"
         backend = None
+        model_stopped = False
         try:
             backend, client = start_backend(binary, environment)
             ControlledModelHandler.requests = []
@@ -464,12 +465,30 @@ def main() -> int:
                 "comparison: baseline + price-only + delayed-event completed sequentially; "
                 f"overlap={len(overlap)} baseline_only={len(baseline_only)} variant_only={len(variant_only)}"
             )
-            print("Python typed SDK completed all three run modes through Rust and the local model fixture.")
-        finally:
-            stop_backend(backend)
             model_server.shutdown()
             model_server.server_close()
             model_thread.join(timeout=5)
+            model_stopped = True
+            offline_source_id = comparison.runs[0].run_id
+            if offline_source_id is None:
+                raise RuntimeError("comparison baseline did not retain its source run ID")
+            model_request_count = len(ControlledModelHandler.requests)
+            offline_replay = client.submit_replay(offline_source_id)
+            offline_status = client.wait_replay(offline_replay.replay_id, timeout=30)
+            offline_report = client.get_replay_report(offline_replay.replay_id)
+            if offline_status.status != "succeeded" or not offline_report.matched:
+                raise RuntimeError("recorded replay failed while the model endpoint was offline")
+            if len(ControlledModelHandler.requests) != model_request_count:
+                raise RuntimeError("offline replay attempted a fresh model inference")
+            verify_replay_evidence(offline_report, environment["FACTORSBT_EVIDENCE_DIR"])
+            print("replay: matched after backend restart with model fixture offline")
+            print("Python typed SDK completed all three run modes through Rust and the local model fixture.")
+        finally:
+            stop_backend(backend)
+            if not model_stopped:
+                model_server.shutdown()
+                model_server.server_close()
+                model_thread.join(timeout=5)
     return 0
 
 
