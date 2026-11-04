@@ -641,6 +641,65 @@ mod tests {
         UtcTimestamp::new("2026-01-05T16:00:00Z").unwrap()
     }
 
+    #[tokio::test]
+    async fn run_and_replay_ids_with_same_uuid_remain_distinct_fifo_jobs() {
+        let store = RunStore::new(QueueLimits::new(1, 1).unwrap());
+        let run = store
+            .accept_submission(submission_id(), configuration(), timestamp())
+            .unwrap();
+        let collision = run.acknowledgement.run_id.clone();
+        let replay = store
+            .accept_replay(
+                collision.clone(),
+                Uuid::new("b1c0e095-c4b1-4a65-a05a-1b5689911ac0").unwrap(),
+                timestamp(),
+            )
+            .unwrap();
+        assert!(replay.created);
+        assert_eq!(store.queue_snapshot().active_runs, 1);
+        assert_eq!(store.queue_snapshot().queued_runs, 1);
+        assert_eq!(
+            store
+                .accept_replay(
+                    collision.clone(),
+                    replay.acknowledgement.source_run_id.clone(),
+                    timestamp()
+                )
+                .unwrap()
+                .created,
+            false
+        );
+        assert!(matches!(
+            store.accept_replay(collision.clone(), submission_id(), timestamp()),
+            Err(SubmissionStoreError::SubmissionIdReused)
+        ));
+        assert_eq!(
+            store.next_reserved_run().await,
+            Some(JobId::Run(run.acknowledgement.run_id.clone()))
+        );
+        assert!(store.finish_active_run(&JobId::Run(run.acknowledgement.run_id)));
+        assert_eq!(
+            store.next_reserved_run().await,
+            Some(JobId::Replay(collision.clone()))
+        );
+        store.mark_replay_running(&collision, timestamp()).unwrap();
+        store
+            .mark_replay_terminal(
+                &collision,
+                timestamp(),
+                None,
+                Some(ReplayFailure {
+                    code: "TEST_FAILURE".into(),
+                    message: "controlled".into(),
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            store.get_replay(&collision).unwrap().status.status,
+            "failed"
+        );
+    }
+
     #[test]
     fn returns_the_original_ack_for_equal_config_and_conflicts_for_changed_config() {
         let store = RunStore::new(QueueLimits::default());
