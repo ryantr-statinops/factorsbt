@@ -1,6 +1,7 @@
 """Run typed SDK configurations through the local Rust backend and HTTP fixture."""
 
 from datetime import datetime, timezone
+from dataclasses import replace
 from decimal import Decimal
 import hashlib
 import json
@@ -19,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from factorsbt import (
     Client,
+    ComparisonScenario,
+    ComparisonSpec,
     DataFixtureConfiguration,
     DerivativeScoreTarget,
     InitialPortfolio,
@@ -375,6 +378,42 @@ def main() -> int:
                 raise RuntimeError("controlled model fixture received no inference requests")
             if any(ids != INSTRUMENT_IDS for _mode, ids in ControlledModelHandler.requests):
                 raise RuntimeError("model requests did not carry the full seven-instrument catalog")
+
+            base_config = configurations(model_endpoint)[0][1]
+            comparison = client.compare(
+                ComparisonSpec(
+                    ComparisonScenario("baseline", base_config),
+                    (
+                        ComparisonScenario(
+                            "price-only",
+                            replace(base_config, data=DataFixtureConfiguration("mvp-compare-price-only", "v1")),
+                        ),
+                        ComparisonScenario(
+                            "delayed-event",
+                            replace(base_config, data=DataFixtureConfiguration("mvp-compare-delayed-event", "v1")),
+                        ),
+                    ),
+                ),
+                timeout_per_run=30,
+            )
+            if any(run.status != "succeeded" or run.metrics is None for run in comparison.runs):
+                raise RuntimeError("controlled scenario comparison did not complete every run")
+            if len(comparison.metric_differences) != 2 or not comparison.configuration_changes:
+                raise RuntimeError("comparison report omitted metrics or fixture configuration changes")
+            overlap, baseline_only, variant_only = comparison.overlap("price-only")
+            if not overlap or baseline_only or variant_only:
+                raise RuntimeError("baseline and price-only comparison timelines did not align")
+            if not all(point.artifact_id for run in comparison.runs for point in (*run.timeline, *run.trace)):
+                raise RuntimeError("comparison trace or timeline lacks evidence linkage")
+            report_path = Path(temporary) / "comparison-report.json"
+            comparison.save(report_path)
+            saved_report = json.loads(report_path.read_text(encoding="utf-8"))
+            if len(saved_report["runs"]) != 3 or len(saved_report["metric_differences"]) != 2:
+                raise RuntimeError("saved comparison report is incomplete")
+            print(
+                "comparison: baseline + price-only + delayed-event completed sequentially; "
+                f"overlap={len(overlap)} baseline_only={len(baseline_only)} variant_only={len(variant_only)}"
+            )
             print("Python typed SDK completed all three run modes through Rust and the local model fixture.")
         finally:
             if backend is not None:
