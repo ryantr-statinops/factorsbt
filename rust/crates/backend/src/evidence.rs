@@ -19,6 +19,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Component, Path, PathBuf},
+    sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -37,6 +38,7 @@ pub enum EvidenceError {
     RunNotFound,
     ArtifactNotFound,
     ManifestInvalid,
+    ExecutableDigestUnavailable,
     Serialization(&'static str),
     ArtifactIntegrity(String),
     TimestampUnavailable,
@@ -74,6 +76,9 @@ impl fmt::Display for EvidenceError {
             Self::RunNotFound => formatter.write_str("sealed run evidence was not found"),
             Self::ArtifactNotFound => formatter.write_str("artifact ID was not found"),
             Self::ManifestInvalid => formatter.write_str("run evidence manifest is invalid"),
+            Self::ExecutableDigestUnavailable => {
+                formatter.write_str("backend executable digest is unavailable")
+            }
             Self::Serialization(context) => {
                 write!(formatter, "evidence {context} serialization failed")
             }
@@ -416,7 +421,9 @@ fn write_report_artifacts(
     }
 
     let manifest_bytes = serde_json::to_vec_pretty(&json!({
-        "format_version":"1.0.0",
+        "format_version":"2.0.0",
+        "contract_version":configuration.contract_version,
+        "executable_sha256":executable_sha256()?,
         "run_id":report.identity.run_id.as_str(),
         "scenario_id":report.identity.scenario_id.as_str(),
         "status":status_name(report.finalization.status),
@@ -495,7 +502,9 @@ fn write_uninitialized_failure(
         &mut artifacts,
     )?;
     let manifest_bytes = serde_json::to_vec_pretty(&json!({
-        "format_version":"1.0.0",
+        "format_version":"2.0.0",
+        "contract_version":configuration.contract_version,
+        "executable_sha256":executable_sha256()?,
         "run_id":failure.identity.run_id.as_str(),
         "scenario_id":failure.identity.scenario_id.as_str(),
         "status":"failed",
@@ -910,6 +919,18 @@ fn artifact_id(run_directory: &Path, relative_path: &str) -> Uuid {
 
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+pub fn executable_sha256() -> Result<&'static str, EvidenceError> {
+    static DIGEST: OnceLock<Option<String>> = OnceLock::new();
+    DIGEST
+        .get_or_init(|| {
+            let path = std::env::current_exe().ok()?;
+            let bytes = fs::read(path).ok()?;
+            Some(sha256(&bytes))
+        })
+        .as_deref()
+        .ok_or(EvidenceError::ExecutableDigestUnavailable)
 }
 
 fn system_timestamp() -> Result<UtcTimestamp, EvidenceError> {
