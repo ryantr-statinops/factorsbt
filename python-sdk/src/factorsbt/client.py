@@ -15,6 +15,7 @@ from uuid import uuid4
 from urllib.parse import urlsplit
 
 from .errors import (
+    FactorsBTError,
     HttpStatusError,
     ProtocolError,
     RequestTimeout,
@@ -232,18 +233,37 @@ class Client:
             raise TypeError("spec must be a ComparisonSpec")
         runs = []
         for scenario in spec.scenarios:
-            accepted = self.submit(scenario.configuration)
-            self.wait(accepted.run_id, timeout=timeout_per_run)
-            result = self.get_results(accepted.run_id)
-            runs.append(
-                ComparisonRun(
-                    scenario.label,
-                    scenario.configuration,
-                    accepted.submission_id,
-                    accepted.run_id,
-                    result,
-                )
-            )
+            submission_id = None
+            run_id = None
+            try:
+                accepted = self.submit(scenario.configuration)
+                submission_id, run_id = accepted.submission_id, accepted.run_id
+            except SubmissionAcknowledgementUnknown as error:
+                submission_id = error.submission_id
+                try:
+                    recovered = self.get_submission(submission_id)
+                    run_id = recovered.run_id
+                except FactorsBTError:
+                    runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, None, "uncertain", None, "ACKNOWLEDGMENT_UNKNOWN"))
+                    continue
+            except HttpStatusError as error:
+                runs.append(ComparisonRun(scenario.label, scenario.configuration, None, None, "rejected", None, error.code or "SUBMISSION_REJECTED"))
+                continue
+            assert run_id is not None
+            try:
+                self.wait(run_id, timeout=timeout_per_run)
+                result = self.get_results(run_id)
+            except RunFailedError as error:
+                code = error.failure.code if error.failure is not None else "RUN_FAILED"
+                runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "failed", None, code))
+                continue
+            except WaitTimeout:
+                runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "running", None, "WAIT_TIMEOUT"))
+                continue
+            except FactorsBTError:
+                runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "unavailable", None, "RESULT_UNAVAILABLE"))
+                continue
+            runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "succeeded", result))
         return ComparisonReport(spec.baseline.label, tuple(runs))
 
     def get_evidence(self, run_id: str) -> EvidenceIndex:

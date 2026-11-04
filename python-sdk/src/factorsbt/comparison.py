@@ -45,9 +45,11 @@ class ComparisonSpec:
 class ComparisonRun:
     label: str
     configuration: RunConfiguration
-    submission_id: str
-    run_id: str
-    result: RunResult
+    submission_id: str | None
+    run_id: str | None
+    status: str
+    result: RunResult | None
+    error_code: str | None = None
 
 
 @dataclass(frozen=True)
