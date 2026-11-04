@@ -53,6 +53,56 @@ class ComparisonRun:
     result: RunResult | None
     error_code: str | None = None
     metrics: RunMetrics | None = None
+    timeline: tuple[TimelinePoint, ...] = ()
+
+
+@dataclass(frozen=True)
+class TimelinePoint:
+    simulation_time: UtcInstant
+    instrument_id: str
+    observation_revisions: tuple[tuple[str, int], ...]
+    quantity: Decimal
+    mark: Decimal
+    artifact_id: str
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.simulation_time.to_wire(), self.instrument_id)
+
+
+def timeline_from_snapshots(snapshots: tuple[tuple[str, object], ...]) -> tuple[TimelinePoint, ...]:
+    points = []
+    for artifact_id, snapshot in snapshots:
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("portfolio"), dict):
+            raise ProtocolError("snapshot evidence is not an object with a portfolio")
+        try:
+            simulation_time = UtcInstant.from_wire(snapshot["simulation_time"])
+            observations = snapshot["observations"]
+            positions = snapshot["portfolio"]["positions"]
+            if not isinstance(observations, list) or not isinstance(positions, list):
+                raise TypeError("snapshot arrays are missing")
+            revisions: dict[str, list[tuple[str, int]]] = {}
+            for observation in observations:
+                instrument_id = observation.get("instrument_id")
+                if instrument_id is not None:
+                    revisions.setdefault(instrument_id, []).append(
+                        (observation["observation_id"], observation["revision"])
+                    )
+            for position in positions:
+                points.append(TimelinePoint(
+                    simulation_time,
+                    position["instrument_id"],
+                    tuple(sorted(revisions.get(position["instrument_id"], []))),
+                    WireDecimal.from_wire(position["quantity"]).value,
+                    WireDecimal.from_wire(position["mark"]).value,
+                    artifact_id,
+                ))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise ProtocolError("snapshot evidence contains invalid timeline fields") from exc
+    keys = [point.key for point in points]
+    if len(keys) != len(set(keys)):
+        raise ProtocolError("snapshot evidence contains duplicate time and instrument keys")
+    return tuple(sorted(points, key=lambda point: point.key))
 
 
 @dataclass(frozen=True)
@@ -85,6 +135,13 @@ class RunMetrics:
 class ComparisonReport:
     baseline_label: str
     runs: tuple[ComparisonRun, ...]
+
+    def overlap(self, variant_label: str) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
+        baseline = next(run for run in self.runs if run.label == self.baseline_label)
+        variant = next(run for run in self.runs if run.label == variant_label and run.label != self.baseline_label)
+        left = {point.key for point in baseline.timeline}
+        right = {point.key for point in variant.timeline}
+        return tuple(sorted(left & right)), tuple(sorted(left - right)), tuple(sorted(right - left))
 
     @property
     def configuration_changes(self) -> tuple[ConfigurationChange, ...]:

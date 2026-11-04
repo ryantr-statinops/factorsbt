@@ -24,7 +24,7 @@ from .errors import (
     TransportError,
     WaitTimeout,
 )
-from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec, RunMetrics
+from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec, RunMetrics, timeline_from_snapshots
 from .responses import EvidenceIndex, EvidenceReference, RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .types import validate_uuid
 
@@ -262,6 +262,15 @@ class Client:
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise ProtocolError("run summary artifact is not valid JSON") from exc
                 metrics = RunMetrics.from_summary(summary, result)
+                snapshots = []
+                for reference in index.artifacts:
+                    if reference.kind == "snapshot":
+                        try:
+                            snapshot = json.loads(self.get_artifact(run_id, reference))
+                        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                            raise ProtocolError("snapshot artifact is not valid JSON") from exc
+                        snapshots.append((reference.artifact_id, snapshot))
+                timeline = timeline_from_snapshots(tuple(snapshots))
             except RunFailedError as error:
                 code = error.failure.code if error.failure is not None else "RUN_FAILED"
                 runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "failed", None, code))
@@ -272,7 +281,7 @@ class Client:
             except FactorsBTError:
                 runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "unavailable", None, "RESULT_UNAVAILABLE"))
                 continue
-            runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "succeeded", result, metrics=metrics))
+            runs.append(ComparisonRun(scenario.label, scenario.configuration, submission_id, run_id, "succeeded", result, metrics=metrics, timeline=timeline))
         return ComparisonReport(spec.baseline.label, tuple(runs))
 
     def get_evidence(self, run_id: str) -> EvidenceIndex:
