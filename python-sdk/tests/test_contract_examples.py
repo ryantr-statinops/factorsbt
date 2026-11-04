@@ -93,6 +93,43 @@ class ContractExampleTests(unittest.TestCase):
             with self.subTest(example=example_name):
                 self.check_example(schema_name, example_name, expected_valid)
 
+    def test_replay_contract_schemas_and_openapi_routes_are_wired(self):
+        openapi = load_document(ROOT / "contracts" / "openapi.json")
+        paths = openapi["paths"]
+        self.assertIn("/v1/replays", paths)
+        self.assertIn("post", paths["/v1/replays"])
+        self.assertIn("/v1/replays/{replay_id}", paths)
+        self.assertIn("/v1/replays/{replay_id}/report", paths)
+
+        references = []
+
+        def collect_refs(value):
+            if isinstance(value, dict):
+                reference = value.get("$ref")
+                if isinstance(reference, str) and reference.startswith("schemas/"):
+                    references.append(reference.split("#", 1)[0])
+                for child in value.values():
+                    collect_refs(child)
+            elif isinstance(value, list):
+                for child in value:
+                    collect_refs(child)
+
+        collect_refs(openapi)
+        self.assertTrue(references)
+        for reference in references:
+            with self.subTest(reference=reference):
+                self.assertTrue((ROOT / "contracts" / reference).is_file())
+
+        request = {"contract_version": "1.0.0", "source_run_id": "a4ab8716-3d8c-42d7-857c-83e94df28ff6"}
+        validator = Draft202012Validator(
+            self.schemas["replay-request.schema.json"],
+            registry=self.registry,
+            format_checker=FormatChecker(),
+        )
+        self.assertEqual(list(validator.iter_errors(request)), [])
+        invalid = {**request, "unexpected": True}
+        self.assertTrue(list(validator.iter_errors(invalid)))
+
     def test_internal_fixture_v1_1_schemas_accept_controlled_shape_and_reject_traversal(self):
         manifest = {
             "format_version": "1.1.0",
