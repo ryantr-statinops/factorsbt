@@ -17,6 +17,8 @@ from .errors import (
     ProtocolError,
     RequestTimeout,
     RunFailedError,
+    ReplayFailedError,
+    ReplayAcknowledgementUnknown,
     SubmissionAcknowledgementUnknown,
     TransportError,
     WaitTimeout,
@@ -51,6 +53,7 @@ from .responses import (
     SubmissionStatus,
     UnderlyingReservation,
 )
+from .replay import ReplayAcknowledgement, ReplayReport, ReplayStatus
 
 __all__ = [
     "Client",
@@ -83,6 +86,11 @@ __all__ = [
     "PositionSnapshot",
     "RequestTimeout",
     "RunFailedError",
+    "ReplayFailedError",
+    "ReplayAcknowledgementUnknown",
+    "ReplayAcknowledgement",
+    "ReplayReport",
+    "ReplayStatus",
     "ResultCounts",
     "ResultProvenance",
     "RunFailure",

@@ -21,11 +21,14 @@ from .errors import (
     RequestTimeout,
     RunFailedError,
     SubmissionAcknowledgementUnknown,
+    ReplayAcknowledgementUnknown,
+    ReplayFailedError,
     TransportError,
     WaitTimeout,
 )
 from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec, RunMetrics, timeline_from_snapshots, trace_from_artifacts
 from .responses import EvidenceIndex, EvidenceReference, RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
+from .replay import ReplayAcknowledgement, ReplayReport, ReplayStatus
 from .types import validate_uuid
 
 
@@ -226,6 +229,60 @@ class Client:
         if result.run_id != key:
             raise ProtocolError("result response identity does not match the requested ID")
         return result
+
+    def submit_replay(self, source_run_id: str, replay_id: str | None = None) -> ReplayAcknowledgement:
+        key = str(uuid4()) if replay_id is None else validate_uuid(replay_id)
+        source = validate_uuid(source_run_id)
+        body = json.dumps({"contract_version": "1.0.0", "source_run_id": source}, separators=(",", ":")).encode()
+        request = Request(self.base_url.rstrip("/") + "/v1/replays", data=body, headers={
+            "Accept": "application/json", "Content-Type": "application/json", "Idempotency-Key": key,
+        }, method="POST")
+        try:
+            with build_opener(_NoRedirect()).open(request, timeout=self.timeout) as response:
+                status, response_body = response.getcode(), response.read()
+        except HTTPError as exc:
+            raise _http_status_error(exc.code, exc.read()) from exc
+        except (TimeoutError, socket.timeout, URLError, OSError) as exc:
+            raise ReplayAcknowledgementUnknown(key, "request ended before acknowledgment") from exc
+        if status != 202:
+            raise _http_status_error(status, response_body)
+        try:
+            accepted = ReplayAcknowledgement.from_wire(json.loads(response_body))
+        except (UnicodeDecodeError, json.JSONDecodeError, ProtocolError) as exc:
+            raise ReplayAcknowledgementUnknown(key, "backend acknowledgment could not be validated") from exc
+        if accepted.replay_id != key or accepted.source_run_id != source:
+            raise ReplayAcknowledgementUnknown(key, "backend acknowledgment identity differs")
+        return accepted
+
+    def get_replay(self, replay_id: str) -> ReplayStatus:
+        key = validate_uuid(replay_id)
+        status = ReplayStatus.from_wire(self._get_json(f"/v1/replays/{key}"))
+        if status.replay_id != key:
+            raise ProtocolError("replay status identity does not match requested ID")
+        return status
+
+    def get_replay_report(self, replay_id: str) -> ReplayReport:
+        key = validate_uuid(replay_id)
+        report = ReplayReport.from_wire(self._get_json(f"/v1/replays/{key}/report"))
+        if report.replay_id != key:
+            raise ProtocolError("replay report identity does not match requested ID")
+        return report
+
+    def wait_replay(self, replay_id: str, *, timeout: float = 60.0, poll_interval: float = 0.25) -> ReplayStatus:
+        key = validate_uuid(replay_id)
+        if timeout <= 0 or poll_interval <= 0:
+            raise ValueError("timeout and poll_interval must be greater than zero")
+        deadline = time.monotonic() + timeout
+        while True:
+            status = self.get_replay(key)
+            if status.status == "succeeded":
+                return status
+            if status.status == "failed":
+                raise ReplayFailedError(status)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise WaitTimeout(key, None)
+            time.sleep(min(poll_interval, remaining))
 
     def compare(self, spec: ComparisonSpec, *, timeout_per_run: float = 60.0) -> ComparisonReport:
         """Execute independent scenarios sequentially and retain their run identities."""

@@ -78,3 +78,17 @@ class WaitTimeout(RequestTimeout):
         super().__init__(
             f"local wait deadline expired for run {run_id}; backend work was not cancelled"
         )
+
+
+class ReplayAcknowledgementUnknown(TransportError):
+    def __init__(self, replay_id: str, reason: str):
+        self.replay_id = replay_id
+        self.reason = reason
+        super().__init__(f"replay acknowledgment is unknown; look up replay_id {replay_id}")
+
+
+class ReplayFailedError(FactorsBTError):
+    def __init__(self, status):
+        self.status = status
+        self.replay_id = status.replay_id
+        super().__init__(f"replay {status.replay_id} failed ({status.failure_code or 'UNKNOWN_REPLAY_FAILURE'})")
