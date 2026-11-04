@@ -86,6 +86,22 @@ impl ReplaySource {
         artifact(root, &self.index.run_id, &self.index, relative_path)
     }
 
+    pub fn recorded_responses(&self, root: &Path) -> Result<Vec<Vec<u8>>, ReplaySourceError> {
+        let mut refs = self
+            .index
+            .artifacts
+            .iter()
+            .filter(|item| {
+                item.kind == factorsbt_contracts::outcomes::EvidenceKind::ModelResponse
+                    && item.relative_path.starts_with("evidence/model-responses/")
+            })
+            .collect::<Vec<_>>();
+        refs.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        refs.into_iter()
+            .map(|item| self.artifact(root, &item.relative_path))
+            .collect()
+    }
+
     /// Eligibility is separate from loading so read-only evidence inspection can
     /// still work for older runs that cannot be replayed.
     pub fn verify_replay_eligibility(&self, root: &Path) -> Result<(), ReplaySourceError> {

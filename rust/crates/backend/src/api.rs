@@ -4,6 +4,8 @@ use crate::{
     admission::{validate_run, RunAdmissionError},
     api_errors::{ApiJson, ApiPath, ApiResponseError, RequestContext},
     evidence::{read_evidence_index, read_verified_artifact, EvidenceError, EvidenceIndex},
+    replay_source::ReplaySource,
+    replay_types::{ReplayAcknowledgement, ReplayReport, ReplayRequest, ReplayStatus},
     results::verify_result_evidence,
     run_store::{RunResultLookupError, RunStore, SubmissionStoreError},
 };
@@ -51,6 +53,9 @@ impl ApiState {
 pub fn run_routes(state: ApiState) -> Router {
     Router::new()
         .route("/v1/runs", post(submit_run))
+        .route("/v1/replays", post(submit_replay))
+        .route("/v1/replays/{replay_id}", get(get_replay))
+        .route("/v1/replays/{replay_id}/report", get(get_replay_report))
         .route("/v1/submissions/{submission_id}", get(get_submission))
         .route("/v1/runs/{run_id}", get(get_run))
         .route("/v1/runs/{run_id}/results", get(get_results))
@@ -60,6 +65,119 @@ pub fn run_routes(state: ApiState) -> Router {
             get(get_artifact),
         )
         .with_state(state)
+}
+
+async fn submit_replay(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    headers: HeaderMap,
+    ApiJson(value): ApiJson<Value>,
+) -> Result<(StatusCode, Json<ReplayAcknowledgement>), ApiResponseError> {
+    let replay_id = headers
+        .get(IDEMPOTENCY_KEY)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::new(value).ok())
+        .ok_or_else(|| {
+            ApiResponseError::bad_request(
+                &context,
+                "INVALID_IDEMPOTENCY_KEY",
+                "Idempotency-Key must contain a lowercase UUID.",
+            )
+        })?;
+    let request: ReplayRequest = serde_json::from_value(value).map_err(|_| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "REPLAY_REQUEST_INVALID",
+            "Replay request is invalid.",
+            None,
+        )
+    })?;
+    if request.contract_version != "1.0.0" {
+        return Err(ApiResponseError::new(
+            &context,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "CONTRACT_VERSION_UNSUPPORTED",
+            "The backend supports contract version 1.0.0.",
+            None,
+        ));
+    }
+    if state.store.get_replay(&replay_id).is_none() {
+        let source = ReplaySource::load(&state.evidence_root, &request.source_run_id)
+            .and_then(|source| {
+                source.verify_replay_eligibility(&state.evidence_root)?;
+                Ok(source)
+            })
+            .map_err(|_error| {
+                ApiResponseError::new(
+                    &context,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "REPLAY_SOURCE_INCOMPATIBLE",
+                    "Replay source is missing, incomplete, or incompatible.",
+                    None,
+                )
+            })?;
+        drop(source);
+    }
+    let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            "Could not record replay submission time.",
+            None,
+        )
+    })?;
+    let outcome = state
+        .store
+        .accept_replay(replay_id, request.source_run_id, submitted_at)
+        .map_err(|error| submission_store_error(&context, error))?;
+    Ok((StatusCode::ACCEPTED, Json(outcome.acknowledgement)))
+}
+
+async fn get_replay(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    ApiPath(replay_id): ApiPath<Uuid>,
+) -> Result<Json<ReplayStatus>, ApiResponseError> {
+    state
+        .store
+        .get_replay(&replay_id)
+        .map(|item| Json(item.status))
+        .ok_or_else(|| {
+            ApiResponseError::new(
+                &context,
+                StatusCode::NOT_FOUND,
+                "REPLAY_NOT_FOUND",
+                "No retained replay has this ID.",
+                None,
+            )
+        })
+}
+
+async fn get_replay_report(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    ApiPath(replay_id): ApiPath<Uuid>,
+) -> Result<Json<ReplayReport>, ApiResponseError> {
+    let item = state.store.get_replay(&replay_id).ok_or_else(|| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::NOT_FOUND,
+            "REPLAY_NOT_FOUND",
+            "No retained replay has this ID.",
+            None,
+        )
+    })?;
+    item.report.map(Json).ok_or_else(|| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::CONFLICT,
+            "REPLAY_NOT_COMPLETE",
+            "Replay report is available after verification completes.",
+            None,
+        )
+    })
 }
 
 async fn submit_run(

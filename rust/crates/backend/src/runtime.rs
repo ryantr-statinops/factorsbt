@@ -82,7 +82,9 @@ impl BackendRuntime {
                         JobId::Run(run_id) => {
                             execute_run(store, fixtures, client, evidence_root, run_id).await
                         }
-                        JobId::Replay(_) => {}
+                        JobId::Replay(replay_id) => {
+                            execute_replay(store, client, evidence_root, replay_id).await
+                        }
                     }
                 }
             },
@@ -130,6 +132,120 @@ impl BackendRuntime {
         self.store.stop_accepting();
         if let Some(dispatcher) = self.dispatcher.take() {
             dispatcher.shutdown().await;
+        }
+    }
+}
+
+async fn execute_replay(
+    store: RunStore,
+    _http_client: ModelHttpClient,
+    evidence_root: PathBuf,
+    replay_id: Uuid,
+) {
+    let Some(stored) = store.get_replay(&replay_id) else {
+        return;
+    };
+    let started = timestamp_or(&stored.status.submitted_at);
+    if store.mark_replay_running(&replay_id, started).is_err() {
+        return;
+    }
+    let loaded = (|| -> Result<_, String> {
+        let source =
+            crate::replay_source::ReplaySource::load(&evidence_root, &stored.status.source_run_id)
+                .map_err(|error| error.to_string())?;
+        source
+            .verify_replay_eligibility(&evidence_root)
+            .map_err(|error| error.to_string())?;
+        let responses = source
+            .recorded_responses(&evidence_root)
+            .map_err(|error| error.to_string())?;
+        let summary: serde_json::Value = serde_json::from_slice(
+            &source
+                .artifact(&evidence_root, "evidence/summary.json")
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|_| "source summary is invalid".to_owned())?;
+        let provider = ModelHttpClient::from_recorded_responses(responses)
+            .map_err(|error| error.to_string())?;
+        Ok((source, summary, provider))
+    })();
+    let (source, summary, provider) = match loaded {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = store.mark_replay_terminal(
+                &replay_id,
+                timestamp_or(&stored.status.submitted_at),
+                None,
+                Some(crate::replay_types::ReplayFailure {
+                    code: "REPLAY_SOURCE_INVALID".to_owned(),
+                    message,
+                }),
+            );
+            return;
+        }
+    };
+    let identity = RunIdentity {
+        run_id: replay_id.clone(),
+        scenario_id: Identifier::new("baseline").expect("static ID"),
+    };
+    let replayed = run_simulation_with_progress(
+        &provider,
+        &source.configuration.model.endpoint,
+        Duration::from_millis(source.configuration.model.timeout_ms),
+        &source.configuration,
+        &source.fixture,
+        identity,
+        |_| {},
+    )
+    .await;
+    match replayed {
+        Ok(report) => {
+            let replay_state = serde_json::to_value(&report.final_portfolio).unwrap_or_default();
+            let source_state = summary["final_portfolio"]["snapshot"].clone();
+            let matched = replay_state == source_state;
+            let replay_root = evidence_root.join("replays").join(replay_id.as_str());
+            let refs = write_successful_run(
+                &replay_root,
+                &source.configuration,
+                &source.fixture,
+                &report,
+            )
+            .map(|bundle| bundle.artifacts)
+            .unwrap_or_default();
+            let replay_report = crate::replay_types::ReplayReport {
+                contract_version: "1.0.0".to_owned(),
+                replay_id: replay_id.clone(),
+                source_run_id: stored.status.source_run_id,
+                source_outcome: source.index.status,
+                matched,
+                first_mismatch: (!matched).then(|| "final_portfolio.snapshot".to_owned()),
+                source_transition_count: summary["decision_steps"].as_u64().unwrap_or(0) as usize,
+                replay_transition_count: report.cycles.len()
+                    + report.execution_events.len()
+                    + report.settlement_events.len(),
+                evidence_refs: refs,
+            };
+            let failure = (!matched).then(|| crate::replay_types::ReplayFailure {
+                code: "REPLAY_DIVERGED".to_owned(),
+                message: "Replay final portfolio differs from source evidence.".to_owned(),
+            });
+            let _ = store.mark_replay_terminal(
+                &replay_id,
+                timestamp_or(&stored.status.submitted_at),
+                Some(replay_report),
+                failure,
+            );
+        }
+        Err(error) => {
+            let _ = store.mark_replay_terminal(
+                &replay_id,
+                timestamp_or(&stored.status.submitted_at),
+                None,
+                Some(crate::replay_types::ReplayFailure {
+                    code: "REPLAY_EXECUTION_FAILED".to_owned(),
+                    message: error.to_string(),
+                }),
+            );
         }
     }
 }
