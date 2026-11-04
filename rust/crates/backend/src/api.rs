@@ -3,12 +3,15 @@
 use crate::{
     admission::{validate_run, RunAdmissionError},
     api_errors::{ApiJson, ApiPath, ApiResponseError, RequestContext},
+    evidence::{read_evidence_index, read_verified_artifact, EvidenceError, EvidenceIndex},
     results::verify_result_evidence,
     run_store::{RunResultLookupError, RunStore, SubmissionStoreError},
 };
 use axum::{
+    body::Body,
     extract::{Extension, State},
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -51,6 +54,11 @@ pub fn run_routes(state: ApiState) -> Router {
         .route("/v1/submissions/{submission_id}", get(get_submission))
         .route("/v1/runs/{run_id}", get(get_run))
         .route("/v1/runs/{run_id}/results", get(get_results))
+        .route("/v1/runs/{run_id}/evidence", get(get_evidence))
+        .route(
+            "/v1/runs/{run_id}/artifacts/{artifact_id}",
+            get(get_artifact),
+        )
         .with_state(state)
 }
 
@@ -193,6 +201,80 @@ async fn get_results(
         )
     })?;
     Ok(Json(result))
+}
+
+async fn get_evidence(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    ApiPath(run_id): ApiPath<Uuid>,
+) -> Result<Json<EvidenceIndex>, ApiResponseError> {
+    read_evidence_index(&state.evidence_root, &run_id)
+        .map(Json)
+        .map_err(|error| evidence_error(&state, &context, &run_id, error))
+}
+
+async fn get_artifact(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    ApiPath((run_id, artifact_id)): ApiPath<(Uuid, Uuid)>,
+) -> Result<Response, ApiResponseError> {
+    let (reference, bytes) = read_verified_artifact(&state.evidence_root, &run_id, &artifact_id)
+        .map_err(|error| evidence_error(&state, &context, &run_id, error))?;
+    let content_type = HeaderValue::from_str(&reference.content_type).map_err(|_| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "EVIDENCE_REFERENCE_INVALID",
+            "Stored artifact media type is invalid.",
+            None,
+        )
+    })?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .body(Body::from(bytes))
+        .expect("verified response headers are valid"))
+}
+
+fn evidence_error(
+    state: &ApiState,
+    context: &RequestContext,
+    run_id: &Uuid,
+    error: EvidenceError,
+) -> ApiResponseError {
+    let (status, code, message) = match error {
+        EvidenceError::RunNotFound => {
+            match state.store.get_run(run_id).map(|run| run.status.status) {
+                Some(factorsbt_contracts::outcomes::RunLifecycle::Queued)
+                | Some(factorsbt_contracts::outcomes::RunLifecycle::Running) => (
+                    StatusCode::CONFLICT,
+                    "RUN_NOT_SUCCEEDED",
+                    "Run evidence is available after terminal completion.",
+                ),
+                Some(_) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "EVIDENCE_REFERENCE_INVALID",
+                    "Terminal run evidence is unavailable.",
+                ),
+                None => (
+                    StatusCode::NOT_FOUND,
+                    "RUN_NOT_FOUND",
+                    "Run evidence was not found.",
+                ),
+            }
+        }
+        EvidenceError::ArtifactNotFound => (
+            StatusCode::NOT_FOUND,
+            "EVIDENCE_ARTIFACT_NOT_FOUND",
+            "Artifact ID was not found for this run.",
+        ),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "EVIDENCE_REFERENCE_INVALID",
+            "Run evidence failed integrity verification.",
+        ),
+    };
+    ApiResponseError::new(context, status, code, message, None)
 }
 
 fn submission_store_error(

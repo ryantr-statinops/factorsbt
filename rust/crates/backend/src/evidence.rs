@@ -35,6 +35,7 @@ pub enum EvidenceError {
     FixtureDigestMismatch,
     InvalidInitialPortfolio,
     RunNotFound,
+    ArtifactNotFound,
     ManifestInvalid,
     Serialization(&'static str),
     ArtifactIntegrity(String),
@@ -71,6 +72,7 @@ impl fmt::Display for EvidenceError {
                 formatter.write_str("initial portfolio cannot be valued")
             }
             Self::RunNotFound => formatter.write_str("sealed run evidence was not found"),
+            Self::ArtifactNotFound => formatter.write_str("artifact ID was not found"),
             Self::ManifestInvalid => formatter.write_str("run evidence manifest is invalid"),
             Self::Serialization(context) => {
                 write!(formatter, "evidence {context} serialization failed")
@@ -156,6 +158,45 @@ pub fn read_evidence_index(
         status,
         artifacts,
     })
+}
+
+/// Return the exact bytes whose reference was verified, never a client path.
+pub fn read_verified_artifact(
+    evidence_root: impl AsRef<Path>,
+    run_id: &Uuid,
+    requested_id: &Uuid,
+) -> Result<(EvidenceArtifactRef, Vec<u8>), EvidenceError> {
+    let root = evidence_root.as_ref();
+    let index = read_evidence_index(root, run_id)?;
+    let artifact = index
+        .artifacts
+        .into_iter()
+        .find(|reference| &reference.artifact_id == requested_id)
+        .ok_or(EvidenceError::ArtifactNotFound)?;
+    let runs = fs::canonicalize(root.join("runs")).map_err(|_| EvidenceError::RunNotFound)?;
+    let run_directory =
+        fs::canonicalize(runs.join(run_id.as_str())).map_err(|_| EvidenceError::RunNotFound)?;
+    if !run_directory.starts_with(&runs) {
+        return Err(EvidenceError::PathEscapesRunRoot);
+    }
+    let relative = safe_relative_path(&artifact.relative_path)?;
+    let evidence_directory = fs::canonicalize(run_directory.join("evidence"))
+        .map_err(|_| EvidenceError::ArtifactIntegrity(artifact.relative_path.clone()))?;
+    let file = fs::canonicalize(run_directory.join(relative))
+        .map_err(|_| EvidenceError::ArtifactIntegrity(artifact.relative_path.clone()))?;
+    if !file.starts_with(&evidence_directory) || !file.is_file() {
+        return Err(EvidenceError::PathEscapesRunRoot);
+    }
+    let bytes = fs::read(file)
+        .map_err(|_| EvidenceError::ArtifactIntegrity(artifact.relative_path.clone()))?;
+    if u64::try_from(bytes.len()).ok() != Some(artifact.size_bytes)
+        || sha256(&bytes) != artifact.sha256
+    {
+        return Err(EvidenceError::ArtifactIntegrity(
+            artifact.relative_path.clone(),
+        ));
+    }
+    Ok((artifact, bytes))
 }
 
 #[derive(Debug, Clone)]
