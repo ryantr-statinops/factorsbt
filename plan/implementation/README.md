@@ -2,7 +2,7 @@
 
 **Status:** Kế hoạch theo dõi công việc; trạng thái từng stage phản ánh bằng chứng đã có.
 
-**Mốc đối chiếu:** 2026-11-03. Phase A và Phase B đã qua cổng kiểm chứng local: Stage 00–07, gồm fixture/snapshot, engine, model orchestration, Rust run API, typed Python SDK và backtest xuyên suốt. Chưa có hosted deployment, public API stability hay CI.
+**Mốc đối chiếu:** 2026-11-04. Phase A, B và C đã qua cổng kiểm chứng local: Stage 00–09, gồm fixture/snapshot, engine, model orchestration, Rust run/replay API, typed Python SDK, backtest, comparison tuần tự và recorded replay. Chưa có hosted deployment, public API stability hay CI.
 
 ## Cách đọc và phạm vi
 
@@ -29,13 +29,13 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | B | [05 — Model orchestration](05-model-orchestration.md) | Implemented | Có | [Orchestrator](../../rust/crates/backend/src/orchestrator.rs), [model client](../../rust/crates/backend/src/model_client.rs), [concurrent isolation](../../rust/crates/backend/src/orchestrator.rs) |
 | B | [06 — Backend API](06-backend-api.md) | Implemented | Có | [API routes](../../rust/crates/backend/src/api.rs), [runtime/workers](../../rust/crates/backend/src/runtime.rs), [loopback API tests](../../rust/crates/backend/src/api.rs) |
 | B | [07 — Python SDK và nghiệm thu MVP](07-python-sdk-mvp.md) | Implemented | Có | [Typed SDK](../../python-sdk/src/factorsbt), [end-to-end smoke](../../python-sdk/tests/smoke_backtest.py), [failure-path smoke](../../python-sdk/tests/smoke_sdk_failures.py), [lệnh và kết quả local](../../docs/development/phase-b-local.md) |
-| C | [08 — Scenario comparison](08-scenario-comparison.md) | Proposed | Chưa | Chưa có |
-| C | [09 — Recorded replay](09-recorded-replay.md) | Proposed | Chưa | Chưa có |
+| C | [08 — Scenario comparison](08-scenario-comparison.md) | Implemented — SDK tuần tự và report local | Có | [Comparison smoke](../../python-sdk/tests/smoke_backtest.py), [Phase C verification](../../docs/development/phase-c-local.md) |
+| C | [09 — Recorded replay](09-recorded-replay.md) | Implemented — replay cùng executable/contract | Có | [Replay runtime](../../rust/crates/backend/src/runtime.rs), [replay source validation](../../rust/crates/backend/src/replay_source.rs), [Phase C verification](../../docs/development/phase-c-local.md) |
 | D | [10 — Reranking](10-reranking.md) | Proposed | Chưa | Chưa có |
 | D | [11 — RL interface](11-rl-interface.md) | Proposed | Chưa | Chưa có |
 | E | [12 — Ý tưởng CLI / console application](12-cli-console-ideas.md) | Proposed — brainstorm | Không áp dụng | Chưa chốt triển khai |
 
-Hiện có **8/12 stage triển khai đạt điều kiện hoàn thành**; MVP gồm stage 00–07 có **8/8**; Phase A là **3/3** và Phase B là **5/5**. Bằng chứng Phase B gồm Rust workspace kiểm tra được, 40 Python unit tests, 140 Rust tests, ba output-mode end-to-end smoke flows, independent NAV/evidence integrity checks và failure-path smoke. Các con số này biểu thị stage qua cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
+Hiện có **10/12 stage triển khai đạt điều kiện hoàn thành**; MVP Phase B gồm stage 00–07 có **8/8**; Phase A là **3/3**, Phase B là **5/5**, Phase C là **2/2**. Phase C verification ghi 48 Python tests, 146 Rust tests, comparison smoke ba scenario (baseline, price-only, delayed-event), và replay cho ba output mode cùng source model-failure; replay source thành công được đọc lại sau khi restart backend. Các con số là stage qua cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
 
 Trạng thái thiết kế dùng đúng từ vựng của [documentation index](../../docs/README.md#status-vocabulary): Accepted, Proposed, Open và Implemented. Cột hoàn thành là theo dõi công việc riêng. Stage thiết kế có thể hoàn thành bằng quyết định được Accepted và tài liệu đã kiểm tra; điều đó không làm tính năng thành Implemented. Chỉ mô tả hành vi là Implemented khi có code và kiểm chứng phù hợp.
 
@@ -59,8 +59,8 @@ flowchart TD
         B3 --> B4["07 · Python SDK + MVP — verified"]
     end
 
-    subgraph C["Phase C — So sánh và replay · 0/2"]
-        C0["08 · Scenario comparison"] --> C1["09 · Recorded replay"]
+    subgraph C["Phase C — So sánh và replay · 2/2"]
+        C0["08 · Scenario comparison — verified"] --> C1["09 · Recorded replay — verified"]
     end
 
     subgraph D["Phase D — Nghiên cứu mở rộng · 0/2"]
@@ -80,7 +80,7 @@ flowchart TD
 
     classDef implemented fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef idea fill:#fff7ed,stroke:#c2410c,color:#7c2d12,stroke-dasharray:5 5
-    class A2,B0,B1,B2,B3,B4 implemented
+    class A2,B0,B1,B2,B3,B4,C0,C1 implemented
     class E0 idea
 ```
 
@@ -124,6 +124,15 @@ Phase E không yêu cầu Phase D hoàn thành. Mục 12 chưa chọn tính năn
 - Typed SDK smoke chạy qua Rust backend cho `scores`, `targets` và `order_intents`; kiểm tra độc lập NAV theo Decimal và SHA-256/size của evidence. Failure-path smoke xác minh mất acknowledgment rồi tra cứu, submission conflict, model HTTP failure và wait timeout không hủy backend run.
 - API chỉ hỗ trợ loopback, in-memory metadata/deduplication và local evidence. Không có CI, hosted deployment, remote artifact download, cancellation, streaming, restart recovery hay tuyên bố public API stability. Chi tiết toolchain, lệnh và giới hạn nằm trong [hướng dẫn xác minh Phase B](../../docs/development/phase-b-local.md).
 - **Đóng Phase B:** Phase A 3/3, Phase B 5/5, tổng 8/12 stage triển khai, MVP 8/8. Stage 08–11 và brainstorm mục 12 giữ nguyên Proposed.
+
+### Tiến độ thực hiện Phase C — 2026-11-04
+
+- Stage 08 hoàn tất comparison SDK tuần tự, metrics, cấu hình khác biệt, timeline/trace evidence, lưu report và giữ trạng thái partial khi scenario lỗi. Smoke chạy baseline, price-only, delayed-event qua backend thật.
+- Stage 09 hoàn tất replay API/SDK với recorded inference, source integrity, same-executable digest, cùng contract, bounded FIFO queue chung, report và evidence replay riêng; source failure được tái hiện nếu cùng terminal stage/reason.
+- Acceptance bổ sung kiểm tra replay không gọi model, đọc evidence sau backend restart, replay success khi model fixture đã offline, replay idempotency/conflict, queue overflow, panic lifecycle, source artifact completeness và mismatch đầu tiên ở financial transition.
+- `cargo fmt --all -- --check`, workspace check, strict Clippy và toàn workspace tests pass. Rust có 146 tests; Python unittest có 48 tests. Hai smoke scripts `smoke_backtest.py` và `smoke_sdk_failures.py` pass.
+- Chi tiết lệnh, số test, kết quả và giới hạn nằm trong [Phase C local verification](../../docs/development/phase-c-local.md). Run/replay metadata và queue không được khôi phục sau restart; sealed source evidence vẫn có thể được nạp để replay. Evidence giữ local; comparison chưa có backend job riêng; không có CI.
+- **Đóng Phase C:** Stage 08–09 là Implemented, Phase C 2/2, tổng 10/12 stage. Phase D vẫn Proposed; mục brainstorm Phase E không yêu cầu Phase D hoàn thành.
 
 ## Tài liệu gốc
 
