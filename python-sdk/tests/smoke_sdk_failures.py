@@ -1,6 +1,7 @@
 """Exercise SDK submission and run failures against the local Rust backend."""
 
 from dataclasses import replace
+import hashlib
 from http.client import HTTPConnection
 import os
 from pathlib import Path
@@ -207,6 +208,22 @@ def main() -> int:
             failed_report = backend_client.get_replay_report(failed_replay.replay_id)
             if verified_failure.status != "succeeded" or not failed_report.matched or failed_report.source_outcome != "failed":
                 raise RuntimeError("recorded replay did not reproduce the failed source outcome")
+            replay_root = (
+                Path(environment["FACTORSBT_EVIDENCE_DIR"])
+                / "replays"
+                / failed_report.replay_id
+                / "runs"
+                / failed_report.replay_id
+            ).resolve()
+            if not failed_report.evidence_refs:
+                raise RuntimeError("matched failed-source replay did not retain replay evidence")
+            for reference in failed_report.evidence_refs:
+                artifact = (replay_root / Path(*reference.relative_path.split("/"))).resolve()
+                if not artifact.is_relative_to(replay_root) or not artifact.is_file():
+                    raise RuntimeError("failed-source replay evidence is missing or unsafe")
+                content = artifact.read_bytes()
+                if len(content) != reference.size_bytes or hashlib.sha256(content).hexdigest() != reference.sha256:
+                    raise RuntimeError("failed-source replay evidence failed integrity checks")
 
             slow_config = with_model(
                 smoke.run_configuration(ScoresPolicy(1), model_endpoint), "slow-model"

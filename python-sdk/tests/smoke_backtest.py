@@ -292,6 +292,21 @@ def verify_nav_and_evidence(result, configuration, evidence_directory):
             raise RuntimeError(f"evidence digest mismatch: {reference.relative_path}")
 
 
+def verify_replay_evidence(report, evidence_directory):
+    replay_root = (
+        Path(evidence_directory) / "replays" / report.replay_id / "runs" / report.replay_id
+    ).resolve()
+    if not report.evidence_refs:
+        raise RuntimeError("replay report has no isolated evidence references")
+    for reference in report.evidence_refs:
+        artifact = (replay_root / Path(*reference.relative_path.split("/"))).resolve()
+        if not artifact.is_relative_to(replay_root) or not artifact.is_file():
+            raise RuntimeError(f"replay evidence is missing or escapes its directory: {reference.kind}")
+        content = artifact.read_bytes()
+        if len(content) != reference.size_bytes or hashlib.sha256(content).hexdigest() != reference.sha256:
+            raise RuntimeError(f"replay evidence integrity mismatch: {reference.relative_path}")
+
+
 def main() -> int:
     cargo = shutil.which("cargo")
     if cargo is None:
@@ -339,6 +354,7 @@ def main() -> int:
         try:
             backend, client = start_backend(binary, environment)
             ControlledModelHandler.requests = []
+            first_replay_id = None
             for expected_mode, config in configurations(model_endpoint):
                 try:
                     accepted = client.submit(config)
@@ -366,6 +382,21 @@ def main() -> int:
                 replay_report = client.get_replay_report(replay.replay_id)
                 if not replay_report.matched or replay_report.source_run_id != result.run_id:
                     raise RuntimeError(f"{expected_mode} recorded replay diverged")
+                verify_replay_evidence(replay_report, environment["FACTORSBT_EVIDENCE_DIR"])
+                verify_nav_and_evidence(result, config, environment["FACTORSBT_EVIDENCE_DIR"])
+                if first_replay_id is None:
+                    first_replay_id = replay.replay_id
+                    duplicate = client.submit_replay(result.run_id, replay_id=first_replay_id)
+                    if duplicate.replay_id != first_replay_id:
+                        raise RuntimeError("repeated replay submission did not return its original acknowledgement")
+                else:
+                    try:
+                        client.submit_replay(result.run_id, replay_id=first_replay_id)
+                    except HttpStatusError as error:
+                        if error.status != 409 or error.code != "SUBMISSION_ID_REUSED":
+                            raise RuntimeError("changed replay source returned an unexpected conflict") from error
+                    else:
+                        raise RuntimeError("replay key accepted a different source run")
                 print(
                     f"{expected_mode}: run={result.run_id} fills={result.counts.fills} "
                     f"positions={len(result.portfolio.positions)} evidence={len(result.evidence)} replay=matched"
