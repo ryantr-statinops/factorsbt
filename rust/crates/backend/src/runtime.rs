@@ -200,9 +200,29 @@ async fn execute_replay(
     .await;
     match replayed {
         Ok(report) => {
-            let replay_state = serde_json::to_value(&report.final_portfolio).unwrap_or_default();
-            let source_state = summary["final_portfolio"]["snapshot"].clone();
-            let matched = replay_state == source_state;
+            let replay_state = serde_json::json!({
+                "cash": report.finalization.cash.to_string(),
+                "nav": report.finalization.nav.to_string(),
+                "positions": report.final_portfolio.positions,
+                "orders": report.cycles.iter().map(|cycle| cycle.proposal.order_intents.iter().map(|item| serde_json::json!({
+                    "instrument_id": item.instrument_id.as_str(), "signed_quantity": item.signed_quantity.to_string()
+                })).collect::<Vec<_>>()).collect::<Vec<_>>(),
+                "executions": report.execution_events,
+                "settlements": report.settlement_events,
+            });
+            let source_state = serde_json::json!({
+                "cash": summary["final_portfolio"]["cash"],
+                "nav": summary["final_portfolio"]["nav"],
+                "positions": summary["final_portfolio"]["snapshot"]["positions"],
+                "orders": source.artifact(&evidence_root, "evidence/orders.json").ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+                "executions": source.artifact(&evidence_root, "evidence/executions.json").ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+                "settlements": source.artifact(&evidence_root, "evidence/settlements.json").ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+            });
+            let matched =
+                normalize_replay_value(replay_state) == normalize_replay_value(source_state);
             let replay_root = evidence_root.join("replays").join(replay_id.as_str());
             let refs = write_successful_run(
                 &replay_root,
@@ -218,8 +238,10 @@ async fn execute_replay(
                 source_run_id: stored.status.source_run_id,
                 source_outcome: source.index.status,
                 matched,
-                first_mismatch: (!matched).then(|| "final_portfolio.snapshot".to_owned()),
-                source_transition_count: summary["decision_steps"].as_u64().unwrap_or(0) as usize,
+                first_mismatch: (!matched).then(|| "financial_transitions".to_owned()),
+                source_transition_count: summary["decision_steps"].as_u64().unwrap_or(0) as usize
+                    + summary["execution_events"].as_u64().unwrap_or(0) as usize
+                    + summary["settlement_events"].as_u64().unwrap_or(0) as usize,
                 replay_transition_count: report.cycles.len()
                     + report.execution_events.len()
                     + report.settlement_events.len(),
@@ -247,6 +269,33 @@ async fn execute_replay(
                 }),
             );
         }
+    }
+}
+
+fn normalize_replay_value(value: serde_json::Value) -> serde_json::Value {
+    const IGNORED: &[&str] = &[
+        "run_id",
+        "scenario_id",
+        "inference_id",
+        "snapshot_id",
+        "order_id",
+        "fill_id",
+        "created_at",
+        "requested_at",
+        "responded_at",
+    ];
+    match value {
+        serde_json::Value::Object(object) => serde_json::Value::Object(
+            object
+                .into_iter()
+                .filter(|(key, _)| !IGNORED.contains(&key.as_str()))
+                .map(|(key, value)| (key, normalize_replay_value(value)))
+                .collect(),
+        ),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(normalize_replay_value).collect())
+        }
+        other => other,
     }
 }
 
