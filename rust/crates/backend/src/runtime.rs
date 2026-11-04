@@ -244,9 +244,22 @@ async fn execute_replay(
                 "cash": report.finalization.cash.to_string(),
                 "nav": report.finalization.nav.to_string(),
                 "positions": report.final_portfolio.positions,
+            "admissions": report.cycles.iter().filter_map(|cycle| cycle.admission.as_ref().map(|admission| serde_json::json!({
+                "adjustments": admission.adjustments.iter().map(|adjustment| serde_json::json!({
+                    "instrument_id": adjustment.instrument_id,
+                    "requested_quantity": adjustment.requested_quantity.to_string(),
+                    "admitted_quantity": adjustment.admitted_quantity.to_string(),
+                    "common_scale": adjustment.common_scale.to_string(),
+                    "scaled": adjustment.scaled,
+                })).collect::<Vec<_>>(),
+            }))).collect::<Vec<_>>(),
                 "orders": replay_orders,
                 "executions": report.execution_events,
                 "settlements": report.settlement_events,
+            "ledger": report.execution_events.iter()
+                .chain(report.liquidation_events.iter())
+                .chain(report.settlement_events.iter())
+                .flat_map(collect_ledger_postings).collect::<Vec<_>>(),
             });
             let Some(summary) = summary.as_ref() else {
                 let _ = store.mark_replay_terminal(
@@ -273,9 +286,13 @@ async fn execute_replay(
                     .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
                 "settlements": source.artifact(&evidence_root, "evidence/settlements.json").ok()
                     .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+                "admissions": source.artifact(&evidence_root, "evidence/admissions.json").ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+                "ledger": source.artifact(&evidence_root, "evidence/ledger-postings.json").ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
             });
-            let matched =
-                normalize_replay_value(replay_state) == normalize_replay_value(source_state);
+            let first_mismatch = replay_mismatch(&replay_state, &source_state);
+            let matched = first_mismatch.is_none();
             let replay_root = evidence_root.join("replays").join(replay_id.as_str());
             let refs = write_successful_run(
                 &replay_root,
@@ -291,7 +308,7 @@ async fn execute_replay(
                 source_run_id: stored.status.source_run_id,
                 source_outcome: source.index.status,
                 matched,
-                first_mismatch: (!matched).then(|| "financial_transitions".to_owned()),
+                first_mismatch,
                 source_transition_count: summary["decision_steps"].as_u64().unwrap_or(0) as usize
                     + summary["execution_events"].as_u64().unwrap_or(0) as usize
                     + summary["settlement_events"].as_u64().unwrap_or(0) as usize,
@@ -404,6 +421,50 @@ fn normalize_replay_value(value: serde_json::Value) -> serde_json::Value {
         }
         other => other,
     }
+}
+
+fn replay_mismatch(replay: &serde_json::Value, source: &serde_json::Value) -> Option<String> {
+    [
+        "admissions",
+        "orders",
+        "executions",
+        "settlements",
+        "ledger",
+        "cash",
+        "positions",
+        "nav",
+    ]
+    .into_iter()
+    .find(|field| {
+        normalize_replay_value(replay[*field].clone())
+            != normalize_replay_value(source[*field].clone())
+    })
+    .map(str::to_owned)
+}
+
+fn collect_ledger_postings(value: &serde_json::Value) -> Vec<serde_json::Value> {
+    fn collect(value: &serde_json::Value, postings: &mut Vec<serde_json::Value>) {
+        match value {
+            serde_json::Value::Object(object) => {
+                for (key, nested) in object {
+                    if key.ends_with("_posting") && nested.is_object() {
+                        postings.push(nested.clone());
+                    }
+                    collect(nested, postings);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for nested in values {
+                    collect(nested, postings);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut postings = Vec::new();
+    collect(value, &mut postings);
+    postings
 }
 
 async fn execute_run(
@@ -578,6 +639,31 @@ mod tests {
     use super::*;
     use crate::{backend_config::BackendConfig, backend_config::QueueLimits};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn replay_comparator_reports_first_financial_transition_mismatch() {
+        let source = serde_json::json!({
+            "admissions": [{"instrument_id": "SPOT_A", "admitted_quantity": "1"}],
+            "orders": [{"order_id": "old", "instrument_id": "SPOT_A"}],
+            "executions": [],
+            "settlements": [],
+            "ledger": [{"cash_delta": "-100.00"}],
+            "cash": "900.00",
+            "positions": [{"instrument_id": "SPOT_A", "quantity": "1"}],
+            "nav": "1000.00"
+        });
+        let mut replay = source.clone();
+        replay["orders"][0]["order_id"] = serde_json::json!("regenerated");
+        assert_eq!(replay_mismatch(&replay, &source), None);
+
+        replay["ledger"][0]["cash_delta"] = serde_json::json!("-99.00");
+        assert_eq!(replay_mismatch(&replay, &source).as_deref(), Some("ledger"));
+        replay["admissions"][0]["admitted_quantity"] = serde_json::json!("2");
+        assert_eq!(
+            replay_mismatch(&replay, &source).as_deref(),
+            Some("admissions")
+        );
+    }
 
     #[tokio::test]
     async fn startup_loads_local_fixture_registry_and_shutdown_joins_idle_workers() {
