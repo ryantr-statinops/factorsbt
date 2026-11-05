@@ -99,6 +99,19 @@ fn observation(at: &str, mark: Decimal, state: &EpisodeState) -> Result<EpisodeO
 /// Apply the two recorded actions across the three close points. Each step
 /// executes only at the next fixture open and books fees before reward.
 pub fn run_episode(fixture: &ResearchFixture, actions: &[EpisodeAction]) -> Result<EpisodeReport, EpisodeError> {
+    run_episode_with_progress(fixture, actions, |_| {})
+}
+
+/// Run an episode while exposing only completed transitions to the caller.
+/// Callers can persist the last valid observation if a later step fails.
+pub fn run_episode_with_progress<F>(
+    fixture: &ResearchFixture,
+    actions: &[EpisodeAction],
+    mut on_transition: F,
+) -> Result<EpisodeReport, EpisodeError>
+where
+    F: FnMut(&EpisodeTransition),
+{
     let mut state = validate_episode(fixture, actions)?;
     let mut transitions = Vec::with_capacity(2);
     for (step, action) in actions.iter().enumerate() {
@@ -118,7 +131,9 @@ pub fn run_episode(fixture: &ResearchFixture, actions: &[EpisodeAction]) -> Resu
         let observation_end = observation(&end.close_at, end.close_a, &state)?;
         let reward = observation_end.nav.checked_sub(observation_start.nav).ok_or(EpisodeError::Arithmetic)?;
         let fills = if delta.is_zero() { Vec::new() } else { vec![EpisodeFill { instrument_id: "SPOT_A".into(), quantity: delta, price: end.open_a, fee }] };
-        transitions.push(EpisodeTransition { step, observation_start, action: action.clone(), admitted_quantity, fills, observation_end, reward_usd: reward });
+        let transition = EpisodeTransition { step, observation_start, action: action.clone(), admitted_quantity, fills, observation_end, reward_usd: reward };
+        on_transition(&transition);
+        transitions.push(transition);
     }
     let last = fixture.points.last().ok_or(EpisodeError::InvalidFixture)?;
     let final_observation = observation(&last.close_at, last.close_a, &state)?;
