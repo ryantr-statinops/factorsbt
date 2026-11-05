@@ -154,98 +154,119 @@ where
         .apply_valuation_marks(&first_marks)
         .map_err(|_| EpisodeError::InvalidFixture)?;
     let mut transitions = Vec::with_capacity(2);
+    let mut last_completed_time = fixture
+        .points
+        .first()
+        .ok_or(EpisodeError::InvalidFixture)?
+        .close_at
+        .clone();
+    let mut failure = None;
     for (step, action) in actions.iter().enumerate() {
-        let start = &fixture.points[step];
-        let end = &fixture.points[step + 1];
-        let observation_start = engine_observation(&start.close_at, &portfolio)?;
-        let requested_quantity = observation_start
-            .nav
-            .checked_mul(action.target_weight)
-            .and_then(|value| value.checked_div(start.close_a))
-            .ok_or(EpisodeError::Arithmetic)?
-            .trunc();
-        let decision_time =
-            UtcTimestamp::new(start.close_at.clone()).map_err(|_| EpisodeError::InvalidFixture)?;
-        let execution_time = UtcTimestamp::new(open_timestamp(&end.close_at))
+        let checkpoint = portfolio.clone();
+        let transition_result = (|| -> Result<EpisodeTransition, EpisodeError> {
+            let start = &fixture.points[step];
+            let end = &fixture.points[step + 1];
+            let observation_start = engine_observation(&start.close_at, &portfolio)?;
+            let requested_quantity = observation_start
+                .nav
+                .checked_mul(action.target_weight)
+                .and_then(|value| value.checked_div(start.close_a))
+                .ok_or(EpisodeError::Arithmetic)?
+                .trunc();
+            let decision_time = UtcTimestamp::new(start.close_at.clone())
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            let execution_time = UtcTimestamp::new(open_timestamp(&end.close_at))
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            let target = InstrumentTarget {
+                instrument_id: InstrumentId::new("SPOT_A")
+                    .map_err(|_| EpisodeError::InvalidFixture)?,
+                target_quantity: requested_quantity,
+            };
+            let admission = admit_target_group(&portfolio, &[target])
+                .map_err(|_| EpisodeError::InsufficientCash)?;
+            let step_id = Identifier::new(format!("episode-step-{step}"))
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            let group = queue_target_group(
+                &portfolio,
+                &step_id,
+                &decision_time,
+                &execution_time,
+                &admission,
+            )
             .map_err(|_| EpisodeError::InvalidFixture)?;
-        let target = InstrumentTarget {
-            instrument_id: InstrumentId::new("SPOT_A").map_err(|_| EpisodeError::InvalidFixture)?,
-            target_quantity: requested_quantity,
-        };
-        let admission = admit_target_group(&portfolio, &[target])
-            .map_err(|_| EpisodeError::InsufficientCash)?;
-        let step_id = Identifier::new(format!("episode-step-{step}"))
-            .map_err(|_| EpisodeError::InvalidFixture)?;
-        let group = queue_target_group(
-            &portfolio,
-            &step_id,
-            &decision_time,
-            &execution_time,
-            &admission,
-        )
-        .map_err(|_| EpisodeError::InvalidFixture)?;
-        let prices = execution_prices_available_at(&inputs.fixture.dataset, &execution_time)
-            .map_err(|_| EpisodeError::InvalidFixture)?;
-        let executed = execute_pending_group(&mut portfolio, &group, &execution_time, &prices)
-            .map_err(|_| EpisodeError::InsufficientCash)?;
-        let admitted_quantity = executed
-            .admission_adjustments
-            .first()
-            .map(|adjustment| adjustment.admitted_quantity)
-            .unwrap_or_else(|| {
-                portfolio
-                    .position("SPOT_A")
-                    .expect("instrument configured")
-                    .quantity
-            });
-        let fills = executed
-            .fills
-            .into_iter()
-            .map(|fill| match fill {
-                ExecutionFill::Spot(fill) => Ok(EpisodeFill {
-                    instrument_id: fill.instrument_id.as_str().to_owned(),
-                    quantity: fill.signed_quantity,
-                    price: fill.fill_price,
-                    fee: fill.fee,
-                }),
-                _ => Err(EpisodeError::InvalidFixture),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let close_time =
-            UtcTimestamp::new(end.close_at.clone()).map_err(|_| EpisodeError::InvalidFixture)?;
-        let observations = observations_available_at(&inputs.fixture.dataset, &close_time)
-            .map_err(|_| EpisodeError::InvalidFixture)?;
-        let marks = value_instruments(&instruments, &observations, &close_time)
-            .map_err(|_| EpisodeError::InvalidFixture)?;
-        portfolio
-            .apply_valuation_marks(&marks)
-            .map_err(|_| EpisodeError::InvalidFixture)?;
-        let observation_end = engine_observation(&end.close_at, &portfolio)?;
-        let reward = observation_end
-            .nav
-            .checked_sub(observation_start.nav)
-            .ok_or(EpisodeError::Arithmetic)?;
-        let transition = EpisodeTransition {
-            step,
-            observation_start,
-            action: action.clone(),
-            admitted_quantity,
-            fills,
-            observation_end,
-            reward_usd: reward,
-        };
-        on_transition(&transition);
-        transitions.push(transition);
+            let prices = execution_prices_available_at(&inputs.fixture.dataset, &execution_time)
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            let executed = execute_pending_group(&mut portfolio, &group, &execution_time, &prices)
+                .map_err(|_| EpisodeError::InsufficientCash)?;
+            let admitted_quantity = executed
+                .admission_adjustments
+                .first()
+                .map(|adjustment| adjustment.admitted_quantity)
+                .unwrap_or_else(|| {
+                    portfolio
+                        .position("SPOT_A")
+                        .expect("instrument configured")
+                        .quantity
+                });
+            let fills = executed
+                .fills
+                .into_iter()
+                .map(|fill| match fill {
+                    ExecutionFill::Spot(fill) => Ok(EpisodeFill {
+                        instrument_id: fill.instrument_id.as_str().to_owned(),
+                        quantity: fill.signed_quantity,
+                        price: fill.fill_price,
+                        fee: fill.fee,
+                    }),
+                    _ => Err(EpisodeError::InvalidFixture),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let close_time = UtcTimestamp::new(end.close_at.clone())
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            let observations = observations_available_at(&inputs.fixture.dataset, &close_time)
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            let marks = value_instruments(&instruments, &observations, &close_time)
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            portfolio
+                .apply_valuation_marks(&marks)
+                .map_err(|_| EpisodeError::InvalidFixture)?;
+            let observation_end = engine_observation(&end.close_at, &portfolio)?;
+            let reward = observation_end
+                .nav
+                .checked_sub(observation_start.nav)
+                .ok_or(EpisodeError::Arithmetic)?;
+            let transition = EpisodeTransition {
+                step,
+                observation_start,
+                action: action.clone(),
+                admitted_quantity,
+                fills,
+                observation_end,
+                reward_usd: reward,
+            };
+            Ok(transition)
+        })();
+        match transition_result {
+            Ok(transition) => {
+                last_completed_time = transition.observation_end.simulation_time.clone();
+                on_transition(&transition);
+                transitions.push(transition);
+            }
+            Err(error) => {
+                portfolio = checkpoint;
+                failure = Some(error.to_string());
+                break;
+            }
+        }
     }
-    let last = fixture.points.last().ok_or(EpisodeError::InvalidFixture)?;
-    let final_observation = engine_observation(&last.close_at, &portfolio)?;
+    let final_observation = engine_observation(&last_completed_time, &portfolio)?;
     Ok(EpisodeReport {
         fixture_id: fixture.fixture_id.clone(),
         fixture_version: fixture.version.clone(),
         transitions,
         final_observation,
         canceled_pending_orders: Vec::new(),
-        failure: None,
+        failure,
     })
 }
 

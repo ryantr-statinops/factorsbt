@@ -150,4 +150,18 @@ mod tests {
         .unwrap();
         assert_eq!(observed, vec![0, 1]);
     }
+
+    #[test]
+    fn episode_failure_keeps_last_completed_observation_without_partial_reward() {
+        let mut fixture = resolve_fixture("episode-eval", "1.0.0").unwrap();
+        fixture.points[2].open_a = Decimal::ZERO;
+        let report = run_episode(&fixture, &fixed_trade_actions()).unwrap();
+        assert_eq!(report.transitions.len(), 1);
+        assert!(report.failure.is_some());
+        assert_eq!(report.transitions[0].reward_usd, Decimal::new(-102, 2));
+        assert_eq!(
+            report.final_observation,
+            report.transitions[0].observation_end
+        );
+    }
 }

@@ -162,18 +162,13 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
                 match crate::research::jobs::execute_with_fixture(&source.request, &source.fixture)
                 {
                     Ok(report) => {
-                        let matched = report == source.result.report;
-                        let first_mismatch =
-                            first_value_mismatch(&source.result.report, &report, "$.report");
-                        let replay_report = serde_json::json!({
-                            "source_job_id": source.result.job_id,
-                            "source_kind": source.request.kind,
-                            "matched": matched,
-                            "first_mismatch": first_mismatch,
-                            "source_report": source.result.report,
-                            "replayed_report": report,
-                        });
-                        Ok((source.fixture, replay_report, !matched))
+                        let (replay_report, failure) = research_replay_verification(
+                            &source.result.job_id,
+                            source.request.kind,
+                            &source.result.report,
+                            report,
+                        );
+                        Ok((source.fixture, replay_report, failure))
                     }
                     Err(error) => Err(error.to_string()),
                 }
@@ -191,7 +186,16 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
         ) {
             Ok(fixture) => {
                 match crate::research::jobs::execute_with_fixture(&stored.request, &fixture) {
-                    Ok(report) => Ok((fixture, report, false)),
+                    Ok(report) => {
+                        let failure = report
+                            .get("failure")
+                            .and_then(serde_json::Value::as_str)
+                            .map(|message| crate::research::jobs::ResearchJobFailure {
+                                code: "RESEARCH_EXECUTION_FAILED".into(),
+                                message: message.into(),
+                            });
+                        Ok((fixture, report, failure))
+                    }
                     Err(error) => Err(error.to_string()),
                 }
             }
@@ -199,7 +203,7 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
         }
     };
     match executed {
-        Ok((fixture, report, diverged)) => {
+        Ok((fixture, report, execution_failure)) => {
             let result = crate::research::jobs::ResearchJobResult {
                 contract_version: "1.0.0".into(),
                 job_id: job_id.clone(),
@@ -217,13 +221,8 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
                     code: "RESEARCH_EVIDENCE_FAILED".into(),
                     message: error.to_string(),
                 })
-            } else if diverged {
-                Some(crate::research::jobs::ResearchJobFailure {
-                    code: "RESEARCH_REPLAY_DIVERGED".into(),
-                    message: "recorded research transitions diverged".into(),
-                })
             } else {
-                None
+                execution_failure
             };
             let _ = store.mark_research_terminal(&job_id, finished, Some(result), failure);
         }
@@ -239,6 +238,36 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
             );
         }
     }
+}
+
+fn research_replay_verification(
+    source_job_id: &Uuid,
+    source_kind: crate::research::jobs::ResearchJobKind,
+    source_report: &serde_json::Value,
+    replayed_report: serde_json::Value,
+) -> (
+    serde_json::Value,
+    Option<crate::research::jobs::ResearchJobFailure>,
+) {
+    let matched = replayed_report == *source_report;
+    let source_failed = source_report
+        .get("failure")
+        .is_some_and(|value| !value.is_null());
+    let first_mismatch = first_value_mismatch(source_report, &replayed_report, "$.report");
+    let report = serde_json::json!({
+        "source_job_id": source_job_id,
+        "source_kind": source_kind,
+        "source_outcome": if source_failed { "failed" } else { "succeeded" },
+        "matched": matched,
+        "first_mismatch": first_mismatch,
+        "source_report": source_report,
+        "replayed_report": replayed_report,
+    });
+    let failure = (!matched).then(|| crate::research::jobs::ResearchJobFailure {
+        code: "RESEARCH_REPLAY_DIVERGED".into(),
+        message: "recorded research transitions diverged".into(),
+    });
+    (report, failure)
 }
 
 fn first_value_mismatch(
@@ -826,6 +855,39 @@ mod tests {
         assert_eq!(
             replay_mismatch(&replay, &source).as_deref(),
             Some("admissions")
+        );
+    }
+
+    #[test]
+    fn matching_research_failure_replay_succeeds_with_failed_source_outcome() {
+        let source_id = Uuid::new("b1c0e095-c4b1-4a65-a05a-1b5689911ac5").unwrap();
+        let source = serde_json::json!({
+            "transitions": [{"step": 0, "reward_usd": "1.00"}],
+            "failure": "fixture execution input was invalid"
+        });
+        let (report, failure) = research_replay_verification(
+            &source_id,
+            crate::research::jobs::ResearchJobKind::Episode,
+            &source,
+            source.clone(),
+        );
+        assert!(failure.is_none());
+        assert_eq!(report["matched"], true);
+        assert_eq!(report["source_outcome"], "failed");
+        assert!(report["first_mismatch"].is_null());
+
+        let mut divergent = source.clone();
+        divergent["transitions"][0]["reward_usd"] = serde_json::json!("2.00");
+        let (report, failure) = research_replay_verification(
+            &source_id,
+            crate::research::jobs::ResearchJobKind::Episode,
+            &source,
+            divergent,
+        );
+        assert_eq!(failure.unwrap().code, "RESEARCH_REPLAY_DIVERGED");
+        assert_eq!(
+            report["first_mismatch"],
+            "$.report.transitions[0].reward_usd"
         );
     }
 
