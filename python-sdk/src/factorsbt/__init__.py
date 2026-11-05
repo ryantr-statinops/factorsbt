@@ -57,7 +57,16 @@ from .responses import (
     UnderlyingReservation,
 )
 from .replay import ReplayAcknowledgement, ReplayReport, ReplayStatus
-from .research import ResearchJobAcknowledgement, ResearchJobResult, ResearchJobStatus
+from .research import (
+    EpisodeReport,
+    EpisodeTransition,
+    ResearchJobAcknowledgement,
+    ResearchJobResult,
+    ResearchJobStatus,
+    ResearchReplayReport,
+    RerankingBranchReport,
+    RerankingReport,
+)
 
 __all__ = [
     "Client",
@@ -100,6 +109,11 @@ __all__ = [
     "ResearchJobFailed",
     "ResearchJobResult",
     "ResearchJobStatus",
+    "ResearchReplayReport",
+    "RerankingBranchReport",
+    "RerankingReport",
+    "EpisodeReport",
+    "EpisodeTransition",
     "ResearchWaitTimeout",
     "ResultCounts",
     "ResultProvenance",

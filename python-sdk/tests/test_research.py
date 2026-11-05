@@ -8,7 +8,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from factorsbt import Client, ProtocolError, ResearchJobAcknowledgementUnknown, ResearchJobStatus
+from factorsbt import (
+    Client, EpisodeReport, ProtocolError, ResearchJobAcknowledgementUnknown,
+    ResearchJobResult, ResearchJobStatus, ResearchReplayReport, RerankingReport,
+)
 
 JOB_ID = "8a2f5ce2-a6b5-4a71-b587-fefdb4a9fbc5"
 
@@ -64,6 +67,50 @@ class ResearchClientTests(unittest.TestCase):
             Client("http://127.0.0.1:8080").submit_episode("episode-eval", "1.0.0", [Decimal("0.25"), Decimal("0.5")], JOB_ID)
         with self.assertRaises(TypeError):
             Client("http://127.0.0.1:8080").submit_episode("episode-eval", "1.0.0", [0.5, 1.0], JOB_ID)
+
+    def test_research_results_decode_to_job_specific_typed_reports(self):
+        episode = {
+            "contract_version": "1.0.0", "job_id": JOB_ID, "kind": "episode",
+            "report": {
+                "fixture_id": "episode-eval", "fixture_version": "1.0.0",
+                "transitions": [{
+                    "step": 0, "observation_start": {"nav": "100000"},
+                    "action": {"target_weight": "0.5"}, "admitted_quantity": "500",
+                    "fills": [{"quantity": "500", "price": "102", "fee": "1.02"}],
+                    "observation_end": {"nav": "99998.98"}, "reward_usd": "-1.02",
+                }],
+                "final_observation": {"nav": "99998.98"},
+                "canceled_pending_orders": [], "failure": None,
+            },
+        }
+        decoded = ResearchJobResult.from_wire(episode)
+        self.assertIsInstance(decoded.report, EpisodeReport)
+        self.assertEqual(decoded.report.transitions[0].reward_usd, Decimal("-1.02"))
+        self.assertEqual(decoded.report.transitions[0].target_weight, Decimal("0.5"))
+        episode["report"]["transitions"][0]["reward_usd"] = 2
+        with self.assertRaises(ProtocolError):
+            ResearchJobResult.from_wire(episode)
+
+        branch = {"final_nav": "100000", "pnl_usd": "0", "total_filled_value": "0", "selections": [], "fills": []}
+        reranking = {
+            "contract_version": "1.0.0", "job_id": JOB_ID, "kind": "reranking",
+            "report": {
+                "fixture_id": "reranking-eval", "fixture_version": "1.0.0",
+                "baseline": {"Ok": branch}, "reranker": {"Err": "controlled branch error"},
+                "paired_decisions": [], "outcome_vs_baseline": None, "pnl_delta_usd": None,
+            },
+        }
+        self.assertIsInstance(ResearchJobResult.from_wire(reranking).report, RerankingReport)
+
+        replay = {
+            "contract_version": "1.0.0", "job_id": JOB_ID, "kind": "replay",
+            "report": {
+                "source_job_id": JOB_ID, "source_kind": "episode", "source_outcome": "failed",
+                "matched": True, "first_mismatch": None,
+                "source_report": {"failure": "controlled"}, "replayed_report": {"failure": "controlled"},
+            },
+        }
+        self.assertIsInstance(ResearchJobResult.from_wire(replay).report, ResearchReplayReport)
 
 
 if __name__ == "__main__": unittest.main()

@@ -12,18 +12,18 @@ def main() -> None:
     ranking = client.submit_reranking("reranking-eval", "1.0.0")
     client.wait_research_job(ranking.job_id)
     ranking_result = client.get_research_result(ranking.job_id)
-    print("reranking report:", ranking_result.report)
+    print("reranking outcome vs baseline:", ranking_result.report.outcome_vs_baseline)
 
     episode = client.submit_episode(
         "episode-eval", "1.0.0", [Decimal("0.5"), Decimal("0.5")]
     )
     client.wait_research_job(episode.job_id)
     episode_result = client.get_research_result(episode.job_id)
-    print("episode rewards:", [row["reward_usd"] for row in episode_result.report["transitions"]])
+    print("episode rewards:", [row.reward_usd for row in episode_result.report.transitions])
 
     replay = client.submit_research_replay(episode.job_id)
     client.wait_research_job(replay.job_id)
-    print("replay report:", client.get_research_result(replay.job_id).report)
+    print("replay matched:", client.get_research_result(replay.job_id).report.matched)
 
 
 if __name__ == "__main__":
