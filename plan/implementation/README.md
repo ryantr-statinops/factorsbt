@@ -148,7 +148,7 @@ Phase E không yêu cầu Phase D hoàn thành. Stage 12 là CLI không tương 
 - Đầu ra command là JSON; lỗi dùng stderr JSON và exit codes riêng. Base URL chỉ cho phép HTTP loopback; submit POST không tự retry; wait timeout/Ctrl+C không hủy job.
 - Nghiệm thu pass: 68 Python tests; installed CLI smoke từ ngoài repository với `PYTHONPATH` rỗng; run có 32 artifact refs; replay sau dừng model fixture khớp. Hai smoke Phase B/C pass, gồm comparison và replay sau backend restart. Rust fmt/check/strict Clippy và 154 workspace tests pass.
 - Có thêm commit smoke-only tăng request timeout từ 3s lên 10s vì source evidence validation trên Windows vượt giới hạn cũ. Hướng dẫn, các lệnh và giới hạn được ghi ở [Phase E local verification](../../docs/development/phase-e-local.md). Repository chưa có CI.
-- Phase E có 10 commit theo kế hoạch và 2 commit follow-up: điều chỉnh timeout cho smoke Windows và giữ đúng ID/mã lỗi chi tiết trên CLI.
+- Phase E có 10 commit theo kế hoạch và 3 commit follow-up: điều chỉnh timeout smoke Windows, giữ ID/mã lỗi chi tiết trên CLI, và chỉnh nhãn Stage 12 sau closeout.
 - **Đóng Phase E:** Stage 12 Implemented; Phase E 1/1, tổng 13/13 stage, MVP 8/8. Phase D không phải dependency.
 
 ## Tài liệu gốc

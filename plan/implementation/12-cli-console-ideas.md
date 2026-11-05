@@ -2,7 +2,7 @@
 
 **Status:** Implemented — Phase E CLI đã qua cổng local
 
-**Phase:** E — Brainstorm ứng dụng, chưa chốt
+**Phase:** E — CLI local, không tương tác
 
 ## Phạm vi Phase E đã chốt
 
