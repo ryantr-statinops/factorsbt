@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 import json
 import os
+from pathlib import Path
 import sys
 from typing import Any
 from urllib.parse import urlsplit
@@ -85,6 +86,15 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="resource", required=True)
     health = commands.add_parser("health", help="check backend health and contract version")
     health.set_defaults(operation="health")
+    run = commands.add_parser("run", help="submit and inspect backtest runs")
+    run_commands = run.add_subparsers(dest="run_operation", required=True)
+    submit = run_commands.add_parser("submit", help="submit a Run Configuration JSON file")
+    submit.add_argument("config", type=Path)
+    submit.add_argument("--submission-id")
+    submit.set_defaults(operation="run_submit")
+    lookup = run_commands.add_parser("lookup", help="look up a submission by id")
+    lookup.add_argument("submission_id")
+    lookup.set_defaults(operation="run_lookup")
     return parser
 
 
@@ -97,6 +107,16 @@ def _dispatch(args: argparse.Namespace) -> object:
     client = _client(args)
     if args.operation == "health":
         return client.health()
+    if args.operation == "run_submit":
+        try:
+            config = json.loads(args.config.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read run configuration JSON: {exc}") from exc
+        if not isinstance(config, dict):
+            raise ValueError("run configuration JSON must contain an object")
+        return client.submit(config, submission_id=args.submission_id)
+    if args.operation == "run_lookup":
+        return client.get_submission(args.submission_id)
     raise RuntimeError("unsupported CLI operation")
 
 
