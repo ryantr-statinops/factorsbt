@@ -95,6 +95,16 @@ def _parser() -> argparse.ArgumentParser:
     lookup = run_commands.add_parser("lookup", help="look up a submission by id")
     lookup.add_argument("submission_id")
     lookup.set_defaults(operation="run_lookup")
+    status = run_commands.add_parser("status", help="read run lifecycle status")
+    status.add_argument("run_id")
+    status.set_defaults(operation="run_status")
+    wait = run_commands.add_parser("wait", help="wait for a run to finish")
+    wait.add_argument("run_id")
+    wait.add_argument("--timeout", type=_positive_finite, default=60.0)
+    wait.set_defaults(operation="run_wait")
+    result = run_commands.add_parser("result", help="read a successful run result")
+    result.add_argument("run_id")
+    result.set_defaults(operation="run_result")
     return parser
 
 
@@ -117,6 +127,12 @@ def _dispatch(args: argparse.Namespace) -> object:
         return client.submit(config, submission_id=args.submission_id)
     if args.operation == "run_lookup":
         return client.get_submission(args.submission_id)
+    if args.operation == "run_status":
+        return client.get_run(args.run_id)
+    if args.operation == "run_wait":
+        return client.wait(args.run_id, timeout=args.timeout, poll_interval=0.25)
+    if args.operation == "run_result":
+        return client.get_results(args.run_id)
     raise RuntimeError("unsupported CLI operation")
 
 
