@@ -30,7 +30,7 @@ pub struct ResearchFixture {
     pub kind: ResearchFixtureKind,
     pub instruments: Vec<String>,
     pub initial_cash: Decimal,
-    pub fee_per_fill: Decimal,
+    pub fee_bps: Decimal,
     pub points: Vec<PricePoint>,
 }
 
@@ -161,7 +161,7 @@ fn reranking(evaluation: bool) -> ResearchFixture {
         kind: ResearchFixtureKind::Reranking,
         instruments: vec!["SPOT_A".into(), "SPOT_B".into()],
         initial_cash: decimal("100000"),
-        fee_per_fill: Decimal::ZERO,
+        fee_bps: Decimal::ZERO,
         points,
     }
 }
@@ -175,7 +175,7 @@ fn episode(evaluation: bool) -> ResearchFixture {
                 ("2026-03-03T16:00:00Z", "102", "102"),
                 ("2026-03-04T16:00:00Z", "105", "105"),
             ],
-            "1.00",
+            "0.2",
         )
     } else {
         (
@@ -194,7 +194,7 @@ fn episode(evaluation: bool) -> ResearchFixture {
         kind: ResearchFixtureKind::Episode,
         instruments: vec!["SPOT_A".into()],
         initial_cash: decimal("100000"),
-        fee_per_fill: decimal(fee),
+        fee_bps: decimal(fee),
         points: Vec::new(),
     };
     fixture.points = points

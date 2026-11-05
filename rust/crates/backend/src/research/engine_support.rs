@@ -9,7 +9,6 @@ use factorsbt_contracts::{
     DecimalString, Identifier, InstrumentId, UtcTimestamp,
 };
 use factorsbt_data::{ExecutionPrice, Fixture, FixtureDataset, FixtureManifest, InitialMark};
-use rust_decimal::Decimal;
 use std::sync::Arc;
 
 pub(crate) struct EngineInputs {
@@ -17,10 +16,7 @@ pub(crate) struct EngineInputs {
     pub(crate) fixture: Fixture,
 }
 
-pub(crate) fn build_inputs(
-    research: &ResearchFixture,
-    fee_bps: Decimal,
-) -> Result<EngineInputs, String> {
+pub(crate) fn build_inputs(research: &ResearchFixture) -> Result<EngineInputs, String> {
     let first = research
         .points
         .first()
@@ -43,7 +39,7 @@ pub(crate) fn build_inputs(
                 price_tick: DecimalString::new("0.01").map_err(|e| e.to_string())?,
                 quantity_step: DecimalString::new("1").map_err(|e| e.to_string())?,
                 contract_multiplier: DecimalString::new("1").map_err(|e| e.to_string())?,
-                fee_bps: DecimalString::new(fee_bps.normalize().to_string())
+                fee_bps: DecimalString::new(research.fee_bps.normalize().to_string())
                     .map_err(|e| e.to_string())?,
                 fee_per_unit: DecimalString::new("0").map_err(|e| e.to_string())?,
                 slippage_bps: DecimalString::new("0").map_err(|e| e.to_string())?,

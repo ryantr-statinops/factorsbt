@@ -141,16 +141,7 @@ where
     F: FnMut(&EpisodeTransition),
 {
     validate_episode(fixture, actions)?;
-    let fee_bps = if fixture.fee_per_fill.is_zero() {
-        Decimal::ZERO
-    } else {
-        fixture
-            .fee_per_fill
-            .checked_mul(Decimal::from(10_000))
-            .and_then(|fee| fee.checked_div(fixture.initial_cash / Decimal::from(2)))
-            .ok_or(EpisodeError::Arithmetic)?
-    };
-    let inputs = build_inputs(fixture, fee_bps).map_err(|_| EpisodeError::InvalidFixture)?;
+    let inputs = build_inputs(fixture).map_err(|_| EpisodeError::InvalidFixture)?;
     let instruments = inputs.configuration.instruments.clone();
     let mut portfolio = PortfolioState::initialize(&inputs.configuration, &inputs.fixture)
         .map_err(|_| EpisodeError::InvalidFixture)?;
