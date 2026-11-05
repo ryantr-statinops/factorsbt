@@ -130,6 +130,51 @@ class ContractExampleTests(unittest.TestCase):
         invalid = {**request, "unexpected": True}
         self.assertTrue(list(validator.iter_errors(invalid)))
 
+    def test_research_job_schemas_validate_all_job_kinds_and_terminal_results(self):
+        openapi = load_document(ROOT / "contracts" / "openapi.json")
+        paths = openapi["paths"]
+        self.assertIn("post", paths["/v1/research/jobs"])
+        self.assertIn("/v1/research/jobs/{job_id}", paths)
+        self.assertIn("/v1/research/jobs/{job_id}/result", paths)
+
+        request_validator = Draft202012Validator(
+            self.schemas["research-job-request.schema.json"],
+            registry=self.registry,
+            format_checker=FormatChecker(),
+        )
+        requests = [
+            {"contract_version": "1.0.0", "kind": "reranking", "fixture_id": "reranking-eval", "fixture_version": "1.0.0"},
+            {"contract_version": "1.0.0", "kind": "episode", "fixture_id": "episode-eval", "fixture_version": "1.0.0", "actions": ["0.5", "1"]},
+            {"contract_version": "1.0.0", "kind": "replay", "source_job_id": "a4ab8716-3d8c-42d7-857c-83e94df28ff6"},
+        ]
+        for request in requests:
+            with self.subTest(request=request):
+                self.assertEqual(list(request_validator.iter_errors(request)), [])
+        self.assertTrue(list(request_validator.iter_errors({**requests[1], "actions": ["0.25", "1"]})))
+        self.assertTrue(list(request_validator.iter_errors({**requests[2], "fixture_id": "episode-eval"})))
+
+        status_validator = Draft202012Validator(
+            self.schemas["research-job-status.schema.json"],
+            registry=self.registry,
+            format_checker=FormatChecker(),
+        )
+        status = {
+            "contract_version": "1.0.0", "job_id": requests[2]["source_job_id"], "kind": "episode",
+            "status": "failed", "submitted_at": "2026-11-05T10:00:00Z",
+            "started_at": "2026-11-05T10:00:01Z", "finished_at": "2026-11-05T10:00:02Z",
+            "failure": {"code": "RESEARCH_EXECUTION_FAILED", "message": "controlled failure"},
+        }
+        self.assertEqual(list(status_validator.iter_errors(status)), [])
+        self.assertTrue(list(status_validator.iter_errors({**status, "failure": None})))
+        result_validator = Draft202012Validator(
+            self.schemas["research-job-result.schema.json"],
+            registry=self.registry,
+            format_checker=FormatChecker(),
+        )
+        result = {"contract_version": "1.0.0", "job_id": status["job_id"], "kind": "episode", "report": {"failure": "controlled failure"}}
+        self.assertEqual(list(result_validator.iter_errors(result)), [])
+        self.assertTrue(list(result_validator.iter_errors({**result, "report": []})))
+
     def test_internal_fixture_v1_1_schemas_accept_controlled_shape_and_reject_traversal(self):
         manifest = {
             "format_version": "1.1.0",

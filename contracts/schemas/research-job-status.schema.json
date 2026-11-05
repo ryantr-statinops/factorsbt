@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "research-job-status.schema.json",
   "type": "object",
-  "required": ["contract_version", "job_id", "kind", "status", "submitted_at"],
+  "required": ["contract_version", "job_id", "kind", "status", "submitted_at", "started_at", "finished_at", "failure"],
   "properties": {
     "contract_version": { "const": "1.0.0" },
     "job_id": { "type": "string", "format": "uuid" },
@@ -11,7 +11,27 @@
     "submitted_at": { "type": "string", "format": "date-time" },
     "started_at": { "type": ["string", "null"], "format": "date-time" },
     "finished_at": { "type": ["string", "null"], "format": "date-time" },
-    "failure": { "type": ["object", "null"] }
+    "failure": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string", "minLength": 1 },
+            "message": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "failed" } } },
+      "then": { "properties": { "failure": { "type": "object" } } },
+      "else": { "properties": { "failure": { "type": "null" } } }
+    }
+  ],
   "additionalProperties": false
 }
