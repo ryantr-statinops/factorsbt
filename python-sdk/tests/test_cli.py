@@ -16,6 +16,7 @@ from unittest.mock import patch
 from factorsbt import cli
 from factorsbt.client import HealthResponse
 from factorsbt.errors import (
+    HttpStatusError,
     ReplayAcknowledgementUnknown,
     ReplayFailedError,
     RunFailedError,
@@ -125,7 +126,36 @@ class CliTests(unittest.TestCase):
             client_type.return_value.wait.side_effect = WaitTimeout(run_id, None)
             code, stdout, stderr = invoke(["run", "wait", run_id])
         self.assertEqual((code, stdout), (4, ""))
-        self.assertEqual(json.loads(stderr)["job_id"], run_id)
+        self.assertEqual(json.loads(stderr)["run_id"], run_id)
+
+    def test_replay_wait_timeout_names_replay_id(self):
+        replay_id = "00000000-0000-4000-8000-000000000007"
+        with patch.object(cli, "Client") as client_type:
+            client_type.return_value.wait_replay.side_effect = WaitTimeout(replay_id, None)
+            code, stdout, stderr = invoke(["replay", "wait", replay_id])
+        self.assertEqual((code, stdout), (4, ""))
+        self.assertEqual(json.loads(stderr)["replay_id"], replay_id)
+
+    def test_http_failure_keeps_backend_code_and_request_id(self):
+        with patch.object(cli, "Client") as client_type:
+            client_type.return_value.health.side_effect = HttpStatusError(
+                503, code="BACKEND_UNAVAILABLE", message="busy", request_id="request-1"
+            )
+            code, stdout, stderr = invoke(["health"])
+        self.assertEqual((code, stdout), (1, ""))
+        self.assertEqual(json.loads(stderr), {
+            "code": "BACKEND_UNAVAILABLE", "message": "busy", "status": 503, "request_id": "request-1"
+        })
+
+    def test_keyboard_interrupt_returns_130_and_run_identity(self):
+        run_id = "00000000-0000-4000-8000-000000000008"
+        with patch.object(cli, "Client") as client_type:
+            client_type.return_value.get_run.side_effect = KeyboardInterrupt
+            code, stdout, stderr = invoke(["run", "status", run_id])
+        self.assertEqual((code, stdout), (130, ""))
+        error = json.loads(stderr)
+        self.assertEqual(error["code"], "INTERRUPTED")
+        self.assertEqual(error["run_id"], run_id)
 
     def test_replay_failure_wait_has_exit_three_and_readable_mismatch_is_success(self):
         replay_id = "00000000-0000-4000-8000-000000000005"

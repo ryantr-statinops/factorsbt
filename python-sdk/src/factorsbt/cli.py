@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 from .client import Client, HealthResponse
 from .errors import (
     FactorsBTError,
+    HttpStatusError,
     ReplayAcknowledgementUnknown,
     ReplayFailedError,
     RunFailedError,
@@ -187,7 +188,18 @@ def main(argv: list[str] | None = None) -> int:
         _emit({"code": "INVALID_ARGUMENT", "message": str(exc)}, sys.stderr)
         return 2
     except KeyboardInterrupt:
-        _emit({"code": "INTERRUPTED", "message": "command interrupted; backend work was not cancelled"}, sys.stderr)
+        error = {"code": "INTERRUPTED", "message": "command interrupted; backend work was not cancelled"}
+        if "args" in locals():
+            if getattr(args, "operation", "").startswith("run_"):
+                for name in ("run_id", "submission_id"):
+                    value = getattr(args, name, None)
+                    if value is not None:
+                        error[name] = value
+            elif getattr(args, "operation", "").startswith("replay_"):
+                value = getattr(args, "replay_id", None)
+                if value is not None:
+                    error["replay_id"] = value
+        _emit(error, sys.stderr)
         return 130
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
@@ -210,11 +222,21 @@ def main(argv: list[str] | None = None) -> int:
         _emit({"code": "JOB_FAILED", "message": str(exc), key_name: getattr(exc, key_name)}, sys.stderr)
         return 3
     except WaitTimeout as exc:
-        _emit({"code": "WAIT_TIMEOUT", "message": str(exc), "job_id": exc.run_id}, sys.stderr)
+        if "args" in locals() and getattr(args, "operation", "") == "replay_wait":
+            key = {"replay_id": exc.run_id}
+        else:
+            key = {"run_id": exc.run_id}
+        _emit({"code": "WAIT_TIMEOUT", "message": str(exc), **key}, sys.stderr)
         return 4
     except (argparse.ArgumentTypeError, ValueError, TypeError) as exc:
         _emit({"code": "INVALID_ARGUMENT", "message": str(exc)}, sys.stderr)
         return 2
+    except HttpStatusError as exc:
+        error = {"code": exc.code or "HTTP_ERROR", "message": exc.message or str(exc), "status": exc.status}
+        if exc.request_id is not None:
+            error["request_id"] = exc.request_id
+        _emit(error, sys.stderr)
+        return 1
     except FactorsBTError as exc:
         _emit({"code": "FACTORSBT_ERROR", "message": str(exc)}, sys.stderr)
         return 1
