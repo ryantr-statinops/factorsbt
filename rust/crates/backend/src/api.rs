@@ -7,8 +7,8 @@ use crate::{
     replay_source::ReplaySource,
     replay_types::{ReplayAcknowledgement, ReplayReport, ReplayRequest, ReplayStatus},
     research::jobs::{
-        validate_request, ResearchJobAcknowledgement, ResearchJobRequest,
-        ResearchJobResult, ResearchJobStatus,
+        validate_request, ResearchJobAcknowledgement, ResearchJobRequest, ResearchJobResult,
+        ResearchJobStatus,
     },
     results::verify_result_evidence,
     run_store::{RunResultLookupError, RunStore, SubmissionStoreError},
@@ -62,7 +62,10 @@ pub fn run_routes(state: ApiState) -> Router {
         .route("/v1/replays/{replay_id}/report", get(get_replay_report))
         .route("/v1/research/jobs", post(submit_research_job))
         .route("/v1/research/jobs/{job_id}", get(get_research_job))
-        .route("/v1/research/jobs/{job_id}/result", get(get_research_result))
+        .route(
+            "/v1/research/jobs/{job_id}/result",
+            get(get_research_result),
+        )
         .route("/v1/submissions/{submission_id}", get(get_submission))
         .route("/v1/runs/{run_id}", get(get_run))
         .route("/v1/runs/{run_id}/results", get(get_results))
@@ -80,49 +83,126 @@ async fn submit_research_job(
     headers: HeaderMap,
     ApiJson(value): ApiJson<Value>,
 ) -> Result<(StatusCode, Json<ResearchJobAcknowledgement>), ApiResponseError> {
-    let job_id = headers.get(IDEMPOTENCY_KEY)
+    let job_id = headers
+        .get(IDEMPOTENCY_KEY)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| Uuid::new(value).ok())
-        .ok_or_else(|| ApiResponseError::bad_request(&context, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key must contain a lowercase UUID."))?;
-    let request: ResearchJobRequest = serde_json::from_value(value).map_err(|_| ApiResponseError::new(
-        &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_REQUEST_INVALID", "Research job request is invalid.", None,
-    ))?;
+        .ok_or_else(|| {
+            ApiResponseError::bad_request(
+                &context,
+                "INVALID_IDEMPOTENCY_KEY",
+                "Idempotency-Key must contain a lowercase UUID.",
+            )
+        })?;
+    let request: ResearchJobRequest = serde_json::from_value(value).map_err(|_| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "RESEARCH_REQUEST_INVALID",
+            "Research job request is invalid.",
+            None,
+        )
+    })?;
     if state.store.get_research_job(&job_id).is_some() {
-        let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| ApiResponseError::new(
-            &context, StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Could not record research job submission time.", None,
-        ))?;
-        let outcome = state.store.accept_research_job(job_id, request, submitted_at)
+        let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| {
+            ApiResponseError::new(
+                &context,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "Could not record research job submission time.",
+                None,
+            )
+        })?;
+        let outcome = state
+            .store
+            .accept_research_job(job_id, request, submitted_at)
             .map_err(|error| submission_store_error(&context, error))?;
         return Ok((StatusCode::ACCEPTED, Json(outcome.acknowledgement)));
     }
-    validate_request(&request).map_err(|error| ApiResponseError::new(
-        &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_REQUEST_INVALID", error.to_string(), None,
-    ))?;
+    validate_request(&request).map_err(|error| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "RESEARCH_REQUEST_INVALID",
+            error.to_string(),
+            None,
+        )
+    })?;
     match request.kind {
-        crate::research::jobs::ResearchJobKind::Reranking | crate::research::jobs::ResearchJobKind::Episode => {
+        crate::research::jobs::ResearchJobKind::Reranking
+        | crate::research::jobs::ResearchJobKind::Episode => {
             let fixture = crate::research::fixtures::resolve_fixture(
                 request.fixture_id.as_deref().unwrap_or_default(),
                 request.fixture_version.as_deref().unwrap_or_default(),
-            ).map_err(|_| ApiResponseError::new(&context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_FIXTURE_INVALID", "Research fixture is unavailable or incompatible.", None))?;
-            if (request.kind == crate::research::jobs::ResearchJobKind::Reranking && fixture.kind != crate::research::fixtures::ResearchFixtureKind::Reranking)
-                || (request.kind == crate::research::jobs::ResearchJobKind::Episode && fixture.kind != crate::research::fixtures::ResearchFixtureKind::Episode) {
-                return Err(ApiResponseError::new(&context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_FIXTURE_INVALID", "Research fixture kind does not match the request.", None));
+            )
+            .map_err(|_| {
+                ApiResponseError::new(
+                    &context,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "RESEARCH_FIXTURE_INVALID",
+                    "Research fixture is unavailable or incompatible.",
+                    None,
+                )
+            })?;
+            if (request.kind == crate::research::jobs::ResearchJobKind::Reranking
+                && fixture.kind != crate::research::fixtures::ResearchFixtureKind::Reranking)
+                || (request.kind == crate::research::jobs::ResearchJobKind::Episode
+                    && fixture.kind != crate::research::fixtures::ResearchFixtureKind::Episode)
+            {
+                return Err(ApiResponseError::new(
+                    &context,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "RESEARCH_FIXTURE_INVALID",
+                    "Research fixture kind does not match the request.",
+                    None,
+                ));
             }
         }
         crate::research::jobs::ResearchJobKind::Replay => {
-            let source_id = request.source_job_id.as_ref().expect("validated replay source");
-            let source = state.store.get_research_job(source_id).filter(|job| job.status.status == "succeeded" && job.status.kind != crate::research::jobs::ResearchJobKind::Replay)
-                .ok_or_else(|| ApiResponseError::new(&context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_SOURCE_INELIGIBLE", "Research replay source is not a completed original job.", None))?;
+            let source_id = request
+                .source_job_id
+                .as_ref()
+                .expect("validated replay source");
+            let source = state
+                .store
+                .get_research_job(source_id)
+                .filter(|job| {
+                    job.status.status == "succeeded"
+                        && job.status.kind != crate::research::jobs::ResearchJobKind::Replay
+                })
+                .ok_or_else(|| {
+                    ApiResponseError::new(
+                        &context,
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "RESEARCH_SOURCE_INELIGIBLE",
+                        "Research replay source is not a completed original job.",
+                        None,
+                    )
+                })?;
             drop(source);
-            crate::research::evidence::load_job(&state.evidence_root, source_id).map_err(|_| ApiResponseError::new(
-                &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_SOURCE_INCOMPATIBLE", "Research replay source evidence is missing, altered, or incompatible.", None,
-            ))?;
+            crate::research::evidence::load_job(&state.evidence_root, source_id).map_err(|_| {
+                ApiResponseError::new(
+                    &context,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "RESEARCH_SOURCE_INCOMPATIBLE",
+                    "Research replay source evidence is missing, altered, or incompatible.",
+                    None,
+                )
+            })?;
         }
     }
-    let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| ApiResponseError::new(
-        &context, StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Could not record research job submission time.", None,
-    ))?;
-    let outcome = state.store.accept_research_job(job_id, request, submitted_at)
+    let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            "Could not record research job submission time.",
+            None,
+        )
+    })?;
+    let outcome = state
+        .store
+        .accept_research_job(job_id, request, submitted_at)
         .map_err(|error| submission_store_error(&context, error))?;
     Ok((StatusCode::ACCEPTED, Json(outcome.acknowledgement)))
 }
@@ -132,9 +212,19 @@ async fn get_research_job(
     Extension(context): Extension<RequestContext>,
     ApiPath(job_id): ApiPath<Uuid>,
 ) -> Result<Json<ResearchJobStatus>, ApiResponseError> {
-    state.store.get_research_job(&job_id).map(|item| Json(item.status)).ok_or_else(|| ApiResponseError::new(
-        &context, StatusCode::NOT_FOUND, "RESEARCH_JOB_NOT_FOUND", "No research job has this ID.", None,
-    ))
+    state
+        .store
+        .get_research_job(&job_id)
+        .map(|item| Json(item.status))
+        .ok_or_else(|| {
+            ApiResponseError::new(
+                &context,
+                StatusCode::NOT_FOUND,
+                "RESEARCH_JOB_NOT_FOUND",
+                "No research job has this ID.",
+                None,
+            )
+        })
 }
 
 async fn get_research_result(
@@ -142,12 +232,24 @@ async fn get_research_result(
     Extension(context): Extension<RequestContext>,
     ApiPath(job_id): ApiPath<Uuid>,
 ) -> Result<Json<ResearchJobResult>, ApiResponseError> {
-    let item = state.store.get_research_job(&job_id).ok_or_else(|| ApiResponseError::new(
-        &context, StatusCode::NOT_FOUND, "RESEARCH_JOB_NOT_FOUND", "No research job has this ID.", None,
-    ))?;
-    item.result.map(Json).ok_or_else(|| ApiResponseError::new(
-        &context, StatusCode::CONFLICT, "RESEARCH_RESULT_UNAVAILABLE", "Research result is available after successful execution.", None,
-    ))
+    let item = state.store.get_research_job(&job_id).ok_or_else(|| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::NOT_FOUND,
+            "RESEARCH_JOB_NOT_FOUND",
+            "No research job has this ID.",
+            None,
+        )
+    })?;
+    item.result.map(Json).ok_or_else(|| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::CONFLICT,
+            "RESEARCH_RESULT_UNAVAILABLE",
+            "Research result is available after successful execution.",
+            None,
+        )
+    })
 }
 
 async fn submit_replay(
@@ -557,11 +659,16 @@ fn schema_error_path(issue: &str) -> String {
 mod tests {
     use super::*;
     use crate::{
-        api_errors::request_id_middleware, backend_config::QueueLimits,
-        model_fixture::HttpModelFixture, runtime::BackendRuntime,
+        api_errors::request_id_middleware,
+        backend_config::{BackendConfig, QueueLimits},
+        model_fixture::HttpModelFixture,
+        runtime::BackendRuntime,
     };
     use axum::{
-        body::Body, extract::State as AxumState, http::Request, middleware,
+        body::{to_bytes, Body},
+        extract::State as AxumState,
+        http::Request,
+        middleware,
         routing::post as axum_post,
     };
     use factorsbt_contracts::{model::ModelRequest, outcomes::RunLifecycle, UtcTimestamp};
@@ -1145,6 +1252,109 @@ mod tests {
         runtime.shutdown().await;
         api_server.abort();
         model_server.abort();
+        std::fs::remove_dir_all(evidence_root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn research_api_seals_and_replays_job_without_mutating_source() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let evidence_root = std::env::temp_dir().join(format!(
+            "factorsbt-research-api-{}-{nonce}",
+            std::process::id()
+        ));
+        let mut config = BackendConfig::default();
+        config.evidence_directory = evidence_root.clone();
+        config.queue_limits = QueueLimits::new(1, 2).unwrap();
+        let runtime = BackendRuntime::start(&config).unwrap();
+        let router = run_routes(ApiState::new(
+            runtime.store(),
+            runtime.fixtures(),
+            &evidence_root,
+        ))
+        .layer(middleware::from_fn(request_id_middleware));
+        let source_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let episode = json!({"contract_version":"1.0.0","kind":"episode","fixture_id":"episode-eval","fixture_version":"1.0.0","actions":["0.5","0.5"]});
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/research/jobs")
+                    .header("content-type", "application/json")
+                    .header(IDEMPOTENCY_KEY, source_id)
+                    .body(Body::from(serde_json::to_vec(&episode).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        for _ in 0..100 {
+            if runtime
+                .store()
+                .get_research_job(&Uuid::new(source_id).unwrap())
+                .is_some_and(|job| job.status.status == "succeeded")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let source = runtime
+            .store()
+            .get_research_job(&Uuid::new(source_id).unwrap())
+            .unwrap();
+        assert_eq!(source.status.status, "succeeded");
+        let manifest_path = evidence_root
+            .join("research_jobs")
+            .join(source_id)
+            .join("manifest.json");
+        let source_manifest = std::fs::read(&manifest_path).unwrap();
+        let replay_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        let replay = json!({"contract_version":"1.0.0","kind":"replay","source_job_id":source_id});
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/research/jobs")
+                    .header("content-type", "application/json")
+                    .header(IDEMPOTENCY_KEY, replay_id)
+                    .body(Body::from(serde_json::to_vec(&replay).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        for _ in 0..100 {
+            if runtime
+                .store()
+                .get_research_job(&Uuid::new(replay_id).unwrap())
+                .is_some_and(|job| matches!(job.status.status.as_str(), "succeeded" | "failed"))
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/research/jobs/{replay_id}/result"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4 * 1024 * 1024)
+            .await
+            .unwrap();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["report"]["matched"], true);
+        assert_eq!(std::fs::read(manifest_path).unwrap(), source_manifest);
+        runtime.shutdown().await;
         std::fs::remove_dir_all(evidence_root).unwrap();
     }
 }
