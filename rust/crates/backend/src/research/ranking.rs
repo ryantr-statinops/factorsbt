@@ -24,6 +24,18 @@ pub struct CandidateScore {
     pub adjusted_score: Decimal,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RankingSelection {
+    pub candidate: Candidate,
+    pub score: CandidateScore,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairedRanking {
+    pub baseline: RankingSelection,
+    pub reranked: RankingSelection,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RankingError {
     Empty,
@@ -112,4 +124,19 @@ pub fn select_reranked(
     }).collect::<Result<Vec<_>, RankingError>>()?;
     scored.sort_by(cmp_score);
     Ok(scored.remove(0))
+}
+
+/// Score the same point-in-time candidate set under both fixed protocols.
+pub fn rank_both(
+    candidates: &[Candidate], simulation_time: &str, nav: Decimal,
+    current_a_value: Decimal, current_b_value: Decimal,
+) -> Result<PairedRanking, RankingError> {
+    let (baseline, baseline_score) = select_baseline(candidates, simulation_time)?;
+    let (reranked, reranked_score) = select_reranked(
+        candidates, simulation_time, nav, current_a_value, current_b_value,
+    )?;
+    Ok(PairedRanking {
+        baseline: RankingSelection { candidate: baseline, score: baseline_score },
+        reranked: RankingSelection { candidate: reranked, score: reranked_score },
+    })
 }
