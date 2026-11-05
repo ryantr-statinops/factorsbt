@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import math
@@ -263,9 +264,25 @@ class Client:
 
     def submit_episode(self, fixture_id: str, fixture_version: str, actions, job_id: str | None = None) -> ResearchJobAcknowledgement:
         values = list(actions)
-        if len(values) != 2 or any(str(value) not in {"0", "0.0", "0.00", "0.5", "0.50", "1", "1.0", "1.00"} for value in values):
+        if len(values) != 2:
             raise ValueError("episode actions must contain exactly two values from 0, 0.5, and 1")
-        return self._submit_research({"kind": "episode", "fixture_id": fixture_id, "fixture_version": fixture_version, "actions": [str(value) for value in values]}, job_id)
+        actions_wire = []
+        for value in values:
+            if not isinstance(value, (Decimal, str)):
+                raise TypeError("episode actions must be Decimal values or decimal strings")
+            try:
+                parsed = Decimal(value)
+            except InvalidOperation as exc:
+                raise ValueError("episode action is not a decimal") from exc
+            if parsed == Decimal("0"):
+                actions_wire.append("0")
+            elif parsed == Decimal("0.5"):
+                actions_wire.append("0.5")
+            elif parsed == Decimal("1"):
+                actions_wire.append("1")
+            else:
+                raise ValueError("episode actions must be 0, 0.5, or 1")
+        return self._submit_research({"kind": "episode", "fixture_id": fixture_id, "fixture_version": fixture_version, "actions": actions_wire}, job_id)
 
     def submit_research_replay(self, source_job_id: str, job_id: str | None = None) -> ResearchJobAcknowledgement:
         return self._submit_research({"kind": "replay", "source_job_id": validate_uuid(source_job_id)}, job_id)

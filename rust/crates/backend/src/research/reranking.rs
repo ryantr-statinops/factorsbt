@@ -123,10 +123,7 @@ fn branch(
         } else {
             state.selections.push(ranking.baseline.clone());
         }
-        if !paired.iter().any(|item| {
-            item.baseline.candidate.candidate_id == ranking.baseline.candidate.candidate_id
-                && item.reranked.candidate.candidate_id == ranking.reranked.candidate.candidate_id
-        }) {
+        if !rerank {
             paired.push(ranking.clone());
         }
         let chosen = if rerank {
@@ -224,7 +221,7 @@ fn trade(
     state.filled = state.filled.checked_add(gross).ok_or_else(arithmetic)?;
     state.fills.push(CandidateFillTrace {
         decision_at: context.decision.close_at.clone(),
-        execution_at: context.execution.close_at.clone(),
+        execution_at: open_timestamp(&context.execution.close_at),
         candidate_id: context.candidate.candidate_id.clone(),
         instrument_id: instrument.into(),
         quantity: delta,
@@ -233,6 +230,13 @@ fn trade(
         fee,
     });
     Ok(())
+}
+
+fn open_timestamp(close_at: &str) -> String {
+    close_at
+        .split_once('T')
+        .map(|(date, _)| format!("{date}T09:00:00Z"))
+        .unwrap_or_else(|| close_at.to_owned())
 }
 
 pub fn compare_reranking(fixture: &ResearchFixture) -> RerankingReport {

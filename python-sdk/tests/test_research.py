@@ -61,7 +61,9 @@ class ResearchClientTests(unittest.TestCase):
 
     def test_episode_actions_rejected_before_transport(self):
         with self.assertRaises(ValueError):
-            Client("http://127.0.0.1:8080").submit_episode("episode-eval", "1.0.0", [0.25, 0.5], JOB_ID)
+            Client("http://127.0.0.1:8080").submit_episode("episode-eval", "1.0.0", [Decimal("0.25"), Decimal("0.5")], JOB_ID)
+        with self.assertRaises(TypeError):
+            Client("http://127.0.0.1:8080").submit_episode("episode-eval", "1.0.0", [0.5, 1.0], JOB_ID)
 
 
 if __name__ == "__main__": unittest.main()

@@ -160,12 +160,25 @@ where
         let start = &fixture.points[step];
         let end = &fixture.points[step + 1];
         let observation_start = observation(&start.close_at, start.close_a, &state)?;
-        let admitted_quantity = observation_start
+        let requested_quantity = observation_start
             .nav
             .checked_mul(action.target_weight)
             .and_then(|value| value.checked_div(end.open_a))
             .ok_or(EpisodeError::Arithmetic)?
             .trunc();
+        let mut admitted_quantity = requested_quantity;
+        if requested_quantity > state.quantity {
+            let affordable_cash = state
+                .cash
+                .checked_sub(fixture.fee_per_fill)
+                .unwrap_or(Decimal::ZERO)
+                .max(Decimal::ZERO);
+            let affordable_quantity = affordable_cash
+                .checked_div(end.open_a)
+                .ok_or(EpisodeError::Arithmetic)?
+                .trunc();
+            admitted_quantity = admitted_quantity.min(affordable_quantity);
+        }
         let delta = admitted_quantity
             .checked_sub(state.quantity)
             .ok_or(EpisodeError::Arithmetic)?;

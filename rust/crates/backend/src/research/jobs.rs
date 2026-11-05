@@ -123,12 +123,16 @@ pub fn validate_request(request: &ResearchJobRequest) -> Result<(), ResearchJobE
                 ));
             }
             if request.actions.as_ref().is_some_and(|actions| {
-                actions.iter().any(|action| {
-                    !matches!(
-                        action.as_str(),
-                        "0" | "0.0" | "0.00" | "0.5" | "0.50" | "1" | "1.0" | "1.00"
-                    )
-                })
+                actions
+                    .iter()
+                    .any(|action| match Decimal::from_str(action) {
+                        Ok(value) => {
+                            value != Decimal::ZERO
+                                && value != Decimal::new(5, 1)
+                                && value != Decimal::ONE
+                        }
+                        Err(_) => true,
+                    })
             }) {
                 return Err(ResearchJobError::InvalidRequest(
                     "episode actions must be 0, 0.5, or 1",

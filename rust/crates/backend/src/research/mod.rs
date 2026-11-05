@@ -132,6 +132,16 @@ mod tests {
             ]
         )
         .is_err());
+        let full_weight_actions = [
+            EpisodeAction {
+                target_weight: Decimal::ONE,
+            },
+            EpisodeAction {
+                target_weight: Decimal::ONE,
+            },
+        ];
+        let fully_invested = run_episode(&fixture, &full_weight_actions).unwrap();
+        assert!(fully_invested.final_observation.cash >= Decimal::ZERO);
         let mut observed = Vec::new();
         run_episode_with_progress(&fixture, &actions, |transition| {
             observed.push(transition.step)
