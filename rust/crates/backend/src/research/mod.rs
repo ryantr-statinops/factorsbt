@@ -1,5 +1,6 @@
 //! Bounded research protocols layered on the existing simulation engine.
 
+mod engine_support;
 pub mod episode;
 pub mod evidence;
 pub mod fixtures;
@@ -115,9 +116,9 @@ mod tests {
         let first = run_episode(&fixture, &actions).unwrap();
         let second = run_episode(&fixture, &actions).unwrap();
         assert_eq!(first, second);
-        assert_eq!(first.transitions[0].reward_usd, Decimal::from(-1));
-        assert_eq!(first.transitions[1].reward_usd, Decimal::from(1469));
-        assert_eq!(first.transitions[0].fills[0].fee, Decimal::ONE);
+        assert_eq!(first.transitions[0].reward_usd, Decimal::new(-102, 2));
+        assert_eq!(first.transitions[1].reward_usd, Decimal::new(149998, 2));
+        assert_eq!(first.transitions[0].fills[0].fee, Decimal::new(102, 2));
         assert_eq!(first.transitions.len(), 2);
         assert!(run_episode(&fixture, &[]).is_err());
         assert!(run_episode(

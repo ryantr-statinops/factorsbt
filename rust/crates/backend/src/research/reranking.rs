@@ -1,8 +1,15 @@
 //! Two isolated spot portfolios evaluated against identical fixture inputs.
 
 use super::{
-    fixtures::{PricePoint, ResearchFixture},
-    ranking::{candidates_from_point, rank_both, Candidate, PairedRanking, RankingSelection},
+    engine_support::{build_inputs, open_timestamp},
+    fixtures::ResearchFixture,
+    ranking::{candidates_from_point, rank_both, PairedRanking, RankingSelection},
+};
+use factorsbt_contracts::{Identifier, UtcTimestamp};
+use factorsbt_data::{execution_prices_available_at, observations_available_at};
+use factorsbt_engine::{
+    admit_target_group, execute_pending_group, queue_target_group, value_instruments,
+    ExecutionFill, InstrumentTarget, PortfolioState,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -48,36 +55,6 @@ impl fmt::Display for RerankingError {
 }
 impl Error for RerankingError {}
 
-#[derive(Clone)]
-struct State {
-    cash: Decimal,
-    quantity_a: Decimal,
-    quantity_b: Decimal,
-    filled: Decimal,
-    selections: Vec<RankingSelection>,
-    fills: Vec<CandidateFillTrace>,
-}
-
-struct TradeContext<'a> {
-    decision: &'a PricePoint,
-    execution: &'a PricePoint,
-    candidate: &'a Candidate,
-    fixture: &'a ResearchFixture,
-}
-
-impl State {
-    fn nav(&self, point: &PricePoint) -> Result<Decimal, RerankingError> {
-        self.cash
-            .checked_add(
-                self.quantity_a
-                    .checked_mul(point.close_a)
-                    .ok_or_else(arithmetic)?,
-            )
-            .and_then(|value| value.checked_add(self.quantity_b.checked_mul(point.close_b)?))
-            .ok_or_else(arithmetic)
-    }
-}
-
 fn arithmetic() -> RerankingError {
     RerankingError("research decimal arithmetic overflow".into())
 }
@@ -95,81 +72,135 @@ fn branch(
     rerank: bool,
     paired: &mut Vec<PairedRanking>,
 ) -> Result<RerankingBranchReport, String> {
-    let mut state = State {
-        cash: fixture.initial_cash,
-        quantity_a: Decimal::ZERO,
-        quantity_b: Decimal::ZERO,
-        filled: Decimal::ZERO,
-        selections: Vec::new(),
-        fills: Vec::new(),
+    let fee_bps = if fixture.fee_per_fill.is_zero() {
+        Decimal::ZERO
+    } else {
+        fixture
+            .fee_per_fill
+            .checked_mul(Decimal::from(10_000))
+            .and_then(|fee| fee.checked_div(fixture.initial_cash / Decimal::from(2)))
+            .ok_or_else(|| arithmetic().to_string())?
     };
+    let inputs = build_inputs(fixture, fee_bps)?;
+    let mut portfolio = PortfolioState::initialize(&inputs.configuration, &inputs.fixture)
+        .map_err(|error| error.to_string())?;
+    let instruments = inputs.configuration.instruments.clone();
+    let first_time = inputs.configuration.simulation.start_at.clone();
+    let first_observations = observations_available_at(&inputs.fixture.dataset, &first_time)
+        .map_err(|error| error.to_string())?;
+    let first_marks = value_instruments(&instruments, &first_observations, &first_time)
+        .map_err(|error| error.to_string())?;
+    portfolio
+        .apply_valuation_marks(&first_marks)
+        .map_err(|error| error.to_string())?;
+    let mut selections = Vec::new();
+    let mut fills = Vec::new();
+    let mut total_filled_value = Decimal::ZERO;
     for index in 0..fixture.points.len().saturating_sub(1) {
         let current = &fixture.points[index];
         let next = &fixture.points[index + 1];
-        let nav = state.nav(current).map_err(|error| error.to_string())?;
-        let current_a = state
-            .quantity_a
-            .checked_mul(current.close_a)
-            .ok_or_else(|| arithmetic().to_string())?;
-        let current_b = state
-            .quantity_b
-            .checked_mul(current.close_b)
-            .ok_or_else(|| arithmetic().to_string())?;
+        let nav = portfolio
+            .net_asset_value()
+            .map_err(|error| error.to_string())?;
+        let current_a = portfolio
+            .position_market_value("SPOT_A")
+            .map_err(|error| error.to_string())?;
+        let current_b = portfolio
+            .position_market_value("SPOT_B")
+            .map_err(|error| error.to_string())?;
         let candidates = candidates_from_point(current);
         let ranking = rank_both(&candidates, &current.close_at, nav, current_a, current_b)
             .map_err(|error| error.to_string())?;
-        if rerank {
-            state.selections.push(ranking.reranked.clone());
-        } else {
-            state.selections.push(ranking.baseline.clone());
-        }
         if !rerank {
             paired.push(ranking.clone());
         }
         let chosen = if rerank {
-            ranking.reranked.candidate
+            &ranking.reranked.candidate
         } else {
-            ranking.baseline.candidate
+            &ranking.baseline.candidate
         };
-        execute_target(&mut state, &chosen, current, next, fixture)
-            .map_err(|error| error.to_string())?;
+        selections.push(if rerank {
+            ranking.reranked.clone()
+        } else {
+            ranking.baseline.clone()
+        });
+        let decision_time =
+            UtcTimestamp::new(current.close_at.clone()).map_err(|e| e.to_string())?;
+        let execution_time =
+            UtcTimestamp::new(open_timestamp(&next.close_at)).map_err(|e| e.to_string())?;
+        let target_a = shares(nav, chosen.target_a, current.close_a).map_err(|e| e.to_string())?;
+        let target_b = shares(nav, chosen.target_b, current.close_b).map_err(|e| e.to_string())?;
+        let targets = vec![
+            InstrumentTarget {
+                instrument_id: factorsbt_contracts::InstrumentId::new("SPOT_A")
+                    .map_err(|e| e.to_string())?,
+                target_quantity: target_a,
+            },
+            InstrumentTarget {
+                instrument_id: factorsbt_contracts::InstrumentId::new("SPOT_B")
+                    .map_err(|e| e.to_string())?,
+                target_quantity: target_b,
+            },
+        ];
+        let admission = admit_target_group(&portfolio, &targets).map_err(|e| e.to_string())?;
+        let step_id =
+            Identifier::new(format!("research-step-{index}")).map_err(|e| e.to_string())?;
+        let group = queue_target_group(
+            &portfolio,
+            &step_id,
+            &decision_time,
+            &execution_time,
+            &admission,
+        )
+        .map_err(|e| e.to_string())?;
+        let prices = execution_prices_available_at(&inputs.fixture.dataset, &execution_time)
+            .map_err(|e| e.to_string())?;
+        let executed = execute_pending_group(&mut portfolio, &group, &execution_time, &prices)
+            .map_err(|e| e.to_string())?;
+        for fill in executed.fills {
+            if let ExecutionFill::Spot(fill) = fill {
+                let value = checked_abs(fill.signed_quantity)
+                    .and_then(|quantity| {
+                        quantity.checked_mul(fill.fill_price).ok_or_else(arithmetic)
+                    })
+                    .map_err(|error| error.to_string())?;
+                total_filled_value = total_filled_value
+                    .checked_add(value)
+                    .ok_or_else(|| arithmetic().to_string())?;
+                fills.push(CandidateFillTrace {
+                    decision_at: current.close_at.clone(),
+                    execution_at: execution_time.as_str().to_owned(),
+                    candidate_id: chosen.candidate_id.clone(),
+                    instrument_id: fill.instrument_id.as_str().to_owned(),
+                    quantity: fill.signed_quantity,
+                    price: fill.fill_price,
+                    value,
+                    fee: fill.fee,
+                });
+            }
+        }
+        let close_time = UtcTimestamp::new(next.close_at.clone()).map_err(|e| e.to_string())?;
+        let observations = observations_available_at(&inputs.fixture.dataset, &close_time)
+            .map_err(|e| e.to_string())?;
+        let marks = value_instruments(&instruments, &observations, &close_time)
+            .map_err(|e| e.to_string())?;
+        portfolio
+            .apply_valuation_marks(&marks)
+            .map_err(|e| e.to_string())?;
     }
-    let final_point = fixture
-        .points
-        .last()
-        .ok_or_else(|| "research fixture has no prices".to_owned())?;
-    let final_nav = state.nav(final_point).map_err(|error| error.to_string())?;
+    let final_nav = portfolio
+        .net_asset_value()
+        .map_err(|error| error.to_string())?;
     let pnl = final_nav
         .checked_sub(fixture.initial_cash)
         .ok_or_else(|| arithmetic().to_string())?;
     Ok(RerankingBranchReport {
         final_nav,
         pnl_usd: pnl,
-        total_filled_value: state.filled,
-        selections: state.selections,
-        fills: state.fills,
+        total_filled_value,
+        selections,
+        fills,
     })
-}
-
-fn execute_target(
-    state: &mut State,
-    candidate: &Candidate,
-    decision: &PricePoint,
-    execution: &PricePoint,
-    fixture: &ResearchFixture,
-) -> Result<(), RerankingError> {
-    let nav = state.nav(decision)?;
-    let desired_a = shares(nav, candidate.target_a, execution.open_a)?;
-    let desired_b = shares(nav, candidate.target_b, execution.open_b)?;
-    let context = TradeContext {
-        decision,
-        execution,
-        candidate,
-        fixture,
-    };
-    trade(state, "SPOT_A", desired_a, execution.open_a, &context)?;
-    trade(state, "SPOT_B", desired_b, execution.open_b, &context)?;
-    Ok(())
 }
 
 fn shares(nav: Decimal, weight: Decimal, price: Decimal) -> Result<Decimal, RerankingError> {
@@ -181,62 +212,6 @@ fn shares(nav: Decimal, weight: Decimal, price: Decimal) -> Result<Decimal, Rera
         .and_then(|amount| amount.checked_div(price))
         .ok_or_else(arithmetic)?;
     Ok(target.trunc())
-}
-
-fn trade(
-    state: &mut State,
-    instrument: &str,
-    target: Decimal,
-    price: Decimal,
-    context: &TradeContext<'_>,
-) -> Result<(), RerankingError> {
-    let current = if instrument == "SPOT_A" {
-        state.quantity_a
-    } else {
-        state.quantity_b
-    };
-    let delta = target.checked_sub(current).ok_or_else(arithmetic)?;
-    if delta.is_zero() {
-        return Ok(());
-    }
-    let value = delta.checked_mul(price).ok_or_else(arithmetic)?;
-    let fee = context.fixture.fee_per_fill;
-    let new_cash = state
-        .cash
-        .checked_sub(value)
-        .and_then(|cash| cash.checked_sub(fee))
-        .ok_or_else(arithmetic)?;
-    if new_cash < Decimal::ZERO {
-        return Err(RerankingError(
-            "admission rejected target for insufficient cash".into(),
-        ));
-    }
-    state.cash = new_cash;
-    if instrument == "SPOT_A" {
-        state.quantity_a = target;
-    } else {
-        state.quantity_b = target;
-    }
-    let gross = checked_abs(value)?;
-    state.filled = state.filled.checked_add(gross).ok_or_else(arithmetic)?;
-    state.fills.push(CandidateFillTrace {
-        decision_at: context.decision.close_at.clone(),
-        execution_at: open_timestamp(&context.execution.close_at),
-        candidate_id: context.candidate.candidate_id.clone(),
-        instrument_id: instrument.into(),
-        quantity: delta,
-        price,
-        value: gross,
-        fee,
-    });
-    Ok(())
-}
-
-fn open_timestamp(close_at: &str) -> String {
-    close_at
-        .split_once('T')
-        .map(|(date, _)| format!("{date}T09:00:00Z"))
-        .unwrap_or_else(|| close_at.to_owned())
 }
 
 pub fn compare_reranking(fixture: &ResearchFixture) -> RerankingReport {
