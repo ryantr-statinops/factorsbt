@@ -7,6 +7,10 @@ use std::{cmp::Ordering, collections::HashSet, error::Error, fmt};
 
 pub const TURNOVER_PENALTY: Decimal = Decimal::from_parts(25, 0, 0, false, 2);
 
+fn checked_abs(value: Decimal) -> Option<Decimal> {
+    if value < Decimal::ZERO { Decimal::ZERO.checked_sub(value) } else { Some(value) }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Candidate {
     pub candidate_id: String,
@@ -104,7 +108,8 @@ pub fn select_baseline(candidates: &[Candidate], simulation_time: &str) -> Resul
         (score, candidate)
     }).collect::<Vec<_>>();
     scored.sort_by(cmp_score);
-    Ok(scored.remove(0))
+    let (score, candidate) = scored.remove(0);
+    Ok((candidate, score))
 }
 
 pub fn select_reranked(
@@ -116,14 +121,15 @@ pub fn select_reranked(
     let weight_a = current_a_value.checked_div(nav).ok_or(RankingError::Arithmetic)?;
     let weight_b = current_b_value.checked_div(nav).ok_or(RankingError::Arithmetic)?;
     let mut scored = candidates.iter().cloned().map(|candidate| {
-        let turnover = candidate.target_a.checked_sub(weight_a).and_then(Decimal::checked_abs)
-            .and_then(|a| candidate.target_b.checked_sub(weight_b).and_then(Decimal::checked_abs).and_then(|b| a.checked_add(b)))
+        let turnover = candidate.target_a.checked_sub(weight_a).and_then(checked_abs)
+            .and_then(|a| candidate.target_b.checked_sub(weight_b).and_then(checked_abs).and_then(|b| a.checked_add(b)))
             .ok_or(RankingError::Arithmetic)?;
         let adjusted = TURNOVER_PENALTY.checked_mul(turnover).and_then(|penalty| candidate.raw_score.checked_sub(penalty)).ok_or(RankingError::Arithmetic)?;
         Ok((CandidateScore { candidate_id: candidate.candidate_id.clone(), raw_score: candidate.raw_score, turnover, adjusted_score: adjusted }, candidate))
     }).collect::<Result<Vec<_>, RankingError>>()?;
     scored.sort_by(cmp_score);
-    Ok(scored.remove(0))
+    let (score, candidate) = scored.remove(0);
+    Ok((candidate, score))
 }
 
 /// Score the same point-in-time candidate set under both fixed protocols.

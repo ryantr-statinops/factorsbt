@@ -152,7 +152,7 @@ async fn execute_research(store: RunStore, job_id: Uuid) {
                 &job_id, finished,
                 Some(crate::research::jobs::ResearchJobResult {
                     contract_version: "1.0.0".into(),
-                    job_id,
+                    job_id: job_id.clone(),
                     kind: stored.status.kind,
                     report,
                 }),

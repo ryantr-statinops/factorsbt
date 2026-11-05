@@ -63,6 +63,10 @@ impl State {
 
 fn arithmetic() -> RerankingError { RerankingError("research decimal arithmetic overflow".into()) }
 
+fn checked_abs(value: Decimal) -> Result<Decimal, RerankingError> {
+    if value < Decimal::ZERO { Decimal::ZERO.checked_sub(value).ok_or_else(arithmetic) } else { Ok(value) }
+}
+
 fn branch(fixture: &ResearchFixture, rerank: bool, paired: &mut Vec<PairedRanking>) -> Result<RerankingBranchReport, String> {
     let mut state = State { cash: fixture.initial_cash, quantity_a: Decimal::ZERO, quantity_b: Decimal::ZERO, filled: Decimal::ZERO, selections: Vec::new(), fills: Vec::new() };
     for index in 0..fixture.points.len().saturating_sub(1) {
@@ -112,7 +116,7 @@ fn trade(state: &mut State, instrument: &str, target: Decimal, price: Decimal, d
     if new_cash < Decimal::ZERO { return Err(RerankingError("admission rejected target for insufficient cash".into())); }
     state.cash = new_cash;
     if instrument == "SPOT_A" { state.quantity_a = target; } else { state.quantity_b = target; }
-    let gross = value.checked_abs().ok_or_else(arithmetic)?;
+    let gross = checked_abs(value)?;
     state.filled = state.filled.checked_add(gross).ok_or_else(arithmetic)?;
     state.fills.push(CandidateFillTrace { decision_at: decision.close_at.clone(), execution_at: execution.close_at.clone(), candidate_id: candidate.candidate_id.clone(), instrument_id: instrument.into(), quantity: delta, price, value: gross, fee });
     Ok(())

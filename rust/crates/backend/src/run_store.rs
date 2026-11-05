@@ -5,7 +5,7 @@ use crate::backend_config::QueueLimits;
 use crate::ids::new_uuid_v4;
 use crate::replay_types::{ReplayAcknowledgement, ReplayFailure, ReplayReport, ReplayStatus};
 use crate::research::jobs::{
-    ResearchJobAcknowledgement, ResearchJobFailure, ResearchJobKind, ResearchJobRequest,
+    ResearchJobAcknowledgement, ResearchJobFailure, ResearchJobRequest,
     ResearchJobResult, ResearchJobStatus,
 };
 use factorsbt_contracts::{
