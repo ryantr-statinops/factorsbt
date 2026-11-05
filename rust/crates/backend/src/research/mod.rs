@@ -17,7 +17,7 @@ mod tests {
         },
         fixtures::{resolve_fixture, ResearchFixtureKind},
         ranking::{candidates_from_point, rank_both, Candidate, RankingError},
-        reranking::compare_reranking,
+        reranking::{compare_reranking, PerformanceDirection},
     };
     use rust_decimal::Decimal;
 
@@ -36,6 +36,16 @@ mod tests {
         assert!(baseline.final_nav > Decimal::ZERO);
         assert!(reranker.final_nav > Decimal::ZERO);
         assert!(baseline.total_filled_value > Decimal::ZERO);
+        assert_eq!(
+            report.outcome_vs_baseline,
+            Some(PerformanceDirection::Equal)
+        );
+        assert_eq!(report.pnl_delta_usd, Some(Decimal::ZERO));
+        assert_eq!(
+            reranker.fills[0].requested_target,
+            reranker.fills[0].admitted_target
+        );
+        assert_eq!(reranker.fills[0].common_admission_scale, Decimal::ONE);
     }
 
     #[test]

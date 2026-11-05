@@ -22,6 +22,9 @@ pub struct CandidateFillTrace {
     pub candidate_id: String,
     pub instrument_id: String,
     pub quantity: Decimal,
+    pub requested_target: Decimal,
+    pub admitted_target: Decimal,
+    pub common_admission_scale: Decimal,
     pub price: Decimal,
     pub value: Decimal,
     pub fee: Decimal,
@@ -43,6 +46,16 @@ pub struct RerankingReport {
     pub baseline: Result<RerankingBranchReport, String>,
     pub reranker: Result<RerankingBranchReport, String>,
     pub paired_decisions: Vec<PairedRanking>,
+    pub outcome_vs_baseline: Option<PerformanceDirection>,
+    pub pnl_delta_usd: Option<Decimal>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PerformanceDirection {
+    Higher,
+    Lower,
+    Equal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +163,11 @@ fn branch(
             .map_err(|e| e.to_string())?;
         for fill in executed.fills {
             if let ExecutionFill::Spot(fill) = fill {
+                let adjustment = executed
+                    .admission_adjustments
+                    .iter()
+                    .find(|item| item.instrument_id == fill.instrument_id.as_str())
+                    .ok_or_else(|| "engine omitted spot admission adjustment".to_owned())?;
                 let value = checked_abs(fill.signed_quantity)
                     .and_then(|quantity| {
                         quantity.checked_mul(fill.fill_price).ok_or_else(arithmetic)
@@ -164,6 +182,9 @@ fn branch(
                     candidate_id: chosen.candidate_id.clone(),
                     instrument_id: fill.instrument_id.as_str().to_owned(),
                     quantity: fill.signed_quantity,
+                    requested_target: adjustment.requested_quantity,
+                    admitted_target: adjustment.admitted_quantity,
+                    common_admission_scale: adjustment.common_scale,
                     price: fill.fill_price,
                     value,
                     fee: fill.fee,
@@ -209,11 +230,27 @@ pub fn compare_reranking(fixture: &ResearchFixture) -> RerankingReport {
     let mut paired_decisions = Vec::new();
     let baseline = branch(fixture, false, &mut paired_decisions);
     let reranker = branch(fixture, true, &mut paired_decisions);
+    let (outcome_vs_baseline, pnl_delta_usd) = match (&baseline, &reranker) {
+        (Ok(baseline), Ok(reranker)) => {
+            let delta = reranker.pnl_usd - baseline.pnl_usd;
+            let direction = if delta > Decimal::ZERO {
+                PerformanceDirection::Higher
+            } else if delta < Decimal::ZERO {
+                PerformanceDirection::Lower
+            } else {
+                PerformanceDirection::Equal
+            };
+            (Some(direction), Some(delta))
+        }
+        _ => (None, None),
+    };
     RerankingReport {
         fixture_id: fixture.fixture_id.clone(),
         fixture_version: fixture.version.clone(),
         baseline,
         reranker,
         paired_decisions,
+        outcome_vs_baseline,
+        pnl_delta_usd,
     }
 }
