@@ -2,20 +2,20 @@
 
 **Status:** Kế hoạch theo dõi công việc; trạng thái từng stage phản ánh bằng chứng đã có.
 
-**Mốc đối chiếu:** 2026-11-05. Phase A, B, C và D đã qua cổng kiểm chứng local: Stage 00–11, gồm fixture/snapshot, engine, model orchestration, run/replay/research APIs, typed Python SDK, backtest, comparison tuần tự, recorded replay, reranking và fixed-action episodes. Chưa có hosted deployment, public API stability hay CI.
+**Mốc đối chiếu:** 2026-11-05. Phase A–E đã qua cổng kiểm chứng local: Stage 00–12, gồm fixture/snapshot, engine, model orchestration, run/replay/research APIs, typed Python SDK, backtest, comparison tuần tự, recorded replay, reranking, fixed-action episodes và CLI local. Chưa có hosted deployment, public API stability hay CI.
 
 ## Cách đọc và phạm vi
 
-Bộ kế hoạch gồm 12 stage triển khai (00–11) và mục brainstorm 12. Mỗi stage ghi mục tiêu, đầu ra, phụ thuộc, quyết định Open, Task → Commit, kiểm chứng dự kiến và điều kiện hoàn thành. Chỉ thực hiện code sau khi quyết định cần thiết của stage được chốt.
+Bộ kế hoạch gồm 13 stage triển khai (00–12). Mỗi stage ghi mục tiêu, đầu ra, phụ thuộc, quyết định Open, Task → Commit, kiểm chứng dự kiến và điều kiện hoàn thành. Chỉ thực hiện code sau khi quyết định cần thiết của stage được chốt.
 
 Hướng Accepted là SDK thuần Python, backend/engine Rust, giao tiếp ban đầu HTTP/JSON. Các quyết định synthetic MVP ở Stage 00 và contracts ở Stage 01 đã được ghi nhận; phần nào chưa có code và kiểm chứng vẫn chưa phải tính năng Implemented.
 
 - Wave 1: Phase A–B, từ thiết kế MVP tới một backtest chạy xuyên suốt.
 - Wave 2: Phase C, thí nghiệm so sánh và recorded-response replay.
-- Wave 3: Phase D, hai hướng nghiên cứu độc lập reranking và RL, vẫn là Proposed.
-- Phase E: chỗ ghi nhớ ý tưởng ứng dụng, chưa đưa vào wave thực thi hay lịch triển khai.
+- Wave 3: Phase D, hai hướng nghiên cứu độc lập reranking và fixed-action episode, đã kiểm chứng.
+- Wave 4: Phase E, CLI local cho backtest và recorded replay, đã kiểm chứng.
 
-Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay thế số Stage 0–3 trong [roadmap gốc](../../docs/roadmap.md). Phase A–B phân rã roadmap Stage 1, Phase C tương ứng Stage 2, Phase D tương ứng Stage 3; Phase E là ý tưởng bổ sung chưa chốt. Tài liệu nền tảng của roadmap Stage 0 không được tính là engine hay MVP đã chạy được.
+Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay thế số Stage 0–3 trong [roadmap gốc](../../docs/roadmap.md). Phase A–B phân rã roadmap Stage 1, Phase C tương ứng Stage 2, Phase D tương ứng Stage 3; Phase E được thêm sau để triển khai CLI. Tài liệu nền tảng của roadmap Stage 0 không được tính là engine hay MVP đã chạy được.
 
 ## Danh mục và bảng theo dõi
 
@@ -33,9 +33,9 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | C | [09 — Recorded replay](09-recorded-replay.md) | Implemented — replay cùng executable/contract | Có | [Replay runtime](../../rust/crates/backend/src/runtime.rs), [replay source validation](../../rust/crates/backend/src/replay_source.rs), [Phase C verification](../../docs/development/phase-c-local.md) |
 | D | [10 — Reranking](10-reranking.md) | Implemented — controlled synthetic comparison | Có | [Runner/acceptance](../../rust/crates/backend/src/research/reranking.rs), [verification](../../docs/development/phase-d-local.md) |
 | D | [11 — RL interface](11-rl-interface.md) | Implemented — fixed two-action episode | Có | [Runner/acceptance](../../rust/crates/backend/src/research/episode.rs), [verification](../../docs/development/phase-d-local.md) |
-| E | [12 — Ý tưởng CLI / console application](12-cli-console-ideas.md) | Proposed — brainstorm | Không áp dụng | Chưa chốt triển khai |
+| E | [12 — CLI backtest và recorded replay](12-cli-console-ideas.md) | Implemented — local CLI | Có | [CLI](../../python-sdk/src/factorsbt/cli.py), [package](../../python-sdk/pyproject.toml), [test và installed smoke](../../python-sdk/tests/test_cli.py), [Phase E verification](../../docs/development/phase-e-local.md) |
 
-Hiện có **12/12 stage triển khai đạt điều kiện hoàn thành**; MVP Phase B gồm stage 00–07 có **8/8**; Phase A là **3/3**, Phase B là **5/5**, Phase C là **2/2**, Phase D là **2/2**. Phase C verification ghi 48 Python tests và 146 Rust tests. Phase D evidence và số liệu kiểm chứng được ghi ở [Phase D local verification](../../docs/development/phase-d-local.md). Các con số là stage qua cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
+Hiện có **13/13 stage triển khai đạt điều kiện hoàn thành**; MVP Phase B gồm stage 00–07 có **8/8**; Phase A là **3/3**, Phase B là **5/5**, Phase C là **2/2**, Phase D là **2/2**, Phase E là **1/1**. Phase C verification ghi 48 Python tests và 146 Rust tests; Phase D có [bằng chứng local](../../docs/development/phase-d-local.md), Phase E có [bằng chứng local](../../docs/development/phase-e-local.md). Các con số là stage qua cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng.
 
 Trạng thái thiết kế dùng đúng từ vựng của [documentation index](../../docs/README.md#status-vocabulary): Accepted, Proposed, Open và Implemented. Cột hoàn thành là theo dõi công việc riêng. Stage thiết kế có thể hoàn thành bằng quyết định được Accepted và tài liệu đã kiểm tra; điều đó không làm tính năng thành Implemented. Chỉ mô tả hành vi là Implemented khi có code và kiểm chứng phù hợp.
 
@@ -43,7 +43,7 @@ Khi tiến độ thay đổi, cập nhật hàng stage, số đếm, graph và d
 
 ## Graph tiến độ theo phase
 
-Mũi tên liền biểu thị trình tự triển khai chính được đề xuất; phụ thuộc chi tiết nằm trong từng file stage. Hai nhánh Phase D độc lập nhau. Nét đứt tới Phase E chỉ gợi liên hệ ý tưởng, không phải phụ thuộc hay thời hạn đã chốt.
+Mũi tên liền biểu thị trình tự triển khai chính; phụ thuộc chi tiết nằm trong từng file stage. Hai nhánh Phase D độc lập nhau. Phase E dùng SDK và replay đã triển khai ở Phase B/C; không phụ thuộc Phase D.
 
 ```mermaid
 flowchart TD
@@ -68,23 +68,22 @@ flowchart TD
         D1["11 · Fixed-action episode — verified"]
     end
 
-    subgraph E["Phase E — Brainstorm, chưa chốt"]
-        E0["12 · Ý tưởng CLI / console application"]
+    subgraph E["Phase E — CLI local · 1/1"]
+        E0["12 · Backtest và recorded replay — verified"]
     end
 
     A2 --> B0
     B4 --> C0
     C1 --> D0
     C1 --> D1
-    B4 -.-> E0
+    B4 --> E0
+    C1 --> E0
 
     classDef implemented fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef idea fill:#fff7ed,stroke:#c2410c,color:#7c2d12,stroke-dasharray:5 5
-    class A2,B0,B1,B2,B3,B4,C0,C1,D0,D1 implemented
-    class E0 idea
+    class A2,B0,B1,B2,B3,B4,C0,C1,D0,D1,E0 implemented
 ```
 
-Phase E không yêu cầu Phase D hoàn thành. Mục 12 chưa chọn tính năng, ngôn ngữ, giao diện, dependency triển khai hoặc thời điểm làm; nếu được theo đuổi sẽ cần một kế hoạch riêng.
+Phase E không yêu cầu Phase D hoàn thành. Stage 12 là CLI không tương tác dùng Python SDK hiện có cho local backtest và recorded replay; giới hạn và bằng chứng được ghi trong tài liệu Stage 12 và [Phase E verification](../../docs/development/phase-e-local.md).
 
 ## Cổng hoàn thành theo phase
 
@@ -94,7 +93,7 @@ Phase E không yêu cầu Phase D hoàn thành. Mục 12 chưa chọn tính năn
 | B | Phase A | Chạy từ SDK qua Rust backend, adapters và engine; evidence nối input tới portfolio; các ca temporal visibility, shared capital, execution và failure đúng quy tắc. |
 | C | MVP Phase B | Scenario cách ly mutable state, khác biệt có thể giải thích; recorded replay được kiểm tra trong phạm vi công bố và khác fresh inference. |
 | D | Comparison/replay Phase C và thiết kế nghiên cứu được chấp nhận | Mỗi nhánh có contract, ví dụ bounded và kiểm chứng với vốn, thời gian, isolation và replay; không cam kết model cải thiện. |
-| E | Chưa xác lập đầu vào thực thi | Chỉ brainstorm; không có cổng nghiệm thu ứng dụng hoặc yêu cầu hoàn thành để đóng MVP. |
+| E | Phase B SDK và Phase C replay; không phụ thuộc Phase D | CLI health/run/replay qua package cài đặt; unit tests, smoke installed CLI, regression SDK/backend, Rust workspace checks. |
 
 ## Task, commit và kiểm chứng
 
@@ -141,7 +140,16 @@ Phase E không yêu cầu Phase D hoàn thành. Mục 12 chưa chọn tính năn
 - API `POST /v1/research/jobs`, lifecycle và result dùng cùng bounded FIFO với run/replay. Schema status yêu cầu đúng failure shape; Python SDK có report riêng cho reranking, episode và replay.
 - Các commit theo bảng Stage 10–11 được nối tiếp bằng fix nhỏ sau khi nghiệm thu phát hiện runner chưa dùng engine chung, fee fixture chưa ở đơn vị engine, thiếu chi tiết admission trong report và thiếu typed report/schema validation. Lịch sử không bị rewrite.
 - Bằng chứng lệnh, test count, smoke và giới hạn được ghi trong [Phase D local verification](../../docs/development/phase-d-local.md); giao diện được mô tả tại [research jobs](../../docs/interfaces/research-jobs.md). Không có CI.
-- **Đóng Phase D:** Stage 10–11 là Implemented sau khi các cổng Rust/Python/contracts và smoke Phase B/C/D đều pass. Phase D 2/2, tổng 12/12. Phase E brainstorm vẫn Proposed và không phải điều kiện hoàn thành.
+- **Đóng Phase D:** Stage 10–11 là Implemented sau khi các cổng Rust/Python/contracts và smoke Phase B/C/D đều pass. Phase D 2/2, tổng 12/12 ở thời điểm đó. Phase E khi ấy còn là brainstorm Proposed; được chốt và triển khai sau đó.
+
+### Tiến độ thực hiện Phase E — 2026-11-05
+
+- Stage 12 được chốt thành CLI `factorsbt`, cài từ `python-sdk` bằng setuptools, Python >=3.13 và không thêm dependency runtime. CLI gọi Python SDK cho health, submit/lookup/status/wait/result của run và submit/status/wait/report của replay.
+- Đầu ra command là JSON; lỗi dùng stderr JSON và exit codes riêng. Base URL chỉ cho phép HTTP loopback; submit POST không tự retry; wait timeout/Ctrl+C không hủy job.
+- Nghiệm thu pass: 68 Python tests; installed CLI smoke từ ngoài repository với `PYTHONPATH` rỗng; run có 32 artifact refs; replay sau dừng model fixture khớp. Hai smoke Phase B/C pass, gồm comparison và replay sau backend restart. Rust fmt/check/strict Clippy và 154 workspace tests pass.
+- Có thêm commit smoke-only tăng request timeout từ 3s lên 10s vì source evidence validation trên Windows vượt giới hạn cũ. Hướng dẫn, các lệnh và giới hạn được ghi ở [Phase E local verification](../../docs/development/phase-e-local.md). Repository chưa có CI.
+- Phase E có 10 commit theo kế hoạch và 2 commit follow-up: điều chỉnh timeout cho smoke Windows và giữ đúng ID/mã lỗi chi tiết trên CLI.
+- **Đóng Phase E:** Stage 12 Implemented; Phase E 1/1, tổng 13/13 stage, MVP 8/8. Phase D không phải dependency.
 
 ## Tài liệu gốc
 

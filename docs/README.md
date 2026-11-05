@@ -4,7 +4,7 @@ FactorsBT is API-first infrastructure for multi-asset backtesting, synchronized 
 
 ## Project status
 
-Phases A–D have passed their local verification gates across Stages 00–11. The backend provides local run, replay and bounded research job operations; the Python SDK provides typed run/replay/research operations and sequential scenario comparison. These remain controlled local workflows: metadata is process-local, evidence is local, replay requires the same executable digest, and no public API stability or hosted deployment is claimed. See the [Phase B verification record](development/phase-b-local.md), [Phase C verification record](development/phase-c-local.md), and [Phase D verification record](development/phase-d-local.md).
+Phases A–E have passed their local verification gates across Stages 00–12. The backend provides local run, replay and bounded research job operations; the Python SDK provides typed run/replay/research operations and sequential scenario comparison; the installed Python package exposes the local `factorsbt` run/replay CLI. These remain controlled local workflows: metadata is process-local, evidence is local, replay requires the same executable digest, and no public API stability, hosted deployment, or PyPI release is claimed. See the [Phase B verification record](development/phase-b-local.md), [Phase C verification record](development/phase-c-local.md), [Phase D verification record](development/phase-d-local.md), and [Phase E verification record](development/phase-e-local.md).
 
 The accepted technology direction is a pure Python SDK and a Rust backend/engine, communicating initially over HTTP/JSON. Acceptance records design intent, not implementation completion.
 

@@ -1,6 +1,6 @@
-# Mục 12 — Brainstorm CLI tool / console application
+# Stage 12 — CLI backtest và recorded replay
 
-**Status:** Accepted — Phase E triển khai CLI không tương tác
+**Status:** Implemented — Phase E CLI đã qua cổng local
 
 **Phase:** E — Brainstorm ứng dụng, chưa chốt
 
@@ -52,6 +52,12 @@ Không thuộc phạm vi: console tương tác, comparison, tải artifact, rese
 - Cài non-editable vào virtualenv sạch, chạy từ ngoài repo với `PYTHONPATH` rỗng: health → submit → lookup → wait → result → replay submit/wait/report sau khi model fixture dừng; report phải matched.
 - Chạy các smoke backtest/failure hiện có và kiểm tra package/import. Chỉ ghi `Implemented` khi các cổng pass.
 - Làm trên `main`; sau nghiệm thu cập nhật Phase E 1/1 và roadmap 13/13, kiểm tra fast-forward rồi push `origin/main`. CI chưa có theo bằng chứng hiện tại.
+
+## Bằng chứng hoàn thành — 2026-11-05
+
+- Package được cài non-editable trong virtualenv sạch; lệnh đã cài chạy từ ngoài repository với `PYTHONPATH` rỗng qua health, run submit/lookup/wait/result và recorded replay. Replay matched khi model fixture đã dừng.
+- 68 Python tests, smoke CLI, hai smoke SDK/backend và Rust fmt/check/strict Clippy/154 workspace tests pass.
+- Chi tiết lệnh, môi trường, kết quả và giới hạn được ghi ở [Phase E local verification](../../docs/development/phase-e-local.md).
 
 ## Tài liệu liên quan
 
