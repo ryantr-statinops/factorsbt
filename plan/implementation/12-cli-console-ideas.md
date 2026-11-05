@@ -1,47 +1,61 @@
 # Mục 12 — Brainstorm CLI tool / console application
 
-**Status:** Proposed
+**Status:** Accepted — Phase E triển khai CLI không tương tác
 
 **Phase:** E — Brainstorm ứng dụng, chưa chốt
 
-## Ý tưởng cần ghi nhớ
+## Phạm vi Phase E đã chốt
 
-Khám phá một CLI tool hoặc console application để tương tác với FactorsBT. Đây là nơi giữ ý tưởng để quay lại thảo luận; chưa xác định sản phẩm, giao diện hay phạm vi triển khai.
+Tạo lệnh `factorsbt` cài vào virtualenv bằng `python -m pip install ./python-sdk`. CLI không tương tác dùng Python SDK hiện có để gửi backtest, theo dõi run, đọc kết quả và kiểm chứng recorded replay.
 
-## Động cơ có thể khám phá
+Không thuộc phạm vi: console tương tác, comparison, tải artifact, research jobs và phát hành PyPI.
 
-- Thao tác với thí nghiệm từ terminal khi không muốn viết một script mới cho mỗi lần sử dụng.
-- Tìm hiểu nhu cầu tự động hóa thao tác hoặc quan sát run trong quy trình nghiên cứu.
-- Xác định liệu một ứng dụng console có giá trị ngoài SDK hay chỉ lặp lại chức năng sẵn có.
+## Lệnh
 
-Các điểm dưới đây là gợi ý brainstorm, không phải requirements, backlog đã duyệt hoặc danh sách tính năng được hứa hẹn.
+| Lệnh | Hành vi |
+| --- | --- |
+| `factorsbt health` | Kiểm tra backend và contract version. |
+| `factorsbt run submit CONFIG.json [--submission-id UUID]` | Đọc Run Configuration v1 UTF-8 và gửi một lần. |
+| `factorsbt run lookup SUBMISSION_ID` | Tra cứu submission, gồm trường hợp mất acknowledgment. |
+| `factorsbt run status RUN_ID` / `wait RUN_ID` / `result RUN_ID` | Xem lifecycle, chờ kết thúc hoặc lấy kết quả/evidence. |
+| `factorsbt replay submit SOURCE_RUN_ID [--replay-id UUID]` | Tạo recorded replay từ run nguồn. |
+| `factorsbt replay status REPLAY_ID` / `wait REPLAY_ID` / `report REPLAY_ID` | Xem lifecycle, chờ hoặc lấy report kiểm chứng. |
 
-## Hướng sử dụng có thể thảo luận
+## Cấu hình và đầu ra
 
-- Chuẩn bị/gửi một thí nghiệm từ cấu hình và xem lỗi đầu vào.
-- Theo dõi run, xem lỗi và tìm kết quả/evidence.
-- Khám phá cách trình bày comparison hoặc replay trong terminal nếu nhu cầu thực tế xuất hiện.
+- Endpoint theo thứ tự `--base-url`, `FACTORSBT_BASE_URL`, `http://127.0.0.1:8080`; chỉ cho phép HTTP loopback `localhost`, `127.0.0.1`, `[::1]` với port tùy chọn.
+- SDK request timeout mặc định 5 giây. `wait` nhận timeout local dương, hữu hạn (mặc định 60 giây) và poll mỗi 0,25 giây; hết timeout không hủy job.
+- Lệnh thành công in một JSON object ra stdout; decimal là chuỗi, timestamp UTC và evidence là mảng. Help là văn bản.
+- Lỗi in JSON có mã lỗi và ID liên quan ra stderr, stdout rỗng. Exit: 0 thành công/đọc được status hoặc report; 1 HTTP/transport/protocol; 2 tham số hoặc JSON đầu vào; 3 job thất bại khi wait; 4 timeout; 5 acknowledgment không rõ; 130 Ctrl+C.
+- Khi submit mất acknowledgment, in ID và lệnh lookup/status cần dùng; không tự gửi lại POST. Replay giữ cùng executable digest và contract version theo Phase C.
 
-## Câu hỏi còn mở — Open
+## Đóng gói
 
-- Người dùng nào cần ứng dụng này, công việc nào SDK hiện tại chưa giải quyết thuận tiện?
-- CLI không tương tác, console tương tác hay hình thức khác phù hợp với vấn đề đã xác định?
-- Phạm vi tính năng, input/output, workflow, ngôn ngữ, thư viện, phân phối và môi trường hỗ trợ là gì?
-- Nếu có scripting, cần bảo đảm gì về output, lỗi và compatibility? Chỉ bàn chính sách cụ thể khi use case được chọn.
-- Sử dụng SDK hay gọi backend bằng cách khác; cấu hình endpoint và quyền truy cập ra sao? Chưa thay đổi kiến trúc API-first đã Accepted.
-- Có nên thực hiện không, ưu tiên vào lúc nào và bằng tiêu chí nào để đánh giá giá trị?
+`python-sdk` được cài bằng setuptools theo src layout, package `0.1.0`, Python `>=3.13`, không thêm dependency runtime; entry point là `factorsbt = "factorsbt.cli:main"`.
 
-## Quan hệ với các phase khác
+## Task → Commit
 
-- Không yêu cầu Phase D hoàn thành; vị trí Phase E chỉ phân nhóm ý tưởng, không xác lập lịch.
-- MVP và trải nghiệm sử dụng SDK có thể cung cấp thông tin cho thảo luận, nhưng chưa ấn định dependency triển khai.
-- Không phải điều kiện hoàn thành MVP; không đưa mục này vào tỷ lệ hoàn thành 12 stage triển khai.
+1. `docs(plan): define Phase E CLI scope` — chốt lệnh, phạm vi và nghiệm thu.
+2. `feat(cli): add command entry point and local settings` — parser, cấu hình endpoint, help và health.
+3. `build(python): package the FactorsBT console command` — metadata và entry point cài đặt.
+4. `feat(cli): submit and look up backtest runs` — đọc config, submit và tra cứu submission.
+5. `feat(cli): inspect wait for and retrieve run results` — status, wait và result.
+6. `feat(cli): submit and verify recorded replays` — thao tác replay đầy đủ.
+7. `fix(cli): standardize command failures and exit codes` — stdout/stderr, lỗi và mã thoát.
+8. `docs(cli): document installation and terminal workflows` — setup và ví dụ.
+9. `test(cli): verify installed backtest and replay workflows` — test cuối phase và smoke qua lệnh đã cài.
+10. `docs(plan): close Phase E verification` — bằng chứng, tiến độ và graph.
 
-## Cách quay lại ý tưởng
+## Kiểm chứng và điều kiện hoàn thành
 
-Khi có nhu cầu cụ thể, thảo luận mục tiêu và phương án trước. Nếu quyết định theo đuổi, tạo kế hoạch riêng có scope, dependency, contracts, Task → Commit và acceptance criteria. File brainstorm này chưa có kế hoạch code, commit triển khai, deadline hoặc tiêu chí nghiệm thu ứng dụng.
+- Chạy mọi unittest ở ranh giới nghiệm thu cuối Phase E, cùng kiểm tra argument, JSON sai, độ chính xác decimal, lỗi backend, timeout, Ctrl+C và acknowledgment mơ hồ; xác nhận POST không retry.
+- Cài non-editable vào virtualenv sạch, chạy từ ngoài repo với `PYTHONPATH` rỗng: health → submit → lookup → wait → result → replay submit/wait/report sau khi model fixture dừng; report phải matched.
+- Chạy các smoke backtest/failure hiện có và kiểm tra package/import. Chỉ ghi `Implemented` khi các cổng pass.
+- Làm trên `main`; sau nghiệm thu cập nhật Phase E 1/1 và roadmap 13/13, kiểm tra fast-forward rồi push `origin/main`. CI chưa có theo bằng chứng hiện tại.
 
 ## Tài liệu liên quan
 
 - [Product overview](../../docs/product/overview.md)
 - [Architecture overview](../../docs/architecture/overview.md)
+- [Python SDK](../../python-sdk/src/factorsbt/client.py)
+- [Phase C verification](../../docs/development/phase-c-local.md)
