@@ -107,7 +107,9 @@ impl BackendRuntime {
                 JobId::Research(job_id) => {
                     let _ = panic_store.mark_research_terminal(
                         &job_id,
-                        system_utc_timestamp().unwrap_or_else(|_| UtcTimestamp::new("1970-01-01T00:00:00Z").expect("static timestamp")),
+                        system_utc_timestamp().unwrap_or_else(|_| {
+                            UtcTimestamp::new("1970-01-01T00:00:00Z").expect("static timestamp")
+                        }),
                         None,
                         Some(crate::research::jobs::ResearchJobFailure {
                             code: "RESEARCH_WORKER_PANICKED".into(),
@@ -141,18 +143,31 @@ impl BackendRuntime {
 }
 
 async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid) {
-    let Some(stored) = store.get_research_job(&job_id) else { return; };
+    let Some(stored) = store.get_research_job(&job_id) else {
+        return;
+    };
     let started = timestamp_or(&stored.status.submitted_at);
-    if store.mark_research_running(&job_id, started).is_err() { return; }
-    let finished = system_utc_timestamp().unwrap_or_else(|_| timestamp_or(&stored.status.submitted_at));
+    if store.mark_research_running(&job_id, started).is_err() {
+        return;
+    }
+    let finished =
+        system_utc_timestamp().unwrap_or_else(|_| timestamp_or(&stored.status.submitted_at));
     let executed = if stored.status.kind == crate::research::jobs::ResearchJobKind::Replay {
         let source_id = stored.request.source_job_id.as_ref();
-        match source_id.and_then(|id| crate::research::evidence::load_job(&evidence_root, id).ok()) {
-            Some(source) if source.request.kind != crate::research::jobs::ResearchJobKind::Replay => {
-                match crate::research::jobs::execute_with_fixture(&source.request, &source.fixture) {
+        match source_id.and_then(|id| crate::research::evidence::load_job(&evidence_root, id).ok())
+        {
+            Some(source)
+                if source.request.kind != crate::research::jobs::ResearchJobKind::Replay =>
+            {
+                match crate::research::jobs::execute_with_fixture(&source.request, &source.fixture)
+                {
                     Ok(report) => {
                         let matched = report == source.result.report;
-                        let first_mismatch = if matched { serde_json::Value::Null } else { serde_json::json!("report") };
+                        let first_mismatch = if matched {
+                            serde_json::Value::Null
+                        } else {
+                            serde_json::json!("report")
+                        };
                         let replay_report = serde_json::json!({
                             "source_job_id": source.result.job_id,
                             "source_kind": source.request.kind,
@@ -171,12 +186,18 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
     } else {
         match crate::research::fixtures::resolve_fixture(
             stored.request.fixture_id.as_deref().unwrap_or_default(),
-            stored.request.fixture_version.as_deref().unwrap_or_default(),
+            stored
+                .request
+                .fixture_version
+                .as_deref()
+                .unwrap_or_default(),
         ) {
-            Ok(fixture) => match crate::research::jobs::execute_with_fixture(&stored.request, &fixture) {
-                Ok(report) => Ok((fixture, report, false)),
-                Err(error) => Err(error.to_string()),
-            },
+            Ok(fixture) => {
+                match crate::research::jobs::execute_with_fixture(&stored.request, &fixture) {
+                    Ok(report) => Ok((fixture, report, false)),
+                    Err(error) => Err(error.to_string()),
+                }
+            }
             Err(error) => Err(error.to_string()),
         }
     };
@@ -188,18 +209,36 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
                 kind: stored.status.kind,
                 report,
             };
-            let persisted = crate::research::evidence::write_job(&evidence_root, &stored.request, &fixture, &result);
+            let persisted = crate::research::evidence::write_job(
+                &evidence_root,
+                &stored.request,
+                &fixture,
+                &result,
+            );
             let failure = if let Err(error) = persisted {
-                Some(crate::research::jobs::ResearchJobFailure { code: "RESEARCH_EVIDENCE_FAILED".into(), message: error.to_string() })
+                Some(crate::research::jobs::ResearchJobFailure {
+                    code: "RESEARCH_EVIDENCE_FAILED".into(),
+                    message: error.to_string(),
+                })
             } else if diverged {
-                Some(crate::research::jobs::ResearchJobFailure { code: "RESEARCH_REPLAY_DIVERGED".into(), message: "recorded research transitions diverged".into() })
-            } else { None };
+                Some(crate::research::jobs::ResearchJobFailure {
+                    code: "RESEARCH_REPLAY_DIVERGED".into(),
+                    message: "recorded research transitions diverged".into(),
+                })
+            } else {
+                None
+            };
             let _ = store.mark_research_terminal(&job_id, finished, Some(result), failure);
         }
         Err(message) => {
             let _ = store.mark_research_terminal(
-                &job_id, finished, None,
-                Some(crate::research::jobs::ResearchJobFailure { code: "RESEARCH_EXECUTION_FAILED".into(), message }),
+                &job_id,
+                finished,
+                None,
+                Some(crate::research::jobs::ResearchJobFailure {
+                    code: "RESEARCH_EXECUTION_FAILED".into(),
+                    message,
+                }),
             );
         }
     }

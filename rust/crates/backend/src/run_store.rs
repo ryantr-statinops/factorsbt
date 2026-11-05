@@ -5,8 +5,8 @@ use crate::backend_config::QueueLimits;
 use crate::ids::new_uuid_v4;
 use crate::replay_types::{ReplayAcknowledgement, ReplayFailure, ReplayReport, ReplayStatus};
 use crate::research::jobs::{
-    ResearchJobAcknowledgement, ResearchJobFailure, ResearchJobRequest,
-    ResearchJobResult, ResearchJobStatus,
+    ResearchJobAcknowledgement, ResearchJobFailure, ResearchJobRequest, ResearchJobResult,
+    ResearchJobStatus,
 };
 use factorsbt_contracts::{
     outcomes::{
@@ -230,7 +230,10 @@ impl RunStore {
     ) -> Result<ResearchSubmissionOutcome, SubmissionStoreError> {
         let mut notify_count = 0;
         let outcome = {
-            let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(existing) = state.research_jobs.get(&job_id) {
                 return if existing.request == request {
                     Ok(ResearchSubmissionOutcome {
@@ -241,7 +244,9 @@ impl RunStore {
                     Err(SubmissionStoreError::SubmissionIdReused)
                 };
             }
-            if !state.accepting { return Err(SubmissionStoreError::BackendUnavailable); }
+            if !state.accepting {
+                return Err(SubmissionStoreError::BackendUnavailable);
+            }
             notify_count += promote_waiting_runs(&mut state, self.limits);
             if state.active.len() < self.limits.max_active_runs {
                 let job = JobId::Research(job_id.clone());
@@ -264,32 +269,74 @@ impl RunStore {
                 failure: None,
             };
             let acknowledgement = research_acknowledgement(&status);
-            state.research_jobs.insert(job_id, StoredResearchJob { request, status, result: None });
-            ResearchSubmissionOutcome { acknowledgement, created: true }
+            state.research_jobs.insert(
+                job_id,
+                StoredResearchJob {
+                    request,
+                    status,
+                    result: None,
+                },
+            );
+            ResearchSubmissionOutcome {
+                acknowledgement,
+                created: true,
+            }
         };
         self.notify_workers(notify_count);
         Ok(outcome)
     }
 
-    pub fn mark_research_running(&self, job_id: &Uuid, at: UtcTimestamp) -> Result<(), RunStoreTransitionError> {
-        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !state.active.contains(&JobId::Research(job_id.clone())) { return Err(RunStoreTransitionError::InvalidTransition); }
-        let job = state.research_jobs.get_mut(job_id).ok_or(RunStoreTransitionError::NotFound)?;
-        if job.status.status != "queued" { return Err(RunStoreTransitionError::InvalidTransition); }
+    pub fn mark_research_running(
+        &self,
+        job_id: &Uuid,
+        at: UtcTimestamp,
+    ) -> Result<(), RunStoreTransitionError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(&JobId::Research(job_id.clone())) {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        let job = state
+            .research_jobs
+            .get_mut(job_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if job.status.status != "queued" {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
         job.status.status = "running".into();
         job.status.started_at = Some(at);
         Ok(())
     }
 
     pub fn mark_research_terminal(
-        &self, job_id: &Uuid, at: UtcTimestamp,
-        result: Option<ResearchJobResult>, failure: Option<ResearchJobFailure>,
+        &self,
+        job_id: &Uuid,
+        at: UtcTimestamp,
+        result: Option<ResearchJobResult>,
+        failure: Option<ResearchJobFailure>,
     ) -> Result<(), RunStoreTransitionError> {
-        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !state.active.contains(&JobId::Research(job_id.clone())) { return Err(RunStoreTransitionError::InvalidTransition); }
-        let job = state.research_jobs.get_mut(job_id).ok_or(RunStoreTransitionError::NotFound)?;
-        if job.status.status != "running" { return Err(RunStoreTransitionError::InvalidTransition); }
-        job.status.status = if failure.is_none() { "succeeded" } else { "failed" }.into();
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(&JobId::Research(job_id.clone())) {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        let job = state
+            .research_jobs
+            .get_mut(job_id)
+            .ok_or(RunStoreTransitionError::NotFound)?;
+        if job.status.status != "running" {
+            return Err(RunStoreTransitionError::InvalidTransition);
+        }
+        job.status.status = if failure.is_none() {
+            "succeeded"
+        } else {
+            "failed"
+        }
+        .into();
         job.status.finished_at = Some(at);
         job.status.failure = failure;
         job.result = result;
