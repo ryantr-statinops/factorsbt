@@ -163,11 +163,8 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
                 {
                     Ok(report) => {
                         let matched = report == source.result.report;
-                        let first_mismatch = if matched {
-                            serde_json::Value::Null
-                        } else {
-                            serde_json::json!("report")
-                        };
+                        let first_mismatch =
+                            first_value_mismatch(&source.result.report, &report, "$.report");
                         let replay_report = serde_json::json!({
                             "source_job_id": source.result.job_id,
                             "source_kind": source.request.kind,
@@ -241,6 +238,53 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
                 }),
             );
         }
+    }
+}
+
+fn first_value_mismatch(
+    expected: &serde_json::Value,
+    actual: &serde_json::Value,
+    path: &str,
+) -> serde_json::Value {
+    match (expected, actual) {
+        (serde_json::Value::Object(expected), serde_json::Value::Object(actual)) => {
+            let keys = expected
+                .keys()
+                .chain(actual.keys())
+                .collect::<std::collections::BTreeSet<_>>();
+            for key in keys {
+                let child_path = format!("{path}.{key}");
+                match (expected.get(key), actual.get(key)) {
+                    (Some(left), Some(right)) if left == right => {}
+                    (Some(left), Some(right)) => {
+                        let mismatch = first_value_mismatch(left, right, &child_path);
+                        if !mismatch.is_null() {
+                            return mismatch;
+                        }
+                    }
+                    _ => return serde_json::json!(child_path),
+                }
+            }
+            serde_json::Value::Null
+        }
+        (serde_json::Value::Array(expected), serde_json::Value::Array(actual)) => {
+            for index in 0..expected.len().max(actual.len()) {
+                let child_path = format!("{path}[{index}]");
+                match (expected.get(index), actual.get(index)) {
+                    (Some(left), Some(right)) if left == right => {}
+                    (Some(left), Some(right)) => {
+                        let mismatch = first_value_mismatch(left, right, &child_path);
+                        if !mismatch.is_null() {
+                            return mismatch;
+                        }
+                    }
+                    _ => return serde_json::json!(child_path),
+                }
+            }
+            serde_json::Value::Null
+        }
+        _ if expected == actual => serde_json::Value::Null,
+        _ => serde_json::json!(path),
     }
 }
 

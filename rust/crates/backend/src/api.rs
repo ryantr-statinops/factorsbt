@@ -163,32 +163,25 @@ async fn submit_research_job(
                 .source_job_id
                 .as_ref()
                 .expect("validated replay source");
-            let source = state
-                .store
-                .get_research_job(source_id)
-                .filter(|job| {
-                    job.status.status == "succeeded"
-                        && job.status.kind != crate::research::jobs::ResearchJobKind::Replay
-                })
-                .ok_or_else(|| {
+            let source = crate::research::evidence::load_job(&state.evidence_root, source_id)
+                .map_err(|_| {
                     ApiResponseError::new(
                         &context,
                         StatusCode::UNPROCESSABLE_ENTITY,
-                        "RESEARCH_SOURCE_INELIGIBLE",
-                        "Research replay source is not a completed original job.",
+                        "RESEARCH_SOURCE_INCOMPATIBLE",
+                        "Research replay source evidence is missing, altered, or incompatible.",
                         None,
                     )
                 })?;
-            drop(source);
-            crate::research::evidence::load_job(&state.evidence_root, source_id).map_err(|_| {
-                ApiResponseError::new(
+            if source.request.kind == crate::research::jobs::ResearchJobKind::Replay {
+                return Err(ApiResponseError::new(
                     &context,
                     StatusCode::UNPROCESSABLE_ENTITY,
-                    "RESEARCH_SOURCE_INCOMPATIBLE",
-                    "Research replay source evidence is missing, altered, or incompatible.",
+                    "RESEARCH_SOURCE_INELIGIBLE",
+                    "Research replay source must be an original reranking or episode job.",
                     None,
-                )
-            })?;
+                ));
+            }
         }
     }
     let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| {
@@ -1313,6 +1306,14 @@ mod tests {
             .join(source_id)
             .join("manifest.json");
         let source_manifest = std::fs::read(&manifest_path).unwrap();
+        runtime.shutdown().await;
+        let runtime = BackendRuntime::start(&config).unwrap();
+        let router = run_routes(ApiState::new(
+            runtime.store(),
+            runtime.fixtures(),
+            &evidence_root,
+        ))
+        .layer(middleware::from_fn(request_id_middleware));
         let replay_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
         let replay = json!({"contract_version":"1.0.0","kind":"replay","source_job_id":source_id});
         let response = router

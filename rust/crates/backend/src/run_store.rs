@@ -1052,4 +1052,55 @@ mod tests {
             .unwrap();
         assert_eq!(store.get_result(&accepted.run_id), Ok(result));
     }
+
+    #[test]
+    fn research_jobs_share_capacity_and_enforce_atomic_idempotency() {
+        let store = RunStore::new(QueueLimits::new(1, 1).unwrap());
+        let request = ResearchJobRequest {
+            contract_version: "1.0.0".into(),
+            kind: crate::research::jobs::ResearchJobKind::Episode,
+            fixture_id: Some("episode-eval".into()),
+            fixture_version: Some("1.0.0".into()),
+            actions: Some(vec!["0.5".into(), "0.5".into()]),
+            source_job_id: None,
+        };
+        let first_id = Uuid::new("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb").unwrap();
+        let first = store
+            .accept_research_job(first_id.clone(), request.clone(), timestamp())
+            .unwrap();
+        assert!(first.created);
+        let duplicate = store
+            .accept_research_job(first_id.clone(), request.clone(), timestamp())
+            .unwrap();
+        assert!(!duplicate.created);
+        assert_eq!(duplicate.acknowledgement.job_id, first_id);
+
+        let mut changed = request.clone();
+        changed.actions = Some(vec!["0".into(), "0".into()]);
+        assert_eq!(
+            store
+                .accept_research_job(first_id, changed, timestamp())
+                .err()
+                .unwrap(),
+            SubmissionStoreError::SubmissionIdReused
+        );
+
+        let second_id = Uuid::new("cccccccc-cccc-4ccc-8ccc-cccccccccccc").unwrap();
+        assert!(
+            store
+                .accept_research_job(second_id, request.clone(), timestamp())
+                .unwrap()
+                .created
+        );
+        let third_id = Uuid::new("dddddddd-dddd-4ddd-8ddd-dddddddddddd").unwrap();
+        assert_eq!(
+            store
+                .accept_research_job(third_id, request, timestamp())
+                .err()
+                .unwrap(),
+            SubmissionStoreError::QueueFull
+        );
+        assert_eq!(store.queue_snapshot().active_runs, 1);
+        assert_eq!(store.queue_snapshot().queued_runs, 1);
+    }
 }

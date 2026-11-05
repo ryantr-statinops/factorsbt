@@ -38,6 +38,7 @@ pub enum ResearchEvidenceError {
     Incompatible,
     MissingArtifact,
     DigestMismatch,
+    ExistingJob,
 }
 impl fmt::Display for ResearchEvidenceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -82,6 +83,9 @@ pub fn write_job(
     result: &ResearchJobResult,
 ) -> Result<ResearchManifest, ResearchEvidenceError> {
     let directory = root.join("research_jobs").join(result.job_id.as_str());
+    if directory.exists() {
+        return Err(ResearchEvidenceError::ExistingJob);
+    }
     fs::create_dir_all(&directory).map_err(|_| ResearchEvidenceError::Io)?;
     let request_bytes =
         serde_json::to_vec(request).map_err(|_| ResearchEvidenceError::InvalidManifest)?;
