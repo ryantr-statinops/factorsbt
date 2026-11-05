@@ -85,6 +85,9 @@ impl BackendRuntime {
                         JobId::Replay(replay_id) => {
                             execute_replay(store, client, evidence_root, replay_id).await
                         }
+                        JobId::Research(job_id) => {
+                            execute_research(store, job_id).await
+                        }
                     }
                 }
             },
@@ -100,6 +103,17 @@ impl BackendRuntime {
                 ),
                 JobId::Replay(replay_id) => {
                     mark_replay_worker_panicked(&panic_store, &replay_id);
+                }
+                JobId::Research(job_id) => {
+                    let _ = panic_store.mark_research_terminal(
+                        &job_id,
+                        system_utc_timestamp().unwrap_or_else(|_| UtcTimestamp::new("1970-01-01T00:00:00Z").expect("static timestamp")),
+                        None,
+                        Some(crate::research::jobs::ResearchJobFailure {
+                            code: "RESEARCH_WORKER_PANICKED".into(),
+                            message: "The research job worker stopped unexpectedly.".into(),
+                        }),
+                    );
                 }
             },
         );
@@ -122,6 +136,37 @@ impl BackendRuntime {
         self.store.stop_accepting();
         if let Some(dispatcher) = self.dispatcher.take() {
             dispatcher.shutdown().await;
+        }
+    }
+}
+
+async fn execute_research(store: RunStore, job_id: Uuid) {
+    let Some(stored) = store.get_research_job(&job_id) else { return; };
+    let started = timestamp_or(&stored.status.submitted_at);
+    if store.mark_research_running(&job_id, started).is_err() { return; }
+    let result = crate::research::jobs::execute_request(&stored.request);
+    let finished = system_utc_timestamp().unwrap_or_else(|_| timestamp_or(&stored.status.submitted_at));
+    match result {
+        Ok(report) => {
+            let _ = store.mark_research_terminal(
+                &job_id, finished,
+                Some(crate::research::jobs::ResearchJobResult {
+                    contract_version: "1.0.0".into(),
+                    job_id,
+                    kind: stored.status.kind,
+                    report,
+                }),
+                None,
+            );
+        }
+        Err(error) => {
+            let _ = store.mark_research_terminal(
+                &job_id, finished, None,
+                Some(crate::research::jobs::ResearchJobFailure {
+                    code: "RESEARCH_EXECUTION_FAILED".into(),
+                    message: error.to_string(),
+                }),
+            );
         }
     }
 }

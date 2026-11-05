@@ -4,6 +4,10 @@
 use crate::backend_config::QueueLimits;
 use crate::ids::new_uuid_v4;
 use crate::replay_types::{ReplayAcknowledgement, ReplayFailure, ReplayReport, ReplayStatus};
+use crate::research::jobs::{
+    ResearchJobAcknowledgement, ResearchJobFailure, ResearchJobKind, ResearchJobRequest,
+    ResearchJobResult, ResearchJobStatus,
+};
 use factorsbt_contracts::{
     outcomes::{
         RunFailure, RunLifecycle, RunProgress, RunResult, RunStatus, SubmissionAccepted,
@@ -29,6 +33,7 @@ pub struct RunStore {
 pub enum JobId {
     Run(Uuid),
     Replay(Uuid),
+    Research(Uuid),
 }
 
 #[derive(Debug)]
@@ -40,6 +45,7 @@ struct QueueState {
     submissions: HashMap<Uuid, StoredSubmission>,
     runs: HashMap<Uuid, StoredRun>,
     replays: HashMap<Uuid, StoredReplay>,
+    research_jobs: HashMap<Uuid, StoredResearchJob>,
 }
 
 impl Default for QueueState {
@@ -52,6 +58,7 @@ impl Default for QueueState {
             submissions: HashMap::new(),
             runs: HashMap::new(),
             replays: HashMap::new(),
+            research_jobs: HashMap::new(),
         }
     }
 }
@@ -74,6 +81,19 @@ pub struct StoredRun {
 pub struct StoredReplay {
     pub status: ReplayStatus,
     pub report: Option<ReplayReport>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoredResearchJob {
+    pub request: ResearchJobRequest,
+    pub status: ResearchJobStatus,
+    pub result: Option<ResearchJobResult>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResearchSubmissionOutcome {
+    pub acknowledgement: ResearchJobAcknowledgement,
+    pub created: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +210,90 @@ impl RunStore {
             .replays
             .get(replay_id)
             .cloned()
+    }
+
+    pub fn get_research_job(&self, job_id: &Uuid) -> Option<StoredResearchJob> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .research_jobs
+            .get(job_id)
+            .cloned()
+    }
+
+    /// Add research work to the same bounded FIFO used by runs and replays.
+    pub fn accept_research_job(
+        &self,
+        job_id: Uuid,
+        request: ResearchJobRequest,
+        submitted_at: UtcTimestamp,
+    ) -> Result<ResearchSubmissionOutcome, SubmissionStoreError> {
+        let mut notify_count = 0;
+        let outcome = {
+            let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(existing) = state.research_jobs.get(&job_id) {
+                return if existing.request == request {
+                    Ok(ResearchSubmissionOutcome {
+                        acknowledgement: research_acknowledgement(&existing.status),
+                        created: false,
+                    })
+                } else {
+                    Err(SubmissionStoreError::SubmissionIdReused)
+                };
+            }
+            if !state.accepting { return Err(SubmissionStoreError::BackendUnavailable); }
+            notify_count += promote_waiting_runs(&mut state, self.limits);
+            if state.active.len() < self.limits.max_active_runs {
+                let job = JobId::Research(job_id.clone());
+                state.active.insert(job.clone());
+                state.starting.push_back(job);
+                notify_count += 1;
+            } else if state.queued.len() < self.limits.max_queued_runs {
+                state.queued.push_back(JobId::Research(job_id.clone()));
+            } else {
+                return Err(SubmissionStoreError::QueueFull);
+            }
+            let status = ResearchJobStatus {
+                contract_version: "1.0.0".into(),
+                job_id: job_id.clone(),
+                kind: request.kind,
+                status: "queued".into(),
+                submitted_at,
+                started_at: None,
+                finished_at: None,
+                failure: None,
+            };
+            let acknowledgement = research_acknowledgement(&status);
+            state.research_jobs.insert(job_id, StoredResearchJob { request, status, result: None });
+            ResearchSubmissionOutcome { acknowledgement, created: true }
+        };
+        self.notify_workers(notify_count);
+        Ok(outcome)
+    }
+
+    pub fn mark_research_running(&self, job_id: &Uuid, at: UtcTimestamp) -> Result<(), RunStoreTransitionError> {
+        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(&JobId::Research(job_id.clone())) { return Err(RunStoreTransitionError::InvalidTransition); }
+        let job = state.research_jobs.get_mut(job_id).ok_or(RunStoreTransitionError::NotFound)?;
+        if job.status.status != "queued" { return Err(RunStoreTransitionError::InvalidTransition); }
+        job.status.status = "running".into();
+        job.status.started_at = Some(at);
+        Ok(())
+    }
+
+    pub fn mark_research_terminal(
+        &self, job_id: &Uuid, at: UtcTimestamp,
+        result: Option<ResearchJobResult>, failure: Option<ResearchJobFailure>,
+    ) -> Result<(), RunStoreTransitionError> {
+        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.active.contains(&JobId::Research(job_id.clone())) { return Err(RunStoreTransitionError::InvalidTransition); }
+        let job = state.research_jobs.get_mut(job_id).ok_or(RunStoreTransitionError::NotFound)?;
+        if job.status.status != "running" { return Err(RunStoreTransitionError::InvalidTransition); }
+        job.status.status = if failure.is_none() { "succeeded" } else { "failed" }.into();
+        job.status.finished_at = Some(at);
+        job.status.failure = failure;
+        job.result = result;
+        Ok(())
     }
 
     /// The idempotency key is also the replay ID, allowing lookup after an
@@ -595,6 +699,16 @@ fn replay_acknowledgement(status: &ReplayStatus) -> ReplayAcknowledgement {
         replay_id: status.replay_id.clone(),
         source_run_id: status.source_run_id.clone(),
         status: "queued",
+        submitted_at: status.submitted_at.clone(),
+    }
+}
+
+fn research_acknowledgement(status: &ResearchJobStatus) -> ResearchJobAcknowledgement {
+    ResearchJobAcknowledgement {
+        contract_version: status.contract_version.clone(),
+        job_id: status.job_id.clone(),
+        kind: status.kind,
+        status: "queued".into(),
         submitted_at: status.submitted_at.clone(),
     }
 }
