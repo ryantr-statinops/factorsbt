@@ -65,3 +65,16 @@ fn request_level_fixture_versions_are_separate_for_development_and_evaluation() 
     let invalid = vec![Candidate { candidate_id: "x".into(), raw_score: Decimal::ONE, target_a: Decimal::ONE, target_b: Decimal::ONE, available_at: eval.points[0].close_at.clone() }];
     assert!(matches!(rank_both(&invalid, &eval.points[0].close_at, Decimal::ONE, Decimal::ZERO, Decimal::ZERO), Err(RankingError::InvalidCandidate(_))));
 }
+
+#[test]
+fn episode_action_sequences_are_validated_and_each_call_starts_fresh() {
+    let fixture = resolve_fixture("episode-eval", "1.0.0").unwrap();
+    assert!(run_episode(&fixture, &[]).is_err());
+    assert!(run_episode(&fixture, &[factorsbt_backend::research::episode::EpisodeAction { target_weight: Decimal::new(25, 2) }, factorsbt_backend::research::episode::EpisodeAction { target_weight: Decimal::ZERO }]).is_err());
+    let actions = fixed_trade_actions();
+    let first = run_episode(&fixture, &actions).unwrap();
+    let second = run_episode(&fixture, &actions).unwrap();
+    assert_eq!(first, second);
+    assert_eq!(first.final_observation.cash, second.final_observation.cash);
+    assert_eq!(first.transitions.len(), 2);
+}
