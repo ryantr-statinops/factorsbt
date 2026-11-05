@@ -14,9 +14,26 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .client import Client, HealthResponse
+from .errors import (
+    FactorsBTError,
+    ReplayAcknowledgementUnknown,
+    ReplayFailedError,
+    RunFailedError,
+    SubmissionAcknowledgementUnknown,
+    WaitTimeout,
+)
 from .types import UtcInstant, WireDecimal
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
+
+
+class _CliArgumentError(Exception):
+    pass
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        raise _CliArgumentError(message)
 
 
 def _positive_finite(text: str) -> float:
@@ -81,13 +98,13 @@ def _emit(value: object, stream=None) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="factorsbt", description="FactorsBT local backtest and replay client")
+    parser = _ArgumentParser(prog="factorsbt", description="FactorsBT local backtest and replay client")
     parser.add_argument("--base-url", help="HTTP loopback backend URL (or FACTORSBT_BASE_URL)")
     commands = parser.add_subparsers(dest="resource", required=True)
     health = commands.add_parser("health", help="check backend health and contract version")
     health.set_defaults(operation="health")
     run = commands.add_parser("run", help="submit and inspect backtest runs")
-    run_commands = run.add_subparsers(dest="run_operation", required=True)
+    run_commands = run.add_subparsers(dest="run_operation", required=True, parser_class=_ArgumentParser)
     submit = run_commands.add_parser("submit", help="submit a Run Configuration JSON file")
     submit.add_argument("config", type=Path)
     submit.add_argument("--submission-id")
@@ -106,7 +123,7 @@ def _parser() -> argparse.ArgumentParser:
     result.add_argument("run_id")
     result.set_defaults(operation="run_result")
     replay = commands.add_parser("replay", help="verify a recorded run without fresh inference")
-    replay_commands = replay.add_subparsers(dest="replay_operation", required=True)
+    replay_commands = replay.add_subparsers(dest="replay_operation", required=True, parser_class=_ArgumentParser)
     replay_submit = replay_commands.add_parser("submit", help="submit a recorded replay")
     replay_submit.add_argument("source_run_id")
     replay_submit.add_argument("--replay-id")
@@ -166,10 +183,41 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv)
         _emit(_dispatch(args))
         return 0
+    except _CliArgumentError as exc:
+        _emit({"code": "INVALID_ARGUMENT", "message": str(exc)}, sys.stderr)
+        return 2
     except KeyboardInterrupt:
+        _emit({"code": "INTERRUPTED", "message": "command interrupted; backend work was not cancelled"}, sys.stderr)
         return 130
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
+    except SubmissionAcknowledgementUnknown as exc:
+        _emit({
+            "code": "ACKNOWLEDGEMENT_UNKNOWN",
+            "message": f"run acknowledgment is unknown; look up with: factorsbt run lookup {exc.submission_id}",
+            "submission_id": exc.submission_id,
+        }, sys.stderr)
+        return 5
+    except ReplayAcknowledgementUnknown as exc:
+        _emit({
+            "code": "ACKNOWLEDGEMENT_UNKNOWN",
+            "message": f"replay acknowledgment is unknown; inspect with: factorsbt replay status {exc.replay_id}",
+            "replay_id": exc.replay_id,
+        }, sys.stderr)
+        return 5
+    except (RunFailedError, ReplayFailedError) as exc:
+        key_name = "run_id" if isinstance(exc, RunFailedError) else "replay_id"
+        _emit({"code": "JOB_FAILED", "message": str(exc), key_name: getattr(exc, key_name)}, sys.stderr)
+        return 3
+    except WaitTimeout as exc:
+        _emit({"code": "WAIT_TIMEOUT", "message": str(exc), "job_id": exc.run_id}, sys.stderr)
+        return 4
+    except (argparse.ArgumentTypeError, ValueError, TypeError) as exc:
+        _emit({"code": "INVALID_ARGUMENT", "message": str(exc)}, sys.stderr)
+        return 2
+    except FactorsBTError as exc:
+        _emit({"code": "FACTORSBT_ERROR", "message": str(exc)}, sys.stderr)
+        return 1
     except Exception as exc:
         _emit({"code": "ERROR", "message": str(exc)}, sys.stderr)
         return 1
