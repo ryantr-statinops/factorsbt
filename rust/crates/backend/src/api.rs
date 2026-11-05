@@ -94,6 +94,15 @@ async fn submit_research_job(
                 "Idempotency-Key must contain a lowercase UUID.",
             )
         })?;
+    factorsbt_contracts::validation::validate_research_job_request(&value).map_err(|errors| {
+        ApiResponseError::new(
+            &context,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "RESEARCH_REQUEST_INVALID",
+            errors.join("; "),
+            None,
+        )
+    })?;
     let request: ResearchJobRequest = serde_json::from_value(value).map_err(|_| {
         ApiResponseError::new(
             &context,

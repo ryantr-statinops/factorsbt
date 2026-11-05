@@ -210,12 +210,21 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
                 kind: stored.status.kind,
                 report,
             };
-            let persisted = crate::research::evidence::write_job(
-                &evidence_root,
-                &stored.request,
-                &fixture,
-                &result,
-            );
+            let persisted = serde_json::to_value(&result)
+                .map_err(|_| crate::research::evidence::ResearchEvidenceError::InvalidManifest)
+                .and_then(|value| {
+                    factorsbt_contracts::validation::validate_research_job_result(&value).map_err(
+                        |_| crate::research::evidence::ResearchEvidenceError::InvalidManifest,
+                    )
+                })
+                .and_then(|_| {
+                    crate::research::evidence::write_job(
+                        &evidence_root,
+                        &stored.request,
+                        &fixture,
+                        &result,
+                    )
+                });
             let failure = if let Err(error) = persisted {
                 Some(crate::research::jobs::ResearchJobFailure {
                     code: "RESEARCH_EVIDENCE_FAILED".into(),
