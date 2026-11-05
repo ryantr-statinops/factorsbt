@@ -105,6 +105,22 @@ def _parser() -> argparse.ArgumentParser:
     result = run_commands.add_parser("result", help="read a successful run result")
     result.add_argument("run_id")
     result.set_defaults(operation="run_result")
+    replay = commands.add_parser("replay", help="verify a recorded run without fresh inference")
+    replay_commands = replay.add_subparsers(dest="replay_operation", required=True)
+    replay_submit = replay_commands.add_parser("submit", help="submit a recorded replay")
+    replay_submit.add_argument("source_run_id")
+    replay_submit.add_argument("--replay-id")
+    replay_submit.set_defaults(operation="replay_submit")
+    replay_status = replay_commands.add_parser("status", help="read replay lifecycle status")
+    replay_status.add_argument("replay_id")
+    replay_status.set_defaults(operation="replay_status")
+    replay_wait = replay_commands.add_parser("wait", help="wait for a replay to finish")
+    replay_wait.add_argument("replay_id")
+    replay_wait.add_argument("--timeout", type=_positive_finite, default=60.0)
+    replay_wait.set_defaults(operation="replay_wait")
+    replay_report = replay_commands.add_parser("report", help="read a terminal replay report")
+    replay_report.add_argument("replay_id")
+    replay_report.set_defaults(operation="replay_report")
     return parser
 
 
@@ -133,6 +149,14 @@ def _dispatch(args: argparse.Namespace) -> object:
         return client.wait(args.run_id, timeout=args.timeout, poll_interval=0.25)
     if args.operation == "run_result":
         return client.get_results(args.run_id)
+    if args.operation == "replay_submit":
+        return client.submit_replay(args.source_run_id, replay_id=args.replay_id)
+    if args.operation == "replay_status":
+        return client.get_replay(args.replay_id)
+    if args.operation == "replay_wait":
+        return client.wait_replay(args.replay_id, timeout=args.timeout, poll_interval=0.25)
+    if args.operation == "replay_report":
+        return client.get_replay_report(args.replay_id)
     raise RuntimeError("unsupported CLI operation")
 
 
