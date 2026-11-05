@@ -196,6 +196,47 @@
         }
       }
     },
+    "/v1/research/jobs": {
+      "post": {
+        "operationId": "submitResearchJob",
+        "summary": "Enqueue a bounded reranking, episode, or recorded replay job",
+        "parameters": [ { "$ref": "#/components/parameters/IdempotencyKey" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "schemas/research-job-request.schema.json" } } } },
+        "responses": {
+          "202": { "description": "Research job accepted or previously acknowledged.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResearchJobAcknowledgement" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/SubmissionConflict" },
+          "422": { "$ref": "#/components/responses/InvalidRequest" },
+          "503": { "$ref": "#/components/responses/BackendUnavailable" }
+        }
+      }
+    },
+    "/v1/research/jobs/{job_id}": {
+      "get": {
+        "operationId": "getResearchJob",
+        "summary": "Inspect research job lifecycle",
+        "parameters": [ { "$ref": "#/components/parameters/ResearchJobId" } ],
+        "responses": {
+          "200": { "description": "Current research job status.", "content": { "application/json": { "schema": { "$ref": "schemas/research-job-status.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/research/jobs/{job_id}/result": {
+      "get": {
+        "operationId": "getResearchResult",
+        "summary": "Retrieve a completed research report",
+        "parameters": [ { "$ref": "#/components/parameters/ResearchJobId" } ],
+        "responses": {
+          "200": { "description": "Completed result report.", "content": { "application/json": { "schema": { "$ref": "schemas/research-job-result.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/ResultsUnavailable" }
+        }
+      }
+    },
     "/v1/runs/{run_id}/results": {
       "get": {
         "operationId": "getRunResults",
@@ -249,6 +290,12 @@
         "required": true,
         "schema": { "$ref": "schemas/common.schema.json#/$defs/Uuid" }
       },
+      "ResearchJobId": {
+        "name": "job_id",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "schemas/common.schema.json#/$defs/Uuid" }
+      },
       "ArtifactId": {
         "name": "artifact_id",
         "in": "path",
@@ -274,6 +321,18 @@
         "properties": {
           "submission_id": { "$ref": "schemas/common.schema.json#/$defs/Uuid" },
           "run_id": { "$ref": "schemas/common.schema.json#/$defs/Uuid" },
+          "status": { "const": "queued" },
+          "submitted_at": { "$ref": "schemas/common.schema.json#/$defs/UtcTimestamp" }
+        }
+      },
+      "ResearchJobAcknowledgement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract_version", "job_id", "kind", "status", "submitted_at"],
+        "properties": {
+          "contract_version": { "const": "1.0.0" },
+          "job_id": { "$ref": "schemas/common.schema.json#/$defs/Uuid" },
+          "kind": { "enum": ["reranking", "episode", "replay"] },
           "status": { "const": "queued" },
           "submitted_at": { "$ref": "schemas/common.schema.json#/$defs/UtcTimestamp" }
         }

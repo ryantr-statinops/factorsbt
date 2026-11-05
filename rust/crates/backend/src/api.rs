@@ -6,6 +6,10 @@ use crate::{
     evidence::{read_evidence_index, read_verified_artifact, EvidenceError, EvidenceIndex},
     replay_source::ReplaySource,
     replay_types::{ReplayAcknowledgement, ReplayReport, ReplayRequest, ReplayStatus},
+    research::jobs::{
+        validate_request, ResearchJobAcknowledgement, ResearchJobRequest,
+        ResearchJobResult, ResearchJobStatus,
+    },
     results::verify_result_evidence,
     run_store::{RunResultLookupError, RunStore, SubmissionStoreError},
 };
@@ -56,6 +60,9 @@ pub fn run_routes(state: ApiState) -> Router {
         .route("/v1/replays", post(submit_replay))
         .route("/v1/replays/{replay_id}", get(get_replay))
         .route("/v1/replays/{replay_id}/report", get(get_replay_report))
+        .route("/v1/research/jobs", post(submit_research_job))
+        .route("/v1/research/jobs/{job_id}", get(get_research_job))
+        .route("/v1/research/jobs/{job_id}/result", get(get_research_result))
         .route("/v1/submissions/{submission_id}", get(get_submission))
         .route("/v1/runs/{run_id}", get(get_run))
         .route("/v1/runs/{run_id}/results", get(get_results))
@@ -65,6 +72,76 @@ pub fn run_routes(state: ApiState) -> Router {
             get(get_artifact),
         )
         .with_state(state)
+}
+
+async fn submit_research_job(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    headers: HeaderMap,
+    ApiJson(value): ApiJson<Value>,
+) -> Result<(StatusCode, Json<ResearchJobAcknowledgement>), ApiResponseError> {
+    let job_id = headers.get(IDEMPOTENCY_KEY)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::new(value).ok())
+        .ok_or_else(|| ApiResponseError::bad_request(&context, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key must contain a lowercase UUID."))?;
+    let request: ResearchJobRequest = serde_json::from_value(value).map_err(|_| ApiResponseError::new(
+        &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_REQUEST_INVALID", "Research job request is invalid.", None,
+    ))?;
+    if state.store.get_research_job(&job_id).is_some() {
+        let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| ApiResponseError::new(
+            &context, StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Could not record research job submission time.", None,
+        ))?;
+        let outcome = state.store.accept_research_job(job_id, request, submitted_at)
+            .map_err(|error| submission_store_error(&context, error))?;
+        return Ok((StatusCode::ACCEPTED, Json(outcome.acknowledgement)));
+    }
+    validate_request(&request).map_err(|error| ApiResponseError::new(
+        &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_REQUEST_INVALID", error.to_string(), None,
+    ))?;
+    match request.kind {
+        crate::research::jobs::ResearchJobKind::Reranking | crate::research::jobs::ResearchJobKind::Episode => {
+            let fixture = crate::research::fixtures::resolve_fixture(
+                request.fixture_id.as_deref().unwrap_or_default(),
+                request.fixture_version.as_deref().unwrap_or_default(),
+            ).map_err(|_| ApiResponseError::new(&context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_FIXTURE_INVALID", "Research fixture is unavailable or incompatible.", None))?;
+            if (request.kind == crate::research::jobs::ResearchJobKind::Reranking && fixture.kind != crate::research::fixtures::ResearchFixtureKind::Reranking)
+                || (request.kind == crate::research::jobs::ResearchJobKind::Episode && fixture.kind != crate::research::fixtures::ResearchFixtureKind::Episode) {
+                return Err(ApiResponseError::new(&context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_FIXTURE_INVALID", "Research fixture kind does not match the request.", None));
+            }
+        }
+        crate::research::jobs::ResearchJobKind::Replay => return Err(ApiResponseError::new(
+            &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_REPLAY_UNAVAILABLE", "No sealed research source is available for replay.", None,
+        )),
+    }
+    let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| ApiResponseError::new(
+        &context, StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Could not record research job submission time.", None,
+    ))?;
+    let outcome = state.store.accept_research_job(job_id, request, submitted_at)
+        .map_err(|error| submission_store_error(&context, error))?;
+    Ok((StatusCode::ACCEPTED, Json(outcome.acknowledgement)))
+}
+
+async fn get_research_job(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    ApiPath(job_id): ApiPath<Uuid>,
+) -> Result<Json<ResearchJobStatus>, ApiResponseError> {
+    state.store.get_research_job(&job_id).map(|item| Json(item.status)).ok_or_else(|| ApiResponseError::new(
+        &context, StatusCode::NOT_FOUND, "RESEARCH_JOB_NOT_FOUND", "No research job has this ID.", None,
+    ))
+}
+
+async fn get_research_result(
+    State(state): State<ApiState>,
+    Extension(context): Extension<RequestContext>,
+    ApiPath(job_id): ApiPath<Uuid>,
+) -> Result<Json<ResearchJobResult>, ApiResponseError> {
+    let item = state.store.get_research_job(&job_id).ok_or_else(|| ApiResponseError::new(
+        &context, StatusCode::NOT_FOUND, "RESEARCH_JOB_NOT_FOUND", "No research job has this ID.", None,
+    ))?;
+    item.result.map(Json).ok_or_else(|| ApiResponseError::new(
+        &context, StatusCode::CONFLICT, "RESEARCH_RESULT_UNAVAILABLE", "Research result is available after successful execution.", None,
+    ))
 }
 
 async fn submit_replay(

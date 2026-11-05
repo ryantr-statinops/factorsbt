@@ -45,6 +45,15 @@ pub struct ResearchJobStatus {
     pub failure: Option<ResearchJobFailure>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResearchJobAcknowledgement {
+    pub contract_version: String,
+    pub job_id: Uuid,
+    pub kind: ResearchJobKind,
+    pub status: String,
+    pub submitted_at: UtcTimestamp,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResearchJobResult {
     pub contract_version: String,
@@ -80,6 +89,9 @@ pub fn validate_request(request: &ResearchJobRequest) -> Result<(), ResearchJobE
         ResearchJobKind::Episode => {
             if request.fixture_id.is_none() || request.fixture_version.is_none() || request.actions.as_ref().is_none_or(|actions| actions.len() != 2) || request.source_job_id.is_some() {
                 return Err(ResearchJobError::InvalidRequest("episode requires a fixture and exactly two actions"));
+            }
+            if request.actions.as_ref().is_some_and(|actions| actions.iter().any(|action| !matches!(action.as_str(), "0" | "0.0" | "0.00" | "0.5" | "0.50" | "1" | "1.0" | "1.00"))) {
+                return Err(ResearchJobError::InvalidRequest("episode actions must be 0, 0.5, or 1"));
             }
         }
         ResearchJobKind::Replay => {
