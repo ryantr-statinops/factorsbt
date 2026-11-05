@@ -1,6 +1,6 @@
 # Stage 11 — Episode RL với action định trước
 
-**Status:** Accepted; implementation pending
+**Status:** Implemented — fixed action sequence through shared engine
 
 **Phase:** D — Nghiên cứu mở rộng
 
@@ -14,9 +14,9 @@ Kiểm tra một giao diện episode có giới hạn cho policy đã định tr
 - Mỗi job tạo portfolio, cash, positions, pending orders và trace riêng. Action không sửa state trực tiếp mà đi qua admission và lịch thực thi hiện tại.
 - Observation tại close ghi simulation time, mark, cash, quantity và NAV. Reward cho action là `NAV(close tiếp theo) − NAV(close hiện tại)`, đơn vị USD, sau khi phí được ghi vào ledger.
 - Trace của mỗi bước gồm observation đầu/cuối, action, admission, fills và reward. Reward chỉ có cho bước đã hoàn tất.
-- Close cuối dùng finalization hiện tại, giữ vị thế mở và ghi lệnh chờ bị hủy. Nếu lỗi giữa bước, job trả lỗi cùng trạng thái hợp lệ cuối.
+- Close cuối giữ vị thế mở và ghi danh sách lệnh chờ bị hủy. Nếu lỗi giữa bước, job chuyển sang failed, vẫn lưu report có trace và trạng thái hợp lệ cuối; không ghi reward cho bước dở dang.
 - Cung cấp chuỗi luôn giữ tiền mặt và chuỗi giao dịch cố định. Fixture đánh giá tách biệt, có phí để đối chiếu reward bằng phép tính độc lập.
-- Episode replay dùng action đã niêm phong; không gọi policy/model mới và không chia sẻ state của episode nguồn.
+- Episode replay dùng action đã niêm phong; không gọi policy/model mới và không chia sẻ state của episode nguồn. Replay đúng một source failure được xác minh thành công với `source_outcome: failed`.
 
 ## Phụ thuộc và giới hạn
 
@@ -39,3 +39,8 @@ Kiểm tra một giao diện episode có giới hạn cho policy đã định tr
 - Chuỗi luôn giữ tiền mặt cho reward bằng không khi giá không đổi; chuỗi giao dịch cho trace đủ để giải thích reward.
 - Hai episode độc lập không dùng chung portfolio hoặc pending order.
 - Lỗi trả trạng thái hợp lệ cuối và không tạo reward cho bước chưa hoàn tất.
+
+## Bằng chứng triển khai
+
+- Runner, observations và trace: [`episode.rs`](../../rust/crates/backend/src/research/episode.rs); lifecycle/evidence/replay: [`runtime.rs`](../../rust/crates/backend/src/runtime.rs).
+- Acceptance: [`research::tests`](../../rust/crates/backend/src/research/mod.rs) và runtime replay tests; lệnh, kết quả và giới hạn ở [Phase D local verification](../../docs/development/phase-d-local.md).

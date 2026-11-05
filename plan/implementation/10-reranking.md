@@ -1,6 +1,6 @@
 # Stage 10 — Reranking có kiểm soát
 
-**Status:** Accepted; implementation pending
+**Status:** Implemented — controlled synthetic fixtures and shared engine path
 
 **Phase:** D — Nghiên cứu mở rộng
 
@@ -15,7 +15,7 @@
 - `current_weight` lấy từ giá trị vị thế chia NAV của snapshot tại close. Phép tính dùng decimal. Khi điểm bằng nhau, chọn candidate có ID tăng dần.
 - Candidate set rỗng, ID trùng, candidate chưa available hoặc NAV không dương làm nhánh tương ứng thất bại với lỗi có cấu trúc.
 - Chỉ target của một candidate được chọn chuyển qua admission hiện tại. Engine vẫn áp dụng giới hạn vốn; lệnh đủ điều kiện khớp sớm nhất ở open kế tiếp.
-- Report ghép hai nhánh theo simulation time và gồm NAV cuối, P&L USD, tổng giá trị khớp, lựa chọn và trace candidate → admission → fill. Lỗi một nhánh không xóa kết quả nhánh kia.
+- Report ghép hai nhánh theo simulation time và gồm NAV cuối, P&L USD, tổng giá trị khớp, lựa chọn, trace candidate → requested/admitted target → fill, delta P&L và hướng cao hơn/thấp hơn/bằng baseline. Lỗi một nhánh không xóa kết quả nhánh kia.
 - Dùng fixture versioned riêng cho phát triển và đánh giá. Hệ số và tie-break được cố định trước khi chạy fixture đánh giá. Báo cáo mức tăng, giảm hoặc bằng baseline mà không tuyên bố thuật toán tốt hơn.
 
 ## Phụ thuộc và giới hạn
@@ -39,6 +39,11 @@
 ## Điều kiện hoàn thành
 
 - Fixture development và evaluation cho thấy ít nhất một mốc chọn khác nhau.
-- Mỗi target đi qua admission và execution của engine; không tạo fill trực tiếp từ ranking.
+- Mỗi target đi qua valuation, admission, pending-order execution, ledger fee, fill và close mark của engine; không tạo fill trực tiếp từ ranking.
 - Kết quả từng nhánh, trace và metric được lưu; không có dữ liệu chưa available trong ranking.
 - Kết quả đánh giá có thể tăng, giảm hoặc bằng baseline và được báo đúng.
+
+## Bằng chứng triển khai
+
+- Runner và report: [`reranking.rs`](../../rust/crates/backend/src/research/reranking.rs), fixture development/evaluation: [`fixtures.rs`](../../rust/crates/backend/src/research/fixtures.rs).
+- Acceptance: [`research::tests`](../../rust/crates/backend/src/research/mod.rs), toàn bộ lệnh và giới hạn ở [Phase D local verification](../../docs/development/phase-d-local.md).

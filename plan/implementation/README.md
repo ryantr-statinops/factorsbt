@@ -2,7 +2,7 @@
 
 **Status:** Kế hoạch theo dõi công việc; trạng thái từng stage phản ánh bằng chứng đã có.
 
-**Mốc đối chiếu:** 2026-11-04. Phase A, B và C đã qua cổng kiểm chứng local: Stage 00–09, gồm fixture/snapshot, engine, model orchestration, Rust run/replay API, typed Python SDK, backtest, comparison tuần tự và recorded replay. Chưa có hosted deployment, public API stability hay CI.
+**Mốc đối chiếu:** 2026-11-05. Phase A, B, C và D đã qua cổng kiểm chứng local: Stage 00–11, gồm fixture/snapshot, engine, model orchestration, run/replay/research APIs, typed Python SDK, backtest, comparison tuần tự, recorded replay, reranking và fixed-action episodes. Chưa có hosted deployment, public API stability hay CI.
 
 ## Cách đọc và phạm vi
 
@@ -31,11 +31,11 @@ Số stage 00–12 là đánh số chi tiết trong thư mục này, không thay
 | B | [07 — Python SDK và nghiệm thu MVP](07-python-sdk-mvp.md) | Implemented | Có | [Typed SDK](../../python-sdk/src/factorsbt), [end-to-end smoke](../../python-sdk/tests/smoke_backtest.py), [failure-path smoke](../../python-sdk/tests/smoke_sdk_failures.py), [lệnh và kết quả local](../../docs/development/phase-b-local.md) |
 | C | [08 — Scenario comparison](08-scenario-comparison.md) | Implemented — SDK tuần tự và report local | Có | [Comparison smoke](../../python-sdk/tests/smoke_backtest.py), [Phase C verification](../../docs/development/phase-c-local.md) |
 | C | [09 — Recorded replay](09-recorded-replay.md) | Implemented — replay cùng executable/contract | Có | [Replay runtime](../../rust/crates/backend/src/runtime.rs), [replay source validation](../../rust/crates/backend/src/replay_source.rs), [Phase C verification](../../docs/development/phase-c-local.md) |
-| D | [10 — Reranking](10-reranking.md) | Proposed | Chưa | Chưa có |
-| D | [11 — RL interface](11-rl-interface.md) | Proposed | Chưa | Chưa có |
+| D | [10 — Reranking](10-reranking.md) | Implemented — controlled synthetic comparison | Có | [Runner/acceptance](../../rust/crates/backend/src/research/reranking.rs), [verification](../../docs/development/phase-d-local.md) |
+| D | [11 — RL interface](11-rl-interface.md) | Implemented — fixed two-action episode | Có | [Runner/acceptance](../../rust/crates/backend/src/research/episode.rs), [verification](../../docs/development/phase-d-local.md) |
 | E | [12 — Ý tưởng CLI / console application](12-cli-console-ideas.md) | Proposed — brainstorm | Không áp dụng | Chưa chốt triển khai |
 
-Hiện có **10/12 stage triển khai đạt điều kiện hoàn thành**; MVP Phase B gồm stage 00–07 có **8/8**; Phase A là **3/3**, Phase B là **5/5**, Phase C là **2/2**. Phase C verification ghi 48 Python tests, 146 Rust tests, comparison smoke ba scenario (baseline, price-only, delayed-event), và replay cho ba output mode cùng source model-failure; replay source thành công được đọc lại sau khi restart backend. Các con số là stage qua cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
+Hiện có **12/12 stage triển khai đạt điều kiện hoàn thành**; MVP Phase B gồm stage 00–07 có **8/8**; Phase A là **3/3**, Phase B là **5/5**, Phase C là **2/2**, Phase D là **2/2**. Phase C verification ghi 48 Python tests và 146 Rust tests. Phase D evidence và số liệu kiểm chứng được ghi ở [Phase D local verification](../../docs/development/phase-d-local.md). Các con số là stage qua cổng kiểm chứng, không phải tỷ lệ thời gian, khối lượng code hoặc ước lượng ngày giao hàng. Mục brainstorm 12 không nằm trong mẫu số.
 
 Trạng thái thiết kế dùng đúng từ vựng của [documentation index](../../docs/README.md#status-vocabulary): Accepted, Proposed, Open và Implemented. Cột hoàn thành là theo dõi công việc riêng. Stage thiết kế có thể hoàn thành bằng quyết định được Accepted và tài liệu đã kiểm tra; điều đó không làm tính năng thành Implemented. Chỉ mô tả hành vi là Implemented khi có code và kiểm chứng phù hợp.
 
@@ -63,9 +63,9 @@ flowchart TD
         C0["08 · Scenario comparison — verified"] --> C1["09 · Recorded replay — verified"]
     end
 
-    subgraph D["Phase D — Nghiên cứu mở rộng · 0/2"]
-        D0["10 · Reranking"]
-        D1["11 · RL interface"]
+    subgraph D["Phase D — Nghiên cứu mở rộng · 2/2"]
+        D0["10 · Reranking — verified"]
+        D1["11 · Fixed-action episode — verified"]
     end
 
     subgraph E["Phase E — Brainstorm, chưa chốt"]
@@ -80,7 +80,7 @@ flowchart TD
 
     classDef implemented fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef idea fill:#fff7ed,stroke:#c2410c,color:#7c2d12,stroke-dasharray:5 5
-    class A2,B0,B1,B2,B3,B4,C0,C1 implemented
+    class A2,B0,B1,B2,B3,B4,C0,C1,D0,D1 implemented
     class E0 idea
 ```
 
@@ -132,7 +132,16 @@ Phase E không yêu cầu Phase D hoàn thành. Mục 12 chưa chọn tính năn
 - Acceptance bổ sung kiểm tra replay không gọi model, đọc evidence sau backend restart, replay success khi model fixture đã offline, replay idempotency/conflict, queue overflow, panic lifecycle, source artifact completeness và mismatch đầu tiên ở financial transition.
 - `cargo fmt --all -- --check`, workspace check, strict Clippy và toàn workspace tests pass. Rust có 146 tests; Python unittest có 48 tests. Hai smoke scripts `smoke_backtest.py` và `smoke_sdk_failures.py` pass.
 - Chi tiết lệnh, số test, kết quả và giới hạn nằm trong [Phase C local verification](../../docs/development/phase-c-local.md). Run/replay metadata và queue không được khôi phục sau restart; sealed source evidence vẫn có thể được nạp để replay. Evidence giữ local; comparison chưa có backend job riêng; không có CI.
-- **Đóng Phase C:** Stage 08–09 là Implemented, Phase C 2/2, tổng 10/12 stage. Phase D vẫn Proposed; mục brainstorm Phase E không yêu cầu Phase D hoàn thành.
+- **Đóng Phase C:** Stage 08–09 là Implemented, Phase C 2/2, tổng 10/12 stage tại mốc 2026-11-04.
+
+### Tiến độ thực hiện Phase D — 2026-11-05
+
+- Stage 10 chạy baseline và reranker trên hai portfolio tách biệt. Mỗi target đi qua engine valuation, shared-capital admission, next-open order execution, ledger, fee và mark; report có admission scale, candidate→fill trace, P&L delta và hướng kết quả so với baseline. Fixture evaluation có kết quả bằng baseline dù các nhánh khác nhau ở quyết định.
+- Stage 11 chạy chuỗi hai action cố định cho episode mới. SDK nhận report typed; reward dùng chênh lệch NAV sau phí. Lỗi giữa các bước giữ transition/state cuối đã hoàn tất, job được đánh dấu failed và report được seal. Research replay kiểm chứng episode source failed khớp mà không gọi model.
+- API `POST /v1/research/jobs`, lifecycle và result dùng cùng bounded FIFO với run/replay. Schema status yêu cầu đúng failure shape; Python SDK có report riêng cho reranking, episode và replay.
+- Các commit theo bảng Stage 10–11 được nối tiếp bằng fix nhỏ sau khi nghiệm thu phát hiện runner chưa dùng engine chung, fee fixture chưa ở đơn vị engine, thiếu chi tiết admission trong report và thiếu typed report/schema validation. Lịch sử không bị rewrite.
+- Bằng chứng lệnh, test count, smoke và giới hạn được ghi trong [Phase D local verification](../../docs/development/phase-d-local.md); giao diện được mô tả tại [research jobs](../../docs/interfaces/research-jobs.md). Không có CI.
+- **Đóng Phase D:** Stage 10–11 là Implemented sau khi các cổng Rust/Python/contracts và smoke Phase B/C/D đều pass. Phase D 2/2, tổng 12/12. Phase E brainstorm vẫn Proposed và không phải điều kiện hoàn thành.
 
 ## Tài liệu gốc
 
