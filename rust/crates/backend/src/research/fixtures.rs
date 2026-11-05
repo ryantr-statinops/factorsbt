@@ -18,6 +18,9 @@ pub struct PricePoint {
     pub close_b: Decimal,
     pub open_a: Decimal,
     pub open_b: Decimal,
+    pub score_cash: Decimal,
+    pub score_a: Decimal,
+    pub score_b: Decimal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,29 +69,32 @@ fn reranking(evaluation: bool) -> ResearchFixture {
         (
             "reranking-eval",
             [
-                ("2026-02-02T16:00:00Z", "100", "100", "100", "100", "0.60", "0.40"),
-                ("2026-02-03T16:00:00Z", "105", "98", "105", "98", "0.55", "0.45"),
-                ("2026-02-04T16:00:00Z", "110", "96", "110", "96", "0.52", "0.48"),
+                ("2026-02-02T16:00:00Z", "100", "100", "100", "100", "0.20", "0.60", "0.40"),
+                ("2026-02-03T16:00:00Z", "105", "98", "105", "98", "0.20", "0.55", "0.60"),
+                ("2026-02-04T16:00:00Z", "110", "96", "110", "96", "0.20", "0.52", "0.48"),
             ],
         )
     } else {
         (
             "reranking-dev",
             [
-                ("2026-01-05T16:00:00Z", "100", "100", "100", "100", "0.60", "0.40"),
-                ("2026-01-06T16:00:00Z", "102", "99", "102", "99", "0.55", "0.45"),
-                ("2026-01-07T16:00:00Z", "104", "98", "104", "98", "0.52", "0.48"),
+                ("2026-01-05T16:00:00Z", "100", "100", "100", "100", "0.20", "0.60", "0.40"),
+                ("2026-01-06T16:00:00Z", "102", "99", "102", "99", "0.20", "0.55", "0.60"),
+                ("2026-01-07T16:00:00Z", "104", "98", "104", "98", "0.20", "0.52", "0.48"),
             ],
         )
     };
     let points = rows
         .into_iter()
-        .map(|(at, ca, cb, oa, ob, _, _)| PricePoint {
+        .map(|(at, ca, cb, oa, ob, cash, score_a, score_b)| PricePoint {
             close_at: at.into(),
             close_a: decimal(ca),
             close_b: decimal(cb),
             open_a: decimal(oa),
             open_b: decimal(ob),
+            score_cash: decimal(cash),
+            score_a: decimal(score_a),
+            score_b: decimal(score_b),
         })
         .collect();
     ResearchFixture {
@@ -141,6 +147,9 @@ fn episode(evaluation: bool) -> ResearchFixture {
             close_b: Decimal::ZERO,
             open_a: decimal(open),
             open_b: Decimal::ZERO,
+            score_cash: Decimal::ZERO,
+            score_a: Decimal::ZERO,
+            score_b: Decimal::ZERO,
         })
         .collect();
     fixture
