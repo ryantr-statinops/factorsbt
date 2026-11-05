@@ -109,9 +109,15 @@ async fn submit_research_job(
                 return Err(ApiResponseError::new(&context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_FIXTURE_INVALID", "Research fixture kind does not match the request.", None));
             }
         }
-        crate::research::jobs::ResearchJobKind::Replay => return Err(ApiResponseError::new(
-            &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_REPLAY_UNAVAILABLE", "No sealed research source is available for replay.", None,
-        )),
+        crate::research::jobs::ResearchJobKind::Replay => {
+            let source_id = request.source_job_id.as_ref().expect("validated replay source");
+            let source = state.store.get_research_job(source_id).filter(|job| job.status.status == "succeeded" && job.status.kind != crate::research::jobs::ResearchJobKind::Replay)
+                .ok_or_else(|| ApiResponseError::new(&context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_SOURCE_INELIGIBLE", "Research replay source is not a completed original job.", None))?;
+            drop(source);
+            crate::research::evidence::load_job(&state.evidence_root, source_id).map_err(|_| ApiResponseError::new(
+                &context, StatusCode::UNPROCESSABLE_ENTITY, "RESEARCH_SOURCE_INCOMPATIBLE", "Research replay source evidence is missing, altered, or incompatible.", None,
+            ))?;
+        }
     }
     let submitted_at = crate::orchestrator::system_utc_timestamp().map_err(|_| ApiResponseError::new(
         &context, StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Could not record research job submission time.", None,

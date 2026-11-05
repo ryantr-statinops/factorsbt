@@ -106,18 +106,22 @@ pub fn validate_request(request: &ResearchJobRequest) -> Result<(), ResearchJobE
 /// Execute a validated research request without model or provider I/O.
 pub fn execute_request(request: &ResearchJobRequest) -> Result<Value, ResearchJobError> {
     validate_request(request)?;
+    if request.kind == ResearchJobKind::Replay { return Err(ResearchJobError::ReplayUnsupported); }
+    let fixture = resolve_fixture(request.fixture_id.as_deref().unwrap_or_default(), request.fixture_version.as_deref().unwrap_or_default()).map_err(|error| ResearchJobError::Fixture(error.to_string()))?;
+    execute_with_fixture(request, &fixture)
+}
+
+pub fn execute_with_fixture(request: &ResearchJobRequest, fixture: &super::fixtures::ResearchFixture) -> Result<Value, ResearchJobError> {
     match request.kind {
         ResearchJobKind::Reranking => {
-            let fixture = resolve_fixture(request.fixture_id.as_deref().unwrap_or_default(), request.fixture_version.as_deref().unwrap_or_default()).map_err(|error| ResearchJobError::Fixture(error.to_string()))?;
-            let report: RerankingReport = compare_reranking(&fixture);
+            let report: RerankingReport = compare_reranking(fixture);
             serde_json::to_value(report).map_err(|_| ResearchJobError::Fixture("could not encode reranking report".into()))
         }
         ResearchJobKind::Episode => {
-            let fixture = resolve_fixture(request.fixture_id.as_deref().unwrap_or_default(), request.fixture_version.as_deref().unwrap_or_default()).map_err(|error| ResearchJobError::Fixture(error.to_string()))?;
             let actions = request.actions.as_ref().expect("validated episode actions").iter().map(|raw| {
                 Decimal::from_str(raw).map(|target_weight| EpisodeAction { target_weight }).map_err(|_| ResearchJobError::Episode("episode action is not a decimal".into()))
             }).collect::<Result<Vec<_>, _>>()?;
-            let report: EpisodeReport = run_episode(&fixture, &actions).map_err(|error| ResearchJobError::Episode(error.to_string()))?;
+            let report: EpisodeReport = run_episode(fixture, &actions).map_err(|error| ResearchJobError::Episode(error.to_string()))?;
             serde_json::to_value(report).map_err(|_| ResearchJobError::Episode("could not encode episode report".into()))
         }
         ResearchJobKind::Replay => Err(ResearchJobError::ReplayUnsupported),
