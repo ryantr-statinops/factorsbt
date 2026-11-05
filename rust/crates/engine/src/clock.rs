@@ -17,6 +17,15 @@ pub struct ClockEvent {
     pub kind: SimulationEventKind,
 }
 
+/// One reusable close-to-close interval. The opening event is the earliest
+/// execution point for decisions produced at `start_close`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimulationStep {
+    pub start_close: UtcTimestamp,
+    pub execution_open: UtcTimestamp,
+    pub end_close: UtcTimestamp,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClockError {
     UnsupportedCalendar,
@@ -83,6 +92,28 @@ impl SimulationClock {
             SimulationEventKind::Close => self.next_kind = None,
         }
         Some(ClockEvent { at, kind })
+    }
+
+    /// Advance the clock through the next complete close → open → close step.
+    /// Returns `None` once the configured end close has been reached.
+    pub fn next_step(&mut self) -> Option<SimulationStep> {
+        let start = self.next_event()?;
+        if start.kind != SimulationEventKind::Close {
+            return None;
+        }
+        let open = self.next_event()?;
+        if open.kind != SimulationEventKind::Open {
+            return None;
+        }
+        let close = self.next_event()?;
+        if close.kind != SimulationEventKind::Close {
+            return None;
+        }
+        Some(SimulationStep {
+            start_close: start.at,
+            execution_open: open.at,
+            end_close: close.at,
+        })
     }
 }
 
