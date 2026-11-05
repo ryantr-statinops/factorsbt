@@ -22,6 +22,7 @@ The accepted technology direction is a pure Python SDK and a Rust backend/engine
 10. [MVP 1 OpenAPI and compatibility rules](interfaces/mvp-contract-compatibility.md): shared [OpenAPI](../contracts/openapi.json), JSON Schemas, examples, and version policy.
 11. [Phase C recorded replay design](interfaces/recorded-replay.md): source evidence, verification lifecycle, and compatibility boundary.
 12. [Phase D research job interface](interfaces/research-jobs.md): controlled reranking, fixed-action episode jobs, and sealed research replay.
+13. [FactorsBT CLI](development/cli.md): install the Python package and use local run/replay commands.
 
 Contributors should also read [AGENTS.md](../AGENTS.md). Agent-specific responsibilities live in [.agents](../.agents/README.md).
 
