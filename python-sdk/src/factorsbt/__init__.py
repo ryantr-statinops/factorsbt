@@ -18,6 +18,9 @@ from .errors import (
     RequestTimeout,
     RunFailedError,
     ReplayFailedError,
+    ResearchJobAcknowledgementUnknown,
+    ResearchJobFailed,
+    ResearchWaitTimeout,
     ReplayAcknowledgementUnknown,
     SubmissionAcknowledgementUnknown,
     TransportError,
@@ -54,6 +57,7 @@ from .responses import (
     UnderlyingReservation,
 )
 from .replay import ReplayAcknowledgement, ReplayReport, ReplayStatus
+from .research import ResearchJobAcknowledgement, ResearchJobResult, ResearchJobStatus
 
 __all__ = [
     "Client",
@@ -91,6 +95,12 @@ __all__ = [
     "ReplayAcknowledgement",
     "ReplayReport",
     "ReplayStatus",
+    "ResearchJobAcknowledgement",
+    "ResearchJobAcknowledgementUnknown",
+    "ResearchJobFailed",
+    "ResearchJobResult",
+    "ResearchJobStatus",
+    "ResearchWaitTimeout",
     "ResultCounts",
     "ResultProvenance",
     "RunFailure",

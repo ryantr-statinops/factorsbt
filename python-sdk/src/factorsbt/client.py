@@ -23,12 +23,16 @@ from .errors import (
     SubmissionAcknowledgementUnknown,
     ReplayAcknowledgementUnknown,
     ReplayFailedError,
+    ResearchJobAcknowledgementUnknown,
+    ResearchJobFailed,
+    ResearchWaitTimeout,
     TransportError,
     WaitTimeout,
 )
 from .comparison import ComparisonReport, ComparisonRun, ComparisonSpec, RunMetrics, timeline_from_snapshots, trace_from_artifacts
 from .responses import EvidenceIndex, EvidenceReference, RunResult, RunStatus, SubmissionAccepted, SubmissionStatus
 from .replay import ReplayAcknowledgement, ReplayReport, ReplayStatus
+from .research import ResearchJobAcknowledgement, ResearchJobResult, ResearchJobStatus
 from .types import validate_uuid
 
 
@@ -253,6 +257,75 @@ class Client:
         if accepted.replay_id != key or accepted.source_run_id != source:
             raise ReplayAcknowledgementUnknown(key, "backend acknowledgment identity differs")
         return accepted
+
+    def submit_reranking(self, fixture_id: str, fixture_version: str, job_id: str | None = None) -> ResearchJobAcknowledgement:
+        return self._submit_research({"kind": "reranking", "fixture_id": fixture_id, "fixture_version": fixture_version}, job_id)
+
+    def submit_episode(self, fixture_id: str, fixture_version: str, actions, job_id: str | None = None) -> ResearchJobAcknowledgement:
+        values = list(actions)
+        if len(values) != 2 or any(str(value) not in {"0", "0.0", "0.00", "0.5", "0.50", "1", "1.0", "1.00"} for value in values):
+            raise ValueError("episode actions must contain exactly two values from 0, 0.5, and 1")
+        return self._submit_research({"kind": "episode", "fixture_id": fixture_id, "fixture_version": fixture_version, "actions": [str(value) for value in values]}, job_id)
+
+    def submit_research_replay(self, source_job_id: str, job_id: str | None = None) -> ResearchJobAcknowledgement:
+        return self._submit_research({"kind": "replay", "source_job_id": validate_uuid(source_job_id)}, job_id)
+
+    def _submit_research(self, payload: dict, job_id: str | None) -> ResearchJobAcknowledgement:
+        key = str(uuid4()) if job_id is None else validate_uuid(job_id)
+        body = json.dumps({"contract_version": "1.0.0", **payload}, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
+        request = Request(self.base_url.rstrip("/") + "/v1/research/jobs", data=body, headers={
+            "Accept": "application/json", "Content-Type": "application/json", "Idempotency-Key": key,
+        }, method="POST")
+        try:
+            with build_opener(_NoRedirect()).open(request, timeout=self.timeout) as response:
+                status, response_body = response.getcode(), response.read()
+        except HTTPError as exc:
+            raise _http_status_error(exc.code, exc.read()) from exc
+        except (TimeoutError, socket.timeout, URLError, OSError) as exc:
+            raise ResearchJobAcknowledgementUnknown(key, "request ended before acknowledgment") from exc
+        if status != 202:
+            raise _http_status_error(status, response_body)
+        try:
+            accepted = ResearchJobAcknowledgement.from_wire(json.loads(response_body))
+        except (UnicodeDecodeError, json.JSONDecodeError, ProtocolError) as exc:
+            raise ResearchJobAcknowledgementUnknown(key, "backend acknowledgment could not be validated") from exc
+        if accepted.job_id != key:
+            raise ResearchJobAcknowledgementUnknown(key, "backend acknowledgment used a different job ID")
+        return accepted
+
+    def get_research_job(self, job_id: str) -> ResearchJobStatus:
+        key = validate_uuid(job_id)
+        status = ResearchJobStatus.from_wire(self._get_json(f"/v1/research/jobs/{key}"))
+        if status.job_id != key:
+            raise ProtocolError("research job response identity does not match requested ID")
+        return status
+
+    def wait_research_job(self, job_id: str, *, timeout: float = 60.0, poll_interval: float = 0.25) -> ResearchJobStatus:
+        key = validate_uuid(job_id)
+        if timeout <= 0 or poll_interval <= 0:
+            raise ValueError("timeout and poll_interval must be greater than zero")
+        deadline = time.monotonic() + timeout
+        last_status = None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResearchWaitTimeout(key, last_status)
+            last_status = self.get_research_job(key)
+            if last_status.status == "succeeded":
+                return last_status
+            if last_status.status == "failed":
+                raise ResearchJobFailed(last_status)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResearchWaitTimeout(key, last_status)
+            time.sleep(min(poll_interval, remaining))
+
+    def get_research_result(self, job_id: str) -> ResearchJobResult:
+        key = validate_uuid(job_id)
+        result = ResearchJobResult.from_wire(self._get_json(f"/v1/research/jobs/{key}/result"))
+        if result.job_id != key:
+            raise ProtocolError("research result identity does not match requested ID")
+        return result
 
     def get_replay(self, replay_id: str) -> ReplayStatus:
         key = validate_uuid(replay_id)

@@ -92,3 +92,26 @@ class ReplayFailedError(FactorsBTError):
         self.status = status
         self.replay_id = status.replay_id
         super().__init__(f"replay {status.replay_id} failed ({status.failure_code or 'UNKNOWN_REPLAY_FAILURE'})")
+
+
+class ResearchJobAcknowledgementUnknown(TransportError):
+    """A research POST ended without a trustworthy acknowledgment."""
+
+    def __init__(self, job_id: str, reason: str):
+        self.job_id = job_id
+        self.reason = reason
+        super().__init__(f"research job acknowledgment is unknown; look up job_id {job_id}")
+
+
+class ResearchJobFailed(FactorsBTError):
+    def __init__(self, status):
+        self.status = status
+        self.job_id = status.job_id
+        super().__init__(f"research job {status.job_id} failed ({status.failure_code or 'UNKNOWN_RESEARCH_FAILURE'})")
+
+
+class ResearchWaitTimeout(RequestTimeout):
+    def __init__(self, job_id: str, last_status):
+        self.job_id = job_id
+        self.last_status = last_status
+        super().__init__(f"local wait deadline expired for research job {job_id}; backend work was not cancelled")
