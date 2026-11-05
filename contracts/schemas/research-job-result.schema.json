@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-job-result.schema.json",
+  "type": "object",
+  "required": ["contract_version", "job_id", "kind", "report"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "job_id": { "type": "string", "format": "uuid" },
+    "kind": { "enum": ["reranking", "episode", "replay"] },
+    "report": { "type": "object" }
+  },
+  "additionalProperties": false
+}

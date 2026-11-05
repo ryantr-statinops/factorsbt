@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-job-status.schema.json",
+  "type": "object",
+  "required": ["contract_version", "job_id", "kind", "status", "submitted_at"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "job_id": { "type": "string", "format": "uuid" },
+    "kind": { "enum": ["reranking", "episode", "replay"] },
+    "status": { "enum": ["queued", "running", "succeeded", "failed"] },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "started_at": { "type": ["string", "null"], "format": "date-time" },
+    "finished_at": { "type": ["string", "null"], "format": "date-time" },
+    "failure": { "type": ["object", "null"] }
+  },
+  "additionalProperties": false
+}

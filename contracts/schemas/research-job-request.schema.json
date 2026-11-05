@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-job-request.schema.json",
+  "title": "FactorsBT research job request",
+  "type": "object",
+  "required": ["contract_version", "kind"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "kind": { "enum": ["reranking", "episode", "replay"] },
+    "fixture_id": { "type": "string", "minLength": 1 },
+    "fixture_version": { "type": "string", "minLength": 1 },
+    "actions": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": { "type": "string", "enum": ["0", "0.5", "1"] }
+    },
+    "source_job_id": { "type": "string", "format": "uuid" }
+  },
+  "allOf": [
+    { "if": { "properties": { "kind": { "const": "reranking" } } }, "then": { "required": ["fixture_id", "fixture_version"], "not": { "anyOf": [{ "required": ["actions"] }, { "required": ["source_job_id"] }] } } },
+    { "if": { "properties": { "kind": { "const": "episode" } } }, "then": { "required": ["fixture_id", "fixture_version", "actions"], "not": { "required": ["source_job_id"] } } },
+    { "if": { "properties": { "kind": { "const": "replay" } } }, "then": { "required": ["source_job_id"], "not": { "anyOf": [{ "required": ["actions"] }, { "required": ["fixture_id"] }, { "required": ["fixture_version"] }] } } }
+  ],
+  "additionalProperties": false
+}
