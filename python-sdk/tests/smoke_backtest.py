@@ -235,7 +235,9 @@ def start_backend(binary, environment):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    client = Client(f"http://127.0.0.1:{port}", timeout=3.0)
+    # Replay admission re-reads and hashes the sealed source evidence synchronously;
+    # allow Windows filesystem/antivirus overhead while retaining a bounded request.
+    client = Client(f"http://127.0.0.1:{port}", timeout=10.0)
     deadline = time.monotonic() + 15
     try:
         while time.monotonic() < deadline:
