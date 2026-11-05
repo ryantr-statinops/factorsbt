@@ -58,6 +58,13 @@ struct State {
     fills: Vec<CandidateFillTrace>,
 }
 
+struct TradeContext<'a> {
+    decision: &'a PricePoint,
+    execution: &'a PricePoint,
+    candidate: &'a Candidate,
+    fixture: &'a ResearchFixture,
+}
+
 impl State {
     fn nav(&self, point: &PricePoint) -> Result<Decimal, RerankingError> {
         self.cash
@@ -157,26 +164,14 @@ fn execute_target(
     let nav = state.nav(decision)?;
     let desired_a = shares(nav, candidate.target_a, execution.open_a)?;
     let desired_b = shares(nav, candidate.target_b, execution.open_b)?;
-    trade(
-        state,
-        "SPOT_A",
-        desired_a,
-        execution.open_a,
+    let context = TradeContext {
         decision,
         execution,
         candidate,
         fixture,
-    )?;
-    trade(
-        state,
-        "SPOT_B",
-        desired_b,
-        execution.open_b,
-        decision,
-        execution,
-        candidate,
-        fixture,
-    )?;
+    };
+    trade(state, "SPOT_A", desired_a, execution.open_a, &context)?;
+    trade(state, "SPOT_B", desired_b, execution.open_b, &context)?;
     Ok(())
 }
 
@@ -196,10 +191,7 @@ fn trade(
     instrument: &str,
     target: Decimal,
     price: Decimal,
-    decision: &PricePoint,
-    execution: &PricePoint,
-    candidate: &Candidate,
-    fixture: &ResearchFixture,
+    context: &TradeContext<'_>,
 ) -> Result<(), RerankingError> {
     let current = if instrument == "SPOT_A" {
         state.quantity_a
@@ -211,7 +203,7 @@ fn trade(
         return Ok(());
     }
     let value = delta.checked_mul(price).ok_or_else(arithmetic)?;
-    let fee = fixture.fee_per_fill;
+    let fee = context.fixture.fee_per_fill;
     let new_cash = state
         .cash
         .checked_sub(value)
@@ -231,9 +223,9 @@ fn trade(
     let gross = checked_abs(value)?;
     state.filled = state.filled.checked_add(gross).ok_or_else(arithmetic)?;
     state.fills.push(CandidateFillTrace {
-        decision_at: decision.close_at.clone(),
-        execution_at: execution.close_at.clone(),
-        candidate_id: candidate.candidate_id.clone(),
+        decision_at: context.decision.close_at.clone(),
+        execution_at: context.execution.close_at.clone(),
+        candidate_id: context.candidate.candidate_id.clone(),
         instrument_id: instrument.into(),
         quantity: delta,
         price,

@@ -1265,9 +1265,11 @@ mod tests {
             "factorsbt-research-api-{}-{nonce}",
             std::process::id()
         ));
-        let mut config = BackendConfig::default();
-        config.evidence_directory = evidence_root.clone();
-        config.queue_limits = QueueLimits::new(1, 2).unwrap();
+        let config = BackendConfig {
+            evidence_directory: evidence_root.clone(),
+            queue_limits: QueueLimits::new(1, 2).unwrap(),
+            ..BackendConfig::default()
+        };
         let runtime = BackendRuntime::start(&config).unwrap();
         let router = run_routes(ApiState::new(
             runtime.store(),
