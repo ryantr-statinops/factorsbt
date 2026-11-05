@@ -1,56 +1,44 @@
-# Stage 10 — Nghiên cứu reranking có giới hạn
+# Stage 10 — Reranking có kiểm soát
 
-**Status:** Proposed
+**Status:** Accepted; implementation pending
 
 **Phase:** D — Nghiên cứu mở rộng
 
 ## Mục tiêu
 
-Khám phá một bài toán xếp hạng lại candidate actions/policies trước portfolio admission, chỉ triển khai sau khi mục tiêu và hợp đồng được chấp nhận.
+Đánh giá một heuristic reranker cố định trên các target spot có giới hạn. Đây là thí nghiệm so sánh có thể tái lập, không phải khuyến nghị đầu tư hay cam kết cải thiện hiệu quả.
 
-## Phạm vi và đầu ra
+## Hợp đồng nghiên cứu đã chốt
 
-- Chọn một use case và baseline cụ thể; ghi inputs, mục tiêu đánh giá và giới hạn nghiên cứu.
-- Định nghĩa candidate identity, thông tin được phép dùng, đầu ra xếp hạng và cách nối với admission policy hiện có.
-- Giữ ranking tách khỏi quyết định vốn/thực thi của engine; thứ hạng không đồng nghĩa order hoặc fill được bảo đảm.
-- Ghi evidence từ candidate set qua thứ hạng tới admission và kết quả; cập nhật contracts/ADRs nếu thay đổi ranh giới đáng kể.
-- Cung cấp ví dụ bounded và báo cáo so sánh; không cam kết thuật toán sẽ cải thiện kết quả đầu tư.
+- Mỗi mốc quyết định có tối đa ba ứng viên: giữ tiền mặt, phân bổ 50% vào `SPOT_A`, hoặc phân bổ 50% vào `SPOT_B`. Mỗi ứng viên có ID duy nhất, điểm gốc trong `[0, 1]`, target và thời điểm availability.
+- Cùng candidate set và điểm gốc được dùng cho hai portfolio độc lập. Baseline chọn điểm gốc cao nhất. Reranker chọn theo `raw_score - 0.25 × sum(abs(target_weight - current_weight))` trên hai mã spot.
+- `current_weight` lấy từ giá trị vị thế chia NAV của snapshot tại close. Phép tính dùng decimal. Khi điểm bằng nhau, chọn candidate có ID tăng dần.
+- Candidate set rỗng, ID trùng, candidate chưa available hoặc NAV không dương làm nhánh tương ứng thất bại với lỗi có cấu trúc.
+- Chỉ target của một candidate được chọn chuyển qua admission hiện tại. Engine vẫn áp dụng giới hạn vốn; lệnh đủ điều kiện khớp sớm nhất ở open kế tiếp.
+- Report ghép hai nhánh theo simulation time và gồm NAV cuối, P&L USD, tổng giá trị khớp, lựa chọn và trace candidate → admission → fill. Lỗi một nhánh không xóa kết quả nhánh kia.
+- Dùng fixture versioned riêng cho phát triển và đánh giá. Hệ số và tie-break được cố định trước khi chạy fixture đánh giá. Báo cáo mức tăng, giảm hoặc bằng baseline mà không tuyên bố thuật toán tốt hơn.
 
-## Phụ thuộc
+## Phụ thuộc và giới hạn
 
-- [Stage 08](08-scenario-comparison.md), [Stage 09](09-recorded-replay.md): comparison và provenance/replay đã được kiểm chứng.
-- Đây là hướng Proposed độc lập với RL; không phải điều kiện hoàn thành MVP và không được coi là đã duyệt triển khai vì có file kế hoạch.
-
-## Quyết định cần chốt — Open
-
-- Xếp hạng action hay policy, nguồn candidate, objective/metric, baseline và quy tắc đánh giá.
-- Thuật toán hoặc dịch vụ ranking; cách xử lý tie, conflict, thiếu candidate và failure nếu cần cho use case đã chọn.
-- Lựa chọn/ranking/aggregation kết nối với shared capital ra sao; không mặc định voting hoặc cộng gộp nhiều model.
-- Evaluation split, kiểm soát rò rỉ dữ liệu tương lai và model state; scope reproducibility của ranking response.
+- Dựa trên snapshot, admission, execution và evidence của MVP; không đổi quy tắc tài chính hiện có.
+- Runner sở hữu state độc lập cho từng nhánh. Fixture là input bất biến có ID/version rõ ràng.
+- Không huấn luyện hoặc gọi model ranking bên ngoài. Không hỗ trợ candidate tự sinh từ dữ liệu tương lai.
 
 ## Task → Commit
 
 | Thứ tự | Task và phạm vi commit | Commit dự kiến |
 | --- | --- | --- |
-| 1 | Chốt use case, objective và hợp đồng ranking | `docs(research): define bounded reranking experiment` |
-| 2 | Triển khai ranking hook/adapter và evidence trong scope đã chốt | `feat(ranking): connect candidate ranking to portfolio admission` |
-| 3 | Thêm ví dụ comparison và kiểm chứng ranh giới | `feat(research): demonstrate traceable reranking comparison` |
-
-Task triển khai chỉ bắt đầu sau khi quyết định của task thiết kế được Accepted; không tự chọn thuật toán trong lúc code.
-
-## Kiểm chứng dự kiến
-
-- Candidate ranking chỉ dùng thông tin khả dụng tại simulation time và evaluation split đã chấp nhận.
-- Thứ hạng khác nhau dẫn đến admission đúng policy khi thiếu vốn; engine vẫn thực thi constraints.
-- Tình huống tie/conflict/failure được kiểm tra nếu thuộc contract đã chọn.
-- So sánh baseline bằng cùng điều kiện đã khai báo; ghi cả trường hợp không cải thiện và bằng chứng replay theo scope.
+| 1 | Chốt protocol reranking bounded, baseline, objective và metric | `docs(research): define bounded reranking protocol` |
+| 2 | Trích bước mô phỏng dùng chung cho runner nghiên cứu | `refactor(engine): extract reusable simulation step` |
+| 3 | Đăng ký fixture spot versioned cho development và evaluation | `feat(research): register versioned spot fixtures` |
+| 4 | Kiểm tra candidate identity, target, score và availability | `feat(ranking): validate point-in-time candidates` |
+| 5 | Chọn baseline và turnover-aware candidate bằng decimal | `feat(ranking): score baseline and turnover variants` |
+| 6 | Chạy portfolio độc lập và tạo comparison report có trace | `feat(ranking): run isolated portfolio comparisons` |
+| 7 | Nghiệm thu candidate, vốn, execution và partial failure | `test(ranking): verify controlled candidate selection` |
 
 ## Điều kiện hoàn thành
 
-- Một contract nghiên cứu được chấp nhận, một ví dụ chạy được và evidence kiểm chứng tương tác với portfolio/replay.
-- Báo cáo kết quả và giới hạn theo metric đã định nghĩa; không suy rộng thành bảo đảm hiệu quả mô hình.
-
-## Tài liệu liên quan
-
-- [Product overview — longer-term research](../../docs/product/overview.md#longer-term-research-directions)
-- [Roadmap — research](../../docs/roadmap.md#stage-3-reranking-and-reinforcement-learning-research)
+- Fixture development và evaluation cho thấy ít nhất một mốc chọn khác nhau.
+- Mỗi target đi qua admission và execution của engine; không tạo fill trực tiếp từ ranking.
+- Kết quả từng nhánh, trace và metric được lưu; không có dữ liệu chưa available trong ranking.
+- Kết quả đánh giá có thể tăng, giảm hoặc bằng baseline và được báo đúng.
