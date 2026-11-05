@@ -17,5 +17,6 @@ pub mod orchestrator;
 pub mod replay_source;
 pub mod replay_types;
 pub mod results;
+pub mod research;
 pub mod run_store;
 pub mod runtime;

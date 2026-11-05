@@ -1,0 +1,3 @@
+//! Bounded research protocols layered on the existing simulation engine.
+
+pub mod fixtures;
