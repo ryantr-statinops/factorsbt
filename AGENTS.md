@@ -4,7 +4,7 @@ FactorsBT is API-first infrastructure for multi-asset backtesting, synchronized 
 
 ## Current state and accepted direction
 
-The repository currently contains foundation documentation. There is no implemented SDK, backend, simulation engine, or executable API contract. Treat capabilities described in the docs as intended behavior unless implementation evidence says otherwise.
+The repository implements controlled local synthetic backtests with a Python SDK, Rust backend/engine, shared executable contracts, verified artifact access, sequential scenario comparison, recorded replay, bounded research jobs, and a run/replay CLI. Phases A–E have local verification records linked from [the documentation index](docs/README.md). This does not establish real-provider integrations, hosted deployment, persistent job recovery, public API stability, or a PyPI release. Check code and verification evidence before extending a capability claim.
 
 The accepted direction is a pure Python SDK communicating with a Rust backend and Rust backtest engine over HTTP/JSON. External data providers and model services connect through adapters. See [ADR 0001](docs/decisions/0001-python-sdk-rust-backend.md).
 
@@ -35,7 +35,7 @@ Role guides are working instructions, not an automatic agent launcher. They do n
 
 ## Verification and handoff
 
-No build, test, lint, or formatting commands have been established yet. Discover actual manifests and tooling before choosing commands, and document verified commands when tooling is introduced.
+The Rust workspace is under `rust/`; the Python package and tests are under `python-sdk/`. Discover current manifests and tooling before choosing commands. Verified local commands and their environment are recorded in the [development workflow](docs/development/workflow.md) and linked phase records; historical test counts are not current test guarantees. Document newly verified commands with their results and environment.
 
 For documentation changes, check relative links, Markdown structure, terminology, status labels, and the Git diff. For code changes, run checks appropriate to the behavior and available tooling; report what ran, the result, and any unverified assumptions. Avoid tests that merely duplicate the implementation.
 
