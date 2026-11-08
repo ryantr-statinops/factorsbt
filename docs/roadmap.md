@@ -1,8 +1,19 @@
 # Roadmap
 
-**Status:** Proposed sequence. Stages describe intended outcomes, not implemented features or delivery dates. The first synthetic scope within Stage 1 has been accepted in the [MVP 1 scope](product/mvp-scope.md); the rest of Stage 1 remains contingent on verified implementation and any choices explicitly left Open.
+**Status:** Accepted synthetic MVP scope with Implemented local slices across the stages below. This roadmap retains the broader product sequence; future provider, deployment, and general research extensions remain Proposed or Open, without delivery dates.
 
 There are no performance targets, provider guarantees, or release promises attached to these stages. The language/API direction is recorded in [ADR 0001](decisions/0001-python-sdk-rust-backend.md).
+
+## Delivered local scope
+
+| Roadmap stage | Implemented scope and evidence | Remaining boundary |
+| --- | --- | --- |
+| 0 | Foundation documentation and [Phase A tooling](development/phase-a-local.md) | Documentation acceptance alone does not prove runtime behavior. |
+| 1 | Controlled synthetic backtest, typed SDK and run API: [Phase B](development/phase-b-local.md) | No real providers, exchange conventions, or hosted service. |
+| 2 | Sequential independent-run SDK comparison and same-binary recorded replay: [Phase C](development/phase-c-local.md) | No parallel comparison job or cross-build replay. |
+| 3 | Fixed reranker and fixed-action episodes: [Phase D](development/phase-d-local.md) | No general ranking framework, interactive RL, or training. |
+
+The local run/replay CLI is a separate [Phase E extension](development/phase-e-local.md). Roadmap Stages 0–3 are product groupings; implementation Stages 00–12 track the finer delivery sequence in the [implementation plan](../plan/implementation/README.md).
 
 ## Stage 0: Foundation documentation
 
