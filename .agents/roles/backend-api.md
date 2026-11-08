@@ -18,7 +18,7 @@ Read the [architecture](../../docs/architecture/overview.md), [service contracts
 
 ## Contract and tooling discipline
 
-The MVP endpoints, wire schemas, status codes, retry rules, and compatibility policy are selected in the [service contract set](../../docs/interfaces/service-contracts.md). They remain unimplemented until code and verification exist. Framework, persistent storage, queue, authentication, and deployment topology remain open. Keep Python SDK and service behavior aligned with the shared OpenAPI and schema examples.
+The local run, evidence/artifact, replay, and bounded research operations have implementation and verification evidence linked from the [service contract set](../../docs/interfaces/service-contracts.md). Axum/Tokio, the bounded in-process worker queue, process-local metadata, and local filesystem evidence are selected for this slice. Persistent storage/queues, authentication, remote deployment, and recovery remain Open. Keep Python SDK and service behavior aligned with the shared OpenAPI and schema examples; local verification does not establish public API stability.
 
 ## Verification and handoff
 
