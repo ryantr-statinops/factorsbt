@@ -2,6 +2,8 @@
 
 **Status:** Implemented for local backtest and recorded replay workflows. This CLI is a thin wrapper over the Python SDK; it does not start the Rust backend or model fixture.
 
+For a first runnable demo, use the [quickstart](quickstart.md): its installed CLI smoke starts controlled services and cleans them up. The commands below are for your own separately running backend and compatible stateless model service. Backend launch/settings and troubleshooting are in [local operations](local-operations.md). The package has no standalone model-fixture launcher.
+
 ## Install
 
 Use Python 3.13 or later and install the source package into the active virtual environment:
@@ -47,6 +49,8 @@ factorsbt run result <run-id>
 
 If a submit acknowledgment is lost, the CLI prints the ID and lookup command to stderr. It never retries the POST automatically. Save the run ID from the acknowledgment; lookup by submission ID returns the associated run ID.
 
+Keep the submission ID before recovery and use the same running backend process. Deduplication/status metadata does not survive restart. The [submission contract](../interfaces/mvp-submissions.md) defines when a caller may explicitly repeat the same body/key; a new key creates independent work.
+
 ## Verify with recorded replay
 
 After a successful or failed run has sealed its evidence, submit a recorded replay. Replay reads the recorded model exchange and does not invoke fresh inference:
@@ -75,3 +79,5 @@ Successful commands print one compact UTF-8 JSON object to stdout. Decimal value
 | `130` | Ctrl+C interrupted the local CLI. |
 
 The CLI does not implement scenario comparison, artifact downloads, research jobs, an interactive console, or PyPI distribution.
+
+Run evidence enumeration and verified artifact reads are available through the [Python SDK](python-sdk.md) and [HTTP API](../interfaces/results-evidence.md), despite being absent from this CLI. Use the SDK for [comparison](comparison.md) and the separate [research interface](../interfaces/research-jobs.md).
