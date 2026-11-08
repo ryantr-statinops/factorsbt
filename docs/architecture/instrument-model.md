@@ -1,6 +1,6 @@
 # MVP 1 instrument model
 
-**Status:** Accepted product scope and synthetic configuration rules. Implemented behavior does not exist yet.
+**Status:** Accepted synthetic configuration rules, Implemented locally in shared contracts, SDK builders, and Rust validation/engine behavior. The [Phase B verification record](../development/phase-b-local.md) bounds the evidence; these rules do not establish real-market coverage.
 
 See the [accepted MVP scope](../product/mvp-scope.md). This document defines type-specific configuration and validation; shared time, accounting, and valuation rules remain in their owning documents.
 
