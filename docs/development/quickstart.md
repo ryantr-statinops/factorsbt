@@ -19,10 +19,13 @@ $demoPython = Join-Path $demoEnv 'Scripts\python.exe'
 & $demoPython -m pip install --disable-pip-version-check ./python-sdk
 & $demoPython -m pip install --disable-pip-version-check -r python-sdk/requirements-test.txt
 $env:CARGO_TARGET_DIR = Join-Path $env:TEMP 'factorsbt-docs-completeness-target'
+$env:CARGO_PROFILE_DEV_DEBUG = '0'
 cargo fetch --locked --manifest-path rust/Cargo.toml
 ```
 
 Use a new environment directory if that name already contains unrelated work. Package installation exposes `factorsbt.exe` in the environment's `Scripts` directory and needs no runtime dependency beyond the standard library. `jsonschema` is test-only. A first offline build without the dependency cache may fail; `--offline` does not install missing dependencies from the network. Retain Cargo.lock and do not run `cargo update` as setup.
+
+The smoke build above disables dev debug symbols through a temporary Cargo environment override; it does not edit a build manifest or SDK timeout. Default-symbol local runs encountered 5-second HTTP timeouts during this documentation review; the installed CLI smoke subsequently passed with this override. This observation is not proof of a single timeout cause or a latency guarantee. Rebuilding changes the executable digest: create fresh source runs and keep the same binary for their replay.
 
 ## Run the self-contained demo
 
