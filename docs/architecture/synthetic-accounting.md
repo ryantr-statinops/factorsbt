@@ -1,6 +1,6 @@
 # MVP 1 synthetic cash and position accounting
 
-**Status:** Accepted for the synthetic MVP only. No accounting engine is implemented yet.
+**Status:** Accepted for the synthetic MVP only. Implemented in the local Rust engine with focused accounting checks and controlled integration evidence in the [Phase B record](../development/phase-b-local.md).
 
 This describes the controlled USD ledger used by MVP 1. Instrument configuration is defined in the [instrument model](instrument-model.md), while margin and delivery risk are detailed separately.
 
@@ -10,7 +10,7 @@ Wire amounts, prices, margins, fees, and fractional spot quantities are decimal 
 
 The USD cash ledger is rounded to two decimal places using half-even after every cash posting. Instrument quantities are rounded toward zero to the configured `quantity_step` after each executed order; derivatives use integral contract quantities. Price rounding uses the configured price tick and is adverse to the portfolio on a fill: buys round up and sells round down. A fill whose adjusted price is missing, nonpositive, or outside the available quote fails the run without an invented price.
 
-Decimal strings use a plain base-10 form without exponent notation or leading zeroes. Limit them to 28 significant digits and at most 18 fractional digits; a leading minus sign is allowed, positive signs and whitespace are not. Normalize negative zero to zero. Python's `decimal` and the Rust decimal type must reject inputs beyond these limits identically. Overflow during arithmetic is a typed run error; never clamp a value silently.
+Decimal strings use a plain base-10 form without exponent notation or leading zeroes. Limit them to 28 significant digits and at most 18 fractional digits; a leading minus sign is allowed, positive signs and whitespace are not. Reject negative zero, including `-0` and `-0.00`, rather than normalizing an invalid input. Python and Rust enforce this wire rule consistently with the [compatibility contract](../interfaces/mvp-contract-compatibility.md). Overflow during arithmetic is a typed run error; never clamp a value silently.
 
 ## Cash postings
 
