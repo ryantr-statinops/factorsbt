@@ -2,7 +2,7 @@
 
 **Design status:** Accepted MVP 1 contract design.
 
-**Implementation status:** The Rust backend implements the health operation and all four run operations for local loopback use. Stage 06 verification passed against controlled fixtures. This does not establish public API stability or hosted-service support.
+**Implementation status:** The Rust backend implements health, the four original run operations, and two Phase C evidence/artifact operations for local loopback use. Controlled verification does not establish public API stability or hosted-service support.
 
 This is the loopback HTTP/JSON surface for the Python SDK. The Rust backend coordinates runs; the engine owns simulation state and financial outcomes. `GET /healthz` was verified in Phase A. The four run operations and typed Python backtest flow were implemented and exercised through the Rust service in Phase B Stages 06–07 using controlled fixtures. See the [local verification record](../development/phase-b-local.md).
 
@@ -15,6 +15,8 @@ This is the loopback HTTP/JSON surface for the Python SDK. The Rust backend coor
 | `GET /v1/submissions/{submission_id}` | Resolve an acknowledged or uncertain submission to its run and current status. | `200 OK` with submission and run identity. |
 | `GET /v1/runs/{run_id}` | Inspect run lifecycle, progress context, and terminal failure when present. | `200 OK` with current run status. |
 | `GET /v1/runs/{run_id}/results` | Retrieve a successful run's summary and evidence references. | `200 OK` after the run reaches `succeeded`. |
+| `GET /v1/runs/{run_id}/evidence` | Enumerate sealed, verified evidence for a succeeded or failed run. | `200 OK` with an `EvidenceIndex`. |
+| `GET /v1/runs/{run_id}/artifacts/{artifact_id}` | Read exact verified bytes by artifact UUID, not a supplied path. | `200 OK` with the stored content type. |
 
 The submission body is the versioned `RunConfiguration` contract assembled in the schemas and OpenAPI specification. Its current shape is described in [MVP run and instrument configuration](instrument-configuration.md). Malformed JSON is rejected before enqueue. Schema-invalid or semantically invalid configuration is rejected without creating a run. Semantic checks include resolving instrument references, verifying output constraints, and checking portfolio feasibility where that check belongs to run admission.
 
@@ -68,6 +70,10 @@ The lifecycle is `queued → running → succeeded | failed`. `started_at` and `
 ### Successful result response
 
 `GET /v1/runs/{run_id}/results` returns a `RunResult` document containing the run summary, the configured single output mode, final portfolio state, and evidence references for snapshots, model responses, decisions, orders, fills, settlements, and risk events. The result and evidence shape is specified in [MVP results and evidence references](results-evidence.md). The endpoint does not return fabricated fill data or silently replace unavailable evidence.
+
+### Evidence and artifact responses
+
+Phase C adds evidence enumeration and artifact reads without changing the original result shape. The [evidence guide](results-evidence.md#verified-evidence-access) specifies validation and errors: running evidence requests return `409 RUN_NOT_SUCCEEDED`, unknown sources/artifacts return `404`, and failed integrity checks return `500 EVIDENCE_REFERENCE_INVALID`. Sealed succeeded/failed run evidence can be read from disk after restart; this is separate from metadata recovery. These routes do not apply to replay or research job IDs.
 
 ## Client behavior and storage boundary
 

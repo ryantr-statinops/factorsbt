@@ -1,6 +1,6 @@
 # Simulation lifecycle
 
-**Status:** Accepted conceptual requirements; executable ordering, financial conventions, and failure policies are Open.
+**Status:** Accepted lifecycle requirements and synthetic MVP ordering. The local engine/orchestrator implement the bounded rules linked below; real-market conventions and stateful provider/model extensions remain Open.
 
 ## Time and data visibility
 
@@ -24,7 +24,7 @@ Missing publication or availability metadata must be identified. An approximatio
 6. **Create and execute orders.** Convert admitted proposals into orders and apply the chosen execution, fee, slippage, and latency rules. A proposal is not a guaranteed fill.
 7. **Update and record.** Apply fills and other admitted portfolio events, record the transition, and continue until the configured end condition.
 
-The cycle describes logical responsibilities, not an established scheduling algorithm. Pending orders may fill between decision cycles. The ordering of market updates, fills, and model triggers at equal timestamps must be specified before engine implementation.
+The cycle describes logical responsibilities. The accepted synthetic open/close ordering below is implemented for the MVP. Pending orders execute at a later open; a different scheduler or market calendar requires its own explicit ordering policy.
 
 ## Multiple data frequencies
 
@@ -34,17 +34,17 @@ A bar's closing information is unavailable before the bar completes. Whether a d
 
 ## Decisions, orders, and fills
 
-- A **decision** is a model or policy proposal. Its representation might be a prediction, target allocation, or order intent; the first output contract is still Open.
+- A **decision** is a model or policy proposal. MVP 1 selects scores, targets, or market order intents under the [model exchange contract](../interfaces/model-exchanges.md); other representations require a separate conversion policy.
 - An **order** is an instruction admitted by portfolio/execution rules. Predictions require a defined conversion policy before becoming actionable.
 - A **fill** is a simulated execution event that changes positions and cash under the selected accounting rules.
 
-Asset iteration order must not accidentally determine capital allocation. Record the selected admission policy and explain reductions or rejected proposals. Partial fills, order types, buying-power rules, and rounding remain Open.
+Asset iteration order must not determine capital allocation. The synthetic MVP selects grouped admission, market orders, full execution of affordable quantities, explicit cash/margin/reserves, and declared rounding. See [decision policies](decision-policies.md), [accounting](synthetic-accounting.md), and [margin risk](margin-risk.md). Partial execution and other order types are unsupported, not hidden defaults.
 
 ## Multiple scenarios and models
 
 Every scenario owns its evolving state. Shared market inputs do not imply identical model inputs when holdings, capital, history, or model state differ. External stateful model services need a declared isolation/reset mechanism before they can be used safely across runs.
 
-Comparing multiple models is distinct from combining their outputs. Combining requires an explicit policy for conflicts and ranking; no aggregation algorithm is accepted yet.
+Comparing multiple models is distinct from combining their outputs. The local SDK compares independent runs sequentially. Bounded [research reranking](../interfaces/research-jobs.md) selects candidates under a fixed policy; it does not establish generic multi-model aggregation.
 
 ## Replay and fresh inference
 
@@ -52,9 +52,9 @@ Comparing multiple models is distinct from combining their outputs. Combining re
 
 **Fresh inference** calls a model again. It may produce different output even when its endpoint and apparent inputs match. A mutable endpoint or seed alone is not proof of model identity or deterministic behavior.
 
-Evidence should associate input snapshots, configuration, model identity/version where available, returned outputs, admission decisions, orders, fills, and state transitions. Exact manifests, persistence, and retention are Open.
+Local sealed evidence associates snapshots, configuration, model identity/version, responses, admissions, orders, fills, and state transitions. [Recorded replay](../interfaces/recorded-replay.md) checks sealed inputs under the same executable digest and contract. Durable metadata, retention, and cross-build/platform replay remain outside this guarantee.
 
-## Failure and execution decisions required before implementation
+## Decisions required for extensions beyond the synthetic MVP
 
 - Decision triggers, equal-time ordering, and end-of-run treatment of pending orders.
 - Timestamp conventions, market calendar, freshness, missing-data, and revision policies.
@@ -63,7 +63,7 @@ Evidence should associate input snapshots, configuration, model identity/version
 - Timeout/retry limits, malformed or missing outputs, and run failure behavior.
 - Whether service latency is ignored by simulated time, modeled explicitly, or evaluated as a separate scenario.
 
-Do not silently skip a failure, replace data, or generate a trading action. Select and record the needed behavior for the [first implementation slice](../roadmap.md).
+The synthetic MVP resolves these choices in the ordering below and the linked contracts/accounting rules. Model failures fail visibly without retries/fallback; processing latency does not advance simulation time. Extensions must explicitly revisit the applicable choices instead of silently skipping failures, replacing data, or generating actions. See the [roadmap](../roadmap.md).
 
 ## Accepted MVP 1 synthetic daily ordering
 

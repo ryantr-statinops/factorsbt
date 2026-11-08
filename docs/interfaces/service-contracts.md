@@ -2,9 +2,9 @@
 
 **Status:** Accepted MVP 1 contract design. Data, engine, orchestration and run API slices have local implementation evidence; public stability is not established.
 
-This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents. Stages 03–07 implement and locally verify data, engine, orchestration, run API, and typed Python SDK; Phase C adds local recorded replay and sequential SDK comparison. The service is loopback/local and has no public stability guarantee.
+This document defines component responsibilities. Detailed MVP request, response, error, and event shapes are in the linked API and schema documents. Stages 03–07 implement the synthetic backtest and typed SDK. Phase C adds verified run artifact access, recorded replay and sequential SDK comparison; Phase D adds bounded research jobs; Phase E adds the SDK-based run/replay CLI. All remain local without public stability guarantees.
 
-The [MVP 1 HTTP API](mvp-http-api.md) selects the initial run operation paths and lifecycle. The shared shapes and [compatibility rules](mvp-contract-compatibility.md) are documented. The four run operations and three recorded replay operations are implemented and locally verified, but are not declared stable. Replay compatibility is restricted to sealed evidence with matching executable digest and contract version; see [recorded replay](recorded-replay.md).
+The [run HTTP API](mvp-http-api.md) covers four original run operations plus two evidence/artifact reads; health is separate. Three [recorded replay operations](recorded-replay.md) and three [research job operations](research-jobs.md) have separate resources. There is no backend comparison resource: the SDK coordinates independent runs. The shared [compatibility rules](mvp-contract-compatibility.md) apply; sealed replay requires matching executable digest and contract version.
 
 The current request shape and type-specific instrument requirements are summarized in [MVP run and instrument configuration](instrument-configuration.md); the JSON Schema files under `contracts/schemas/` are the wire-shape authority.
 
@@ -18,7 +18,7 @@ Successful run summaries, provenance, and local artifact references are specifie
 
 ## SDK and backend
 
-The SDK should let a user configure an experiment, submit work, inspect progress, and retrieve results. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.
+The SDK lets a user configure an experiment, submit work, inspect progress, and retrieve results/evidence. The backend owns run identity and operational lifecycle; the engine owns simulated financial state.
 
 | Exchange | Information to account for |
 | --- | --- |
@@ -57,7 +57,7 @@ This is an internal Rust boundary. It does not require an HTTP service between t
 
 The orchestrator supplies the scenario configuration, eligible events, and correlated decision groups. The engine supplies the portfolio snapshot needed for inference and returns admission outcomes, orders, fills, and state transitions. Both must agree on step identity and simulation-time semantics.
 
-The engine must not reclassify transport failures as financial outcomes. The orchestrator must not bypass the engine's capital and execution rules. MVP event shapes are selected in [engine outcomes](engine-outcomes.md); internal scheduling and implementation-level transaction boundaries remain implementation work.
+The engine must not reclassify transport failures as financial outcomes. The orchestrator must not bypass capital and execution rules. MVP event shapes are specified in [engine outcomes](engine-outcomes.md); local ordering and atomic group transitions are implemented under the synthetic lifecycle. This does not select distributed transaction semantics.
 
 ## Results and evidence
 
@@ -65,7 +65,7 @@ Results should connect experiment configuration to data snapshot/version identit
 
 Recorded-response replay and fresh inference must be distinguishable in result provenance. Report unavailable evidence rather than claiming complete reproducibility.
 
-Result serialization and local artifact references are selected in [results and evidence](results-evidence.md). Persistent storage, remote artifact retrieval, retention, and deployment-wide redaction policy remain Open. Avoid credential-bearing URLs or unrestricted private-data references in result payloads.
+Result serialization and verified local run artifact reads are specified in [results and evidence](results-evidence.md). Replay/research references do not imply artifact endpoints for those resources. Persistent metadata storage, hosted artifact retrieval, retention, and deployment-wide redaction policy remain Open. Avoid credential-bearing URLs or unrestricted private-data references in result payloads.
 
 ## Contract acceptance checklist
 

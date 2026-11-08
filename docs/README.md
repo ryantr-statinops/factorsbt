@@ -8,7 +8,22 @@ Phases A–E have passed their local verification gates across Stages 00–12. T
 
 The accepted technology direction is a pure Python SDK and a Rust backend/engine, communicating initially over HTTP/JSON. Acceptance records design intent, not implementation completion.
 
-## Reading order
+## Start by task
+
+| Goal | Read |
+| --- | --- |
+| Run a first self-contained synthetic demo | [Quickstart](development/quickstart.md) |
+| Configure/submit runs and inspect evidence in Python | [Python SDK](development/python-sdk.md) |
+| Use the installed run/replay command | [CLI](development/cli.md) |
+| Compare independent scenarios and interpret deltas | [Comparison](development/comparison.md) |
+| Start/configure a local backend or diagnose failures | [Local operations](development/local-operations.md) |
+| Change synthetic datasets safely | [Fixture workflow](../contracts/fixtures/README.md) |
+| Run bounded reranking or fixed-action episodes | [Research interface](interfaces/research-jobs.md) and [example](../python-sdk/examples/research_workflows.py) |
+| Review verification limits | [Acceptance traceability](examples/mvp/acceptance-cases.md#verification-traceability) and phase records below |
+
+The [root README](../README.md) introduces the repository. Quickstart smoke programs start their own fixtures; SDK/CLI examples using standalone services have explicit prerequisites. No standalone model-fixture launcher is provided.
+
+## Product and architecture reading order
 
 1. [Product overview](product/overview.md): the problem, intended users, examples, and boundaries.
 2. [Architecture overview](architecture/overview.md): components and ownership.
@@ -25,6 +40,12 @@ The accepted technology direction is a pure Python SDK and a Rust backend/engine
 13. [FactorsBT CLI](development/cli.md): install the Python package and use local run/replay commands.
 
 Contributors should also read [AGENTS.md](../AGENTS.md). Agent-specific responsibilities live in [.agents](../.agents/README.md).
+
+## Verification records and open distribution decisions
+
+Phase [A](development/phase-a-local.md), [B](development/phase-b-local.md), [C](development/phase-c-local.md), [D](development/phase-d-local.md) and [E](development/phase-e-local.md) records describe historical executed checks, environments and boundaries. Current documentation-refresh checks are in the [documentation verification record](development/documentation-verification.md). Test totals are observations, not proof of unspecified acceptance cases or a platform support matrix.
+
+**Open:** Repository licensing has not been selected. No `LICENSE` or package license grant is supplied by this documentation. Hosted deployment, real-provider integration, durable metadata/recovery and public release decisions remain outside the local verification claim.
 
 ## Status vocabulary
 
@@ -45,7 +66,7 @@ Documents state the status of their content where relevant. Moving a statement t
 - Durable architecture choices belong in ADRs. Planned work and its dependencies belong in the roadmap.
 - Accepted synthetic instrument and accounting rules live in the owning architecture documents linked from the [MVP 1 scope](product/mvp-scope.md). Real-market behavior remains open unless separately accepted.
 - The sequence and progress evidence for implementation phases live in the [implementation plan](../plan/implementation/README.md).
-- Verified local build, test, and smoke commands live in the [development guides](development/workflow.md), including the [Phase B](development/phase-b-local.md), [Phase C](development/phase-c-local.md), and [Phase D](development/phase-d-local.md) local verification records.
+- Current setup and smoke commands live in the [quickstart](development/quickstart.md); historical executed build/test commands live in the [phase verification records](#verification-records-and-open-distribution-decisions). Contributor guidance lives in the [development workflow](development/workflow.md).
 - Workflow instructions belong in the development guide and agent instructions, not in public interface descriptions.
 
 Keep related documents linked instead of duplicating detailed rules. Record open questions near their owning topic.

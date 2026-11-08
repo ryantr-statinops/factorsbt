@@ -1,6 +1,6 @@
 # Stage 00 — Chốt phạm vi và quyết định MVP
 
-**Status:** Proposed
+**Status:** Accepted — quyết định synthetic MVP đã được chốt; đây là stage thiết kế, không tự chứng minh runtime Implemented.
 
 **Phase:** A — Chốt thiết kế MVP
 
@@ -10,7 +10,7 @@ Chuyển hướng sản phẩm thành một lát cắt backtest đủ rõ để 
 
 ## Phạm vi và đầu ra
 
-- Đề xuất MVP gồm nhiều tài sản dùng chung vốn, price bars cùng một nguồn sự kiện, một model service và kết quả truy vết được. Phạm vi này cần được chốt trước khi triển khai.
+- MVP đã chốt gồm công cụ synthetic dùng chung vốn, price bars và sự kiện có availability time, model HTTP fixture stateless và kết quả truy vết được; xem [phạm vi MVP](../../docs/product/mvp-scope.md).
 - Lập ma trận quyết định: câu hỏi, phương án, trạng thái, lý do chọn, tài liệu sở hữu và stage bị ảnh hưởng.
 - Định nghĩa thí nghiệm mẫu, dữ liệu synthetic/controlled, kết quả kỳ vọng và giới hạn không hỗ trợ.
 - Đưa quyết định về đúng tài liệu sản phẩm, lifecycle hoặc contracts; thay đổi kiến trúc đáng kể được ghi bằng ADR, giữ lịch sử quyết định cũ.
@@ -20,14 +20,14 @@ Chuyển hướng sản phẩm thành một lát cắt backtest đủ rõ để 
 - Đọc tài liệu nền tảng và ADR 0001. Hướng Accepted hiện có là SDK thuần Python, backend/engine Rust và giao tiếp ban đầu HTTP/JSON.
 - Đây là điểm bắt đầu của chuỗi triển khai; chưa phụ thuộc code hay dịch vụ bên ngoài có sẵn.
 
-## Quyết định cần chốt — Open
+## Quyết định đã chốt và phần còn Open
 
-- Người dùng và tình huống MVP; thị trường, loại công cụ, lịch giao dịch, đồng tiền và khoảng thời gian mẫu.
-- Nhà cung cấp, nguồn sự kiện, quyền truy cập, phiên bản dữ liệu và cách xử lý thiếu availability metadata.
-- Đầu ra mô hình: dự báo, tỷ trọng mục tiêu hay ý định đặt lệnh; chính sách chuyển đầu ra thành đề xuất có thể xét duyệt.
-- Decision trigger, thứ tự sự kiện cùng timestamp, dữ liệu thiếu/cũ/revision và kết thúc run khi còn lệnh chờ.
-- Phân bổ vốn, rủi ro, loại lệnh, điều kiện khớp, phí, trượt giá, độ trễ, làm tròn, độ chính xác số và kế toán công cụ.
-- Phạm vi chạy ban đầu, yêu cầu truy cập và cách kiểm chứng code: theo task, cuối phase hoặc kết hợp. Chưa chọn lịch chạy test cho công việc tương lai.
+- Accepted: researcher workflow, spot/futures/options synthetic, USD và lịch open/close UTC; chủ sở hữu là phạm vi MVP.
+- Accepted: fixture có identity/version và availability rõ ràng; provider thật, quyền truy cập và metadata lịch sử ngoài fixture còn Open.
+- Accepted: scores, targets hoặc market order intents; conversion và grouped admission nằm trong contracts/decision policies.
+- Accepted: thứ tự open/close, revision theo availability, không carry-forward ngầm, hủy lệnh chờ cuối run; xem lifecycle.
+- Accepted: cash/margin/reserves, full execution có giới hạn affordability, phí/slippage và decimal rounding; xem accounting và margin risk.
+- Accepted: service loopback, metadata process-local và evidence local. Verification của các phase đã thực thi nằm trong documentation index; lịch kiểm tra cho công việc mới vẫn cần chọn theo phạm vi.
 
 ## Task → Commit
 
@@ -37,7 +37,7 @@ Chuyển hướng sản phẩm thành một lát cắt backtest đủ rõ để 
 | 2 | Ghi quyết định dữ liệu, thời gian, vốn và thực thi đã được chốt; ADR nếu cần | `docs(simulation): record MVP financial and time policies` |
 | 3 | Xác lập fixture, tiêu chí chấp nhận và giới hạn MVP | `docs(plan): define MVP acceptance scenarios` |
 
-Thông điệp trên dành cho công việc tương lai; không tạo các commit này trong lần soạn kế hoạch.
+Các thông điệp trên giữ lại breakdown thiết kế ban đầu, không phải yêu cầu tạo lại commit đã hoàn thành. Code và verification xuất hiện ở các stage tiếp theo.
 
 ## Kiểm chứng dự kiến
 

@@ -19,3 +19,29 @@ Each folder under [`data`](data) contains a `manifest.json` and `dataset.json`. 
 The baseline observations include two revisions of the delayed `TIME-01` news item. Its event time is Jan 6 at 15:00 UTC, revision 1 becomes available at 17:00 that day, and revision 2 becomes available Jan 7 at 17:00. Jan 6 execution opens are separate data rows; for example, `SPOT_A` opens at 100.50 and is not available to the Jan 5 close snapshot.
 
 The files contain only synthetic values. A manifest digest must be regenerated after any byte change to its dataset. Python contract tests verify every manifest, dataset schema, identity pair, and digest; the Rust registry validates the same schemas offline and verifies each digest before registering a fixture.
+
+## Add or revise a local data fixture
+
+**Status:** Working guidance for the Implemented registry. Changes to datasets are outside this documentation update; the following procedure is for a future explicitly scoped fixture change.
+
+1. Select a unique fixture ID/version pair and a folder under `data/`. Preserve a version used by existing experiments; publish a different identity/version for changed research inputs instead of silently replacing recorded assumptions. The registry keys by ID/version, not folder name alone.
+2. Use the checked-in [manifest schema](schemas/manifest.v1.schema.json) and [dataset schema](schemas/dataset.v1.schema.json). Match `fixture_id`, `fixture_version` and `format_version` across manifest and dataset. Current format is `1.1.0`; `dataset_path` must be a permitted relative path under the fixture folder. Do not confuse format version with dataset version `v1` or API contract `1.0.0`.
+3. Define synthetic observations, initial marks, open execution prices and settlement events separately. Supply the configured instrument references, decimal strings, UTC event/availability times, source identity and revisions. A later revision has its own availability; an open quote does not become model-visible close data. Exercise/assignment events have explicit positive integer quantities and unique event IDs.
+4. Include required coverage for the requested universe and interval. Schema validity does not establish temporal eligibility, sufficient execution quotes, valid underlying references, settlement feasibility or portfolio admission. Check the [snapshot contract](../../docs/interfaces/temporal-snapshots.md) and [acceptance cases](../../docs/examples/mvp/acceptance-cases.md).
+5. Finish editing/serializing `dataset.json` before hashing it. From the repository root in PowerShell, compute the exact-byte digest using `Get-FileHash -Algorithm SHA256 -LiteralPath <dataset-path>` and lowercase its hexadecimal `Hash` value. Write that value into the manifest's `dataset_sha256`. Any later byte change, including line endings, requires recalculation; hashing parsed/reformatted JSON is not equivalent.
+6. Run the checks below and use the fixture's ID/version in the run configuration. Backend startup loads and validates the registry; changed files do not provide a live reload guarantee. Restart explicitly after preparing valid fixtures. Do not modify sealed run/replay source evidence when updating the registry.
+
+From the repository root in x64 Developer PowerShell, after the [development setup](../../docs/development/quickstart.md):
+
+```powershell
+$env:PYTHONPATH = Join-Path (Get-Location) 'python-sdk/src'
+$fixturePython = Join-Path $env:TEMP 'factorsbt-docs-completeness-venv/Scripts/python.exe'
+& $fixturePython -B -m unittest discover -s python-sdk/tests -p test_contract_examples.py -v
+cargo test --locked --offline --manifest-path rust/Cargo.toml -p factorsbt-data
+```
+
+The Python checks validate shared schemas, fixture identities and exact content digests. The Rust data tests exercise registry loading, coverage, selectors and snapshots. Add behavior-specific acceptance checks when changing data assumptions; existing test success alone does not cover a new financial scenario. Do not run `cargo update` or add dependencies as a fixture-validation step.
+
+## Research fixtures have a separate registry
+
+Phase D `reranking-dev`, `reranking-eval`, `episode-dev` and `episode-eval` fixtures at `1.0.0` are defined in [Rust research fixtures](../../rust/crates/backend/src/research/fixtures.rs), not discovered from these data folders. `FACTORSBT_FIXTURE_DIR` selects the data fixture registry; it does not register arbitrary research jobs. A research-fixture change requires an explicit code/contract scope, updated expected ranking/reward evidence, and appropriate research/replay checks. See the [research interface](../../docs/interfaces/research-jobs.md).

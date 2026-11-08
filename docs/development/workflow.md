@@ -26,13 +26,16 @@ This guide establishes no automatic commit, publication, deployment, or delegati
 
 ## Verify using repository evidence
 
-The repository has a Rust workspace and a standard-library Python SDK. Use the [Phase A local development instructions](phase-a-local.md) for the original health-only checks and the [Phase B local verification guide](phase-b-local.md) for the typed run flow, current toolchain prerequisites, and recorded commands. A documented command is not evidence that an unverified build or endpoint works.
+The repository has a Rust workspace and a standard-library Python SDK. Start with the [quickstart](quickstart.md) for current environment setup, dependency preparation and self-contained demos; use the [SDK guide](python-sdk.md), [comparison guide](comparison.md), [CLI guide](cli.md) and [local operations](local-operations.md) for usage. Data-fixture contribution steps are in the [fixture guide](../../contracts/fixtures/README.md).
+
+Phase [A](phase-a-local.md), [B](phase-b-local.md), [C](phase-c-local.md), [D](phase-d-local.md) and [E](phase-e-local.md) records preserve the environment, commands, counts and limits observed at those milestones. Their counts describe historical runs, not a current supported-platform matrix or a requirement to rerun every suite for an editorial change. Distinguish a command recipe from evidence that it has actually passed.
 
 When tooling changes, document verified prerequisites and commands. Add checks appropriate to observable behavior, concentrating on temporal visibility, portfolio transitions, scenario isolation, replay, and API failure semantics.
 
 For documentation-only work:
 
 - Check that relative links resolve and Markdown fences/sections are well formed.
+- Check heading anchors as well as target files, and label service-dependent examples separately from self-contained demos.
 - Check the consistent separation of Accepted, Proposed, Open, and Implemented.
 - Review diagrams and prose for agreement about ownership and data flow.
 - Inspect the Git diff, including newly created files, for accidental changes and secrets.

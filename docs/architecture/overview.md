@@ -1,6 +1,6 @@
 # Architecture overview
 
-**Status:** Accepted language and API direction; the component decomposition below is Proposed.
+**Status:** Accepted language/API direction and responsibility boundaries. The controlled local implementation uses the components below; real-provider integrations and deployment beyond loopback remain Open.
 
 ## Accepted foundation
 
@@ -40,7 +40,7 @@ The orchestrator advances a scenario by coordinating eligible data, model respon
 | Data adapters and layer | Provider integration, normalization, source/version metadata, and snapshot assembly | Do not infer unavailable historical publication times |
 | Model gateway and adapters | Model-service integration and output validation/correlation | Do not invent replacement decisions on failure |
 | Portfolio and execution engine | Simulation clock semantics, capital constraints, order/fill processing, and state transitions | Does not implement HTTP transport retry policy |
-| Evidence and results | Traceable configuration, inputs, responses, transitions, and result references | Storage technology and retention remain open |
+| Evidence and results | Local sealed configuration, inputs, responses, transitions, result references, and verified artifact reads | Durable storage service and retention remain Open |
 
 ## Shared-capital and scenario boundaries
 
@@ -52,18 +52,18 @@ Across scenarios, mutable portfolio, pending-order, model, and random state must
 
 Simulated time controls data visibility and execution eligibility. Wall-clock time controls service operations. A slow inference call does not define a simulated trading delay unless a declared policy maps it to one.
 
-The backend handles transport failures; the engine applies declared financial behavior. Retrying transport must not duplicate a run or decision application. No exactly-once processing guarantee, fallback policy, or persistence mechanism has been selected.
+The backend handles transport failures; the engine applies declared financial behavior. The local service has process-scoped idempotency, no automatic inference retry or fallback, and sealed filesystem evidence. Metadata and the bounded worker queue are in memory. This is not an exactly-once or restart-recovery guarantee.
 
 Detailed semantics belong in the [simulation lifecycle](simulation-lifecycle.md). Conceptual exchanges belong in [service contracts](../interfaces/service-contracts.md).
 
-The accepted [MVP 1 synthetic scope](../product/mvp-scope.md) defines the first configured instruments, local model fixture, and execution/accounting target. See the [instrument model](instrument-model.md), [decision policies](decision-policies.md), [synthetic accounting](synthetic-accounting.md), [margin risk](margin-risk.md), and [option valuation](options-valuation.md) for the rules accepted for this slice. These documents do not claim that the runtime is implemented.
+The accepted [MVP 1 synthetic scope](../product/mvp-scope.md) defines the configured instruments, local model fixture, and execution/accounting rules. See the [instrument model](instrument-model.md), [decision policies](decision-policies.md), [synthetic accounting](synthetic-accounting.md), [margin risk](margin-risk.md), and [option valuation](options-valuation.md). Local implementation evidence is linked from the [documentation index](../README.md). Axum/Tokio serve HTTP; Python uses standard-library urllib; Rust contracts/data/engine/backend crates keep simulation separate from transport. These modules are not separate deployments.
 
 ## Open infrastructure decisions
 
-- Self-hosted versus managed deployment, and the first supported operating environment.
-- Rust HTTP framework, Python HTTP client, storage formats, database, and queue.
+- Deployment beyond the locally verified Windows/MSVC environment, including self-hosted versus managed service.
+- Durable database/queue and remote storage formats beyond the selected local JSON evidence and in-process queue.
 - Authentication, authorization, snapshot access, secret management, and tenancy.
-- Worker scheduling, concurrency limits, caching, retention, and operational telemetry.
-- Concrete data/model protocol schemas and the first supported providers.
+- Distributed worker scheduling, scale targets, caching, retention, and operational telemetry beyond current local queue limits.
+- Real-provider protocols and integrations beyond the selected synthetic data and stateless HTTP model exchange schemas.
 
 Select these for an agreed implementation slice; do not infer them from the diagram.

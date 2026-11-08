@@ -6,7 +6,7 @@
 
 - [`contracts/openapi.json`](../../contracts/openapi.json) is OpenAPI 3.1.0 and declares JSON Schema Draft 2020-12 as its schema dialect.
 - The canonical schemas are the JSON files under [`contracts/schemas`](../../contracts/schemas). OpenAPI references those files directly instead of maintaining copied request/result shapes.
-- Every schema has a versioned `$id` under `https://schemas.factorsbt.invalid/v1/`. The `.invalid` domain is an identifier namespace only; it is not a schema download service. Repository tools resolve references from the checked-in files.
+- Core run/model/evidence/replay schemas have a versioned `$id` under `https://schemas.factorsbt.invalid/v1/`; the research schemas currently use relative filename IDs. The `.invalid` domain is an identifier namespace, not a download service. Resolve the checked-in files through the local registry; do not rewrite IDs or infer a remote schema service.
 - Request, model-exchange, and result documents carry `contract_version: "1.0.0"`. The health response and OpenAPI info use the same release version. The HTTP run paths are prefixed `/v1`.
 - A missing `contract_version` is a schema error. A syntactically valid but unsupported value returns `422 CONTRACT_VERSION_UNSUPPORTED` before run creation.
 
@@ -34,6 +34,8 @@ Submission equality is separate from schema compatibility. It ignores JSON objec
 
 ## Implementation boundary
 
-The exact operation paths, schemas, lifecycle, error envelope, and compatibility policy are selected for the MVP contract. Phase A implemented `GET /healthz`. Phase B Stages 06–07 implement and locally verify the four `/v1` run operations, Python SDK flow, local configuration validation, lifecycle, result retrieval, and evidence-integrity checks. These are local implementations without a public stability guarantee. Local artifact references do not define remote artifact retrieval.
+The exact operation paths, schemas, lifecycle, error envelope, and compatibility policy are selected for the MVP contract. Phase A implemented health; Phase B added the four original run operations and typed SDK. Phase C added independent evidence/artifact and replay operations, plus SDK-only comparison; Phase D added the research job resource. Phase E packages the run/replay CLI without new backend operations. These local implementations do not establish public stability or hosted retrieval.
+
+The package version (`0.1.0` in Python metadata), wire contract (`1.0.0`), fixture format (for example `1.1.0`), fixture dataset version (for example `v1`), and internal evidence format identify different boundaries. Do not substitute one for another. Recorded replay additionally requires the exact executable digest; preserving `/v1` alone does not make an older source replay-compatible. See [recorded replay](recorded-replay.md) and the [research interface](research-jobs.md) for their source checks. This documentation update changes none of these versions or wire shapes.
 
 See the [MVP HTTP API](mvp-http-api.md), [submission behavior](mvp-submissions.md), and [service contract overview](service-contracts.md).

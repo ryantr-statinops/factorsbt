@@ -51,13 +51,15 @@ After expiry and fixture exercise/assignment events, update positions, cash and 
 
 At run end, cancel unfilled orders, report remaining positions and reservations, and do not force positions to zero. Cashflows or assignment that cannot settle without borrowing fail the run.
 
-## Explicitly outside MVP 1
+## Explicitly outside the original MVP 1 scope
 
 Real-market/provider integrations, exchange-specific calendars or margin, FX and multiple quote currencies, short spot, loans, cross-margin/netting, corporate actions, partial fills, limit/stop orders, borrow costs, futures/options volume/liquidity models, automatic early exercise, option Greeks or volatility-surface calibration, live trading, deployment beyond localhost, persistent job recovery, scenario comparison, replay, reranking, RL, and a CLI/console application.
 
+This list preserves the original Phase A/B boundary. Later local phases implemented sequential SDK comparison and recorded replay (Phase C), bounded reranking and fixed-action episodes (Phase D), and a noninteractive run/replay CLI (Phase E). See the [documentation index](../README.md) for their separate limits and verification records. General RL training and an interactive console remain outside the implemented scope.
+
 ## Acceptance outcome
 
-MVP 1 is accepted for release planning when a local Python client can submit a run to the Rust backend and obtain inspectable output connecting configuration, versioned inputs, model response, grouped admission, orders, fills, cash/positions, and risk events. The run must use the assumptions above and synthetic fixtures. Phase A established the specification, contracts, buildable project skeleton, and health check; Phase B added the local Rust flow. The typed Python client and complete acceptance outcome are still required to meet this runtime criterion.
+The MVP 1 runtime criterion is a local Python client submitting a run to the Rust backend and obtaining inspectable output connecting configuration, versioned inputs, model response, grouped admission, orders, fills, cash/positions, and risk events under the synthetic assumptions above. Phase A established the specification, contracts, project skeleton, and health check; Phase B completed the local Rust flow, typed Python client, and controlled acceptance outcome. Its verification record supports this bounded criterion, not a public release or universal coverage of financial behavior.
 
 ## Decision record
 

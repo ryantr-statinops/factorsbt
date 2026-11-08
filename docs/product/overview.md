@@ -1,6 +1,6 @@
 # Product overview
 
-**Status:** Accepted product direction and [MVP 1 synthetic scope](mvp-scope.md). The controlled local MVP is implemented and verified; provider integrations, scenario comparison, replay, hosted service, and public API stability are not included.
+**Status:** Accepted product direction and [MVP 1 synthetic scope](mvp-scope.md). The controlled local MVP and bounded Phase C–E extensions are Implemented with local verification: sequential SDK comparison, recorded replay, research jobs, and a run/replay CLI. Real-provider integrations, hosted service, and public API stability remain outside this verified scope.
 
 FactorsBT is API-first infrastructure for multi-asset backtesting, synchronized data, and multi-model decision research.
 
@@ -27,7 +27,7 @@ These audiences are an initial product hypothesis. Specific market coverage and 
 - Preserve enough evidence to inspect the chain from data to decision, order, fill, and portfolio result.
 - Provide a Python SDK for interacting with a Rust backend and simulation engine.
 
-The synthetic data/model-to-portfolio path is implemented locally for the MVP. Provider integrations and scenario comparison remain design goals, not available features or performance claims.
+The synthetic data/model-to-portfolio path and sequential comparison of independent runs are implemented locally. [Recorded replay](../interfaces/recorded-replay.md) verifies sealed evidence without fresh inference. Provider integrations remain design goals; no performance claim follows from these local workflows.
 
 ## Research example
 
@@ -35,7 +35,7 @@ A researcher connects price history and timestamped news to a model API. At a si
 
 The researcher then compares a price-only scenario with a price-and-news scenario and a delayed-news scenario. Each has separate mutable state. The results should explain both aggregate portfolio differences and the individual decisions affected by the data change.
 
-This remains an illustrative research workflow. The MVP's synthetic instruments, snapshot, model-output, and execution contracts are specified in the linked product and interface documents; this example does not imply real-market coverage or scenario-comparison support.
+Real price/news integration in this example remains illustrative. The controlled implementation compares baseline, price-only, and delayed-event synthetic fixtures; see the [Phase C record](../development/phase-c-local.md). It does not imply real-market coverage or causal attribution from observed differences.
 
 ## Meaning of multi-model
 
@@ -47,7 +47,7 @@ One model issuing several decisions is a core use case. Comparing multiple model
 - Reinforcement learning with explicit observations, actions, rewards, and episode boundaries.
 - Comparing decision policies across data conditions and execution assumptions.
 
-These directions are Proposed. There is no accepted RL environment API, training loop, ranking algorithm, or promise of model improvement.
+The [local research interface](../interfaces/research-jobs.md) implements a fixed turnover-penalty reranker and two-action episodes over registered synthetic fixtures. General ranking objectives, interactive RL environments, policy training, and any promise of model improvement remain Proposed directions, not delivered capabilities.
 
 ## Boundaries and open decisions
 
