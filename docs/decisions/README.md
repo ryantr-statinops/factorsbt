@@ -7,7 +7,7 @@ ADRs capture decisions that shape component boundaries, simulation semantics, in
 | ADR | Status | Decision |
 | --- | --- | --- |
 | [0001](0001-python-sdk-rust-backend.md) | Accepted | Pure Python SDK, Rust backend/engine, initial HTTP/JSON communication |
-| [0002](0002-phase-a-tooling.md) | Accepted | Phase A Rust/Python module layout and local tooling boundary; native Windows build prerequisite remains unmet |
+| [0002](0002-phase-a-tooling.md) | Accepted | Phase A Rust/Python module layout and local tooling boundary; Windows build prerequisite resolved in the follow-up verification |
 | [0003](0003-phase-c-comparison-replay.md) | Accepted | Local independent-run comparison, verified artifact access, and same-binary recorded replay |
 
 ## When to write an ADR
