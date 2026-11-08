@@ -1,6 +1,6 @@
 # Stage 01 — Hợp đồng giữa các thành phần
 
-**Status:** Accepted design complete; runtime contracts remain unimplemented.
+**Status:** Accepted — thiết kế Stage 01 đã hoàn thành. Ở thời điểm đóng Stage 01 chưa có runtime; các stage sau đã triển khai shared types, validation, run API/SDK và các operation mở rộng. Xem [documentation index](../../docs/README.md) để đọc hiện trạng và verification, không dùng boundary lịch sử này làm mô tả runtime hiện tại.
 
 **Phase:** A — Chốt thiết kế MVP
 
