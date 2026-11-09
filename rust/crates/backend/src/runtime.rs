@@ -5,7 +5,9 @@ use crate::{
     dispatcher::RunDispatcher,
     evidence::{write_failed_run, write_successful_run},
     model_client::ModelHttpClient,
-    orchestrator::{run_simulation_with_progress, system_utc_timestamp, RunIdentity},
+    orchestrator::{
+        run_simulation_with_progress, system_utc_timestamp, OrchestrationReport, RunIdentity,
+    },
     results::build_run_result,
     run_store::{JobId, RunStore},
 };
@@ -416,35 +418,7 @@ async fn execute_replay(
     .await;
     match replayed {
         Ok(report) => {
-            let replay_orders = report.cycles.iter().map(|cycle| serde_json::json!({
-                "orders": cycle.proposal.order_intents.iter().map(|item| serde_json::json!({
-                    "instrument_id": item.instrument_id.as_str(), "signed_quantity": item.signed_quantity.to_string(), "order_type": "market"
-                })).collect::<Vec<_>>(),
-                "target_positions": cycle.proposal.target_positions.iter().map(|item| serde_json::json!({
-                    "instrument_id": item.instrument_id.as_str(), "target_quantity": item.target_quantity.to_string()
-                })).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>();
-            let replay_state = serde_json::json!({
-                "cash": report.finalization.cash.to_string(),
-                "nav": report.finalization.nav.to_string(),
-                "positions": report.final_portfolio.positions,
-            "admissions": report.cycles.iter().filter_map(|cycle| cycle.admission.as_ref().map(|admission| serde_json::json!({
-                "adjustments": admission.adjustments.iter().map(|adjustment| serde_json::json!({
-                    "instrument_id": adjustment.instrument_id,
-                    "requested_quantity": adjustment.requested_quantity.to_string(),
-                    "admitted_quantity": adjustment.admitted_quantity.to_string(),
-                    "common_scale": adjustment.common_scale.to_string(),
-                    "scaled": adjustment.scaled,
-                })).collect::<Vec<_>>(),
-            }))).collect::<Vec<_>>(),
-                "orders": replay_orders,
-                "executions": report.execution_events,
-                "settlements": report.settlement_events,
-            "ledger": report.execution_events.iter()
-                .chain(report.liquidation_events.iter())
-                .chain(report.settlement_events.iter())
-                .flat_map(collect_ledger_postings).collect::<Vec<_>>(),
-            });
+            let replay_state = replay_financial_state(&report);
             let Some(summary) = summary.as_ref() else {
                 let _ = store.mark_replay_terminal(
                     &replay_id,
@@ -457,24 +431,7 @@ async fn execute_replay(
                 );
                 return;
             };
-            let source_state = serde_json::json!({
-                "cash": summary["final_portfolio"]["cash"],
-                "nav": summary["final_portfolio"]["nav"],
-                "positions": summary["final_portfolio"]["snapshot"]["positions"],
-                "orders": source.artifact(&evidence_root, "evidence/orders.json").ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-                    .and_then(|value| value.as_array().map(|rows| rows.iter().map(|row| serde_json::json!({
-                        "orders": row["orders"], "target_positions": row["target_positions"]
-                    })).collect::<Vec<_>>())).unwrap_or_default(),
-                "executions": source.artifact(&evidence_root, "evidence/executions.json").ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-                "settlements": source.artifact(&evidence_root, "evidence/settlements.json").ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-                "admissions": source.artifact(&evidence_root, "evidence/admissions.json").ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-                "ledger": source.artifact(&evidence_root, "evidence/ledger-postings.json").ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-            });
+            let source_state = source_financial_state(&source, &evidence_root, summary);
             let first_mismatch = replay_mismatch(&replay_state, &source_state);
             let matched = first_mismatch.is_none();
             let replay_root = evidence_root.join("replays").join(replay_id.as_str());
@@ -575,6 +532,63 @@ async fn execute_replay(
             );
         }
     }
+}
+
+fn replay_financial_state(report: &OrchestrationReport) -> serde_json::Value {
+    let orders = report.cycles.iter().map(|cycle| serde_json::json!({
+        "orders": cycle.proposal.order_intents.iter().map(|item| serde_json::json!({
+            "instrument_id": item.instrument_id.as_str(), "signed_quantity": item.signed_quantity.to_string(), "order_type": "market"
+        })).collect::<Vec<_>>(),
+        "target_positions": cycle.proposal.target_positions.iter().map(|item| serde_json::json!({
+            "instrument_id": item.instrument_id.as_str(), "target_quantity": item.target_quantity.to_string()
+        })).collect::<Vec<_>>(),
+    })).collect::<Vec<_>>();
+    serde_json::json!({
+        "cash": report.finalization.cash.to_string(),
+        "nav": report.finalization.nav.to_string(),
+        "positions": report.final_portfolio.positions,
+        "admissions": report.cycles.iter().filter_map(|cycle| cycle.admission.as_ref().map(|admission| serde_json::json!({
+            "adjustments": admission.adjustments.iter().map(|adjustment| serde_json::json!({
+                "instrument_id": adjustment.instrument_id,
+                "requested_quantity": adjustment.requested_quantity.to_string(),
+                "admitted_quantity": adjustment.admitted_quantity.to_string(),
+                "common_scale": adjustment.common_scale.to_string(),
+                "scaled": adjustment.scaled,
+            })).collect::<Vec<_>>(),
+        }))).collect::<Vec<_>>(),
+        "orders": orders,
+        "executions": report.execution_events,
+        "settlements": report.settlement_events,
+        "ledger": report.execution_events.iter()
+            .chain(report.liquidation_events.iter())
+            .chain(report.settlement_events.iter())
+            .flat_map(collect_ledger_postings).collect::<Vec<_>>(),
+    })
+}
+
+fn source_financial_state(
+    source: &crate::replay_source::ReplaySource,
+    evidence_root: &std::path::Path,
+    summary: &serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "cash": summary["final_portfolio"]["cash"],
+        "nav": summary["final_portfolio"]["nav"],
+        "positions": summary["final_portfolio"]["snapshot"]["positions"],
+        "orders": source.artifact(evidence_root, "evidence/orders.json").ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|value| value.as_array().map(|rows| rows.iter().map(|row| serde_json::json!({
+                "orders": row["orders"], "target_positions": row["target_positions"]
+            })).collect::<Vec<_>>())).unwrap_or_default(),
+        "executions": source.artifact(evidence_root, "evidence/executions.json").ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+        "settlements": source.artifact(evidence_root, "evidence/settlements.json").ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+        "admissions": source.artifact(evidence_root, "evidence/admissions.json").ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+        "ledger": source.artifact(evidence_root, "evidence/ledger-postings.json").ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
+    })
 }
 
 fn normalize_replay_value(value: serde_json::Value) -> serde_json::Value {
