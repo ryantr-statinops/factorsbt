@@ -29,7 +29,7 @@ The engine rejects schema-valid events or transitions when:
 - A cash posting does not satisfy `cash_before + cash_delta = cash_after`, a quantity posting does not satisfy `before + delta = after`, or cent/lot rounding disagrees with the accounting rule.
 - A settlement creates an unbacked short spot or loan, delivery reuses reserved collateral, or margin/collateral transitions leave an invalid state.
 
-Groups that represent one decision or delivery transition are applied atomically. If any member is invalid, preserve the last valid state, report the run failure and event identity, and do not invent a compensating fill.
+Groups that represent one decision or delivery transition are applied atomically. Execution stages grouped trades and their ledger changes on an isolated portfolio, checks cash, margin, and collateral after every leg is represented, and publishes fills only after the final group state is valid. The stable ledger order is retained across input permutations. An invalid final state preserves the last valid portfolio and publishes no member fill; standalone trades retain immediate checks. Close-time admission includes projected adverse tick, slippage, fees, and rounding, while the next open rechecks affordability against actual quotes and records any reduction.
 
 ## Examples and expected errors
 
@@ -37,4 +37,4 @@ Groups that represent one decision or delivery transition are applied atomically
 - [Fill missing execution price](../../contracts/examples/engine/fill-missing-price.schema-invalid.json) fails run validation with `ENGINE_EVENT_SCHEMA_INVALID` at `$.fill_price`.
 - [Zero-quantity fill](../../contracts/examples/engine/fill-zero-quantity.semantic-invalid.json) has valid shape but fails with `ENGINE_FILL_INVALID_QUANTITY`; no ledger transition is applied.
 
-These are contract examples, not verified engine behavior. The engine and producer/consumer checks are scheduled for later Phase A and Phase B work. See [synthetic accounting](../architecture/synthetic-accounting.md), [margin and liquidation](../architecture/margin-risk.md), and the [simulation lifecycle](../architecture/simulation-lifecycle.md) for accepted semantics.
+These examples illustrate contract shapes; they do not prove every accepted scenario runs end to end. The implemented engine and controlled service checks are mapped, with coverage limits, in [acceptance traceability](../examples/mvp/acceptance-cases.md#verification-traceability). See [synthetic accounting](../architecture/synthetic-accounting.md), [margin and liquidation](../architecture/margin-risk.md), and the [simulation lifecycle](../architecture/simulation-lifecycle.md) for the financial rules.

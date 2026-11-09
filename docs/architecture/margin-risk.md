@@ -12,7 +12,9 @@ For each open future, calculate initial requirement as absolute contracts × con
 
 For each written option, calculate the same per-contract initial and maintenance amounts. A short European cash-settled option adds only its configured margin reserve. A short American physical call also locks its delivery quantity in underlying. A short American physical put must reserve the cash required for exercise at strike × multiplier × contracts. For a cash-secured put, cash collateral is at least the configured margin amount and the exercise cash requirement; do not count that same cash twice. A covered-call delivery reserve is separate underlying. Multiple short calls may not reserve the same underlying twice.
 
-Initial funds must be sufficient after fills and fees to cover initial requirements, delivery reserves, and any outstanding buying-power commitments. Run admission uses the entire proposed group and the shared-capital rule. A later increase from market movement does not create funds or change the configured margin amount.
+Initial funds must be sufficient after fills and fees to cover initial requirements, delivery reserves, and any outstanding buying-power commitments. Close-time admission estimates executable prices and costs from current marks; the next open rechecks them against actual open quotes. Run admission uses the entire proposed group and the shared-capital rule.
+
+Group legs are staged on an isolated portfolio. Cash, margin, and underlying collateral are checked on the final group state before any fill or ledger posting is published. A temporary intermediate shortfall can be covered by another leg in that same group; a final shortfall rejects the group without a partial fill. Standalone trades keep immediate checks. A later increase from market movement does not create funds or change the configured margin amount.
 
 At daily close, after futures variation settlement, option expiry, and scheduled exercise/assignment, calculate NAV, free cash, initial/maintenance requirements, and delivery reserves. Trigger a margin-breach event if any of these is true:
 
