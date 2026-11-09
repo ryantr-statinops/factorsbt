@@ -50,4 +50,14 @@ $env:PYTHONPATH = Join-Path (Get-Location) 'python-sdk/src'
 
 Set PYTHONPATH explicitly when testing a source checkout; do not rely on test import order. The suite validates shared contracts/fixtures and SDK/CLI behavior. It does not by itself run the Rust engine or prove every acceptance scenario end to end.
 
+For the Rust workspace, use the same x64 Developer PowerShell and prepared Cargo cache:
+
+```powershell
+cargo fmt --manifest-path rust/Cargo.toml --all --check
+cargo test --locked --offline --manifest-path rust/Cargo.toml --workspace
+cargo clippy --locked --offline --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings
+```
+
+These commands check workspace formatting, tests and strict Clippy. They do not replace scenario-level review of [acceptance traceability](../examples/mvp/acceptance-cases.md). The latest local regression run and its limits are in the [2026-11-09 code verification record](regression-verification-2026-11-09.md); earlier phase records remain historical.
+
 For retained evidence, backend configuration, restart limits and troubleshooting, read [local operations](local-operations.md). For independent experiments, read [comparison](comparison.md); bounded research has an existing [runnable example](../../python-sdk/examples/research_workflows.py) and [interface guide](../interfaces/research-jobs.md).

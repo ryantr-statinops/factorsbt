@@ -30,6 +30,8 @@ The repository has a Rust workspace and a standard-library Python SDK. Start wit
 
 Phase [A](phase-a-local.md), [B](phase-b-local.md), [C](phase-c-local.md), [D](phase-d-local.md) and [E](phase-e-local.md) records preserve the environment, commands, counts and limits observed at those milestones. Their counts describe historical runs, not a current supported-platform matrix or a requirement to rerun every suite for an editorial change. Distinguish a command recipe from evidence that it has actually passed.
 
+The [2026-11-09 code verification record](regression-verification-2026-11-09.md) records the latest local Rust/Python regressions, smoke programs, evidence I/O counts and documentation-guide review. Treat it as an observation for that code revision and Windows x64 environment, not as a general support guarantee.
+
 When tooling changes, document verified prerequisites and commands. Add checks appropriate to observable behavior, concentrating on temporal visibility, portfolio transitions, scenario isolation, replay, and API failure semantics.
 
 For documentation-only work:

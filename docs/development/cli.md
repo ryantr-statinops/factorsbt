@@ -6,16 +6,18 @@ For a first runnable demo, use the [quickstart](quickstart.md): its installed CL
 
 ## Install
 
-Use Python 3.13 or later and install the source package into the active virtual environment:
+Use Python 3.13 or later. From the repository root in PowerShell, install the source package into an isolated environment under the temporary directory:
 
 ~~~powershell
-python -m venv .venv
-& .\.venv\Scripts\Activate.ps1
-python -m pip install .\python-sdk
-factorsbt --help
+$cliEnv = Join-Path $env:TEMP 'factorsbt-cli-venv'
+python -m venv $cliEnv
+& (Join-Path $cliEnv 'Scripts\python.exe') -m pip install .\python-sdk
+$cliExe = Join-Path $cliEnv 'Scripts\factorsbt.exe'
+& $cliExe --help
 ~~~
 
 The package has no runtime dependency beyond the Python standard library. The install uses setuptools and exposes the `factorsbt` command.
+If `$cliEnv` already exists and contains work you need, choose a different temporary directory before creating the environment.
 
 ## Backend address
 
@@ -23,8 +25,8 @@ Start the Rust backend separately. The CLI accepts HTTP loopback addresses only:
 
 ~~~powershell
 $env:FACTORSBT_BASE_URL = 'http://127.0.0.1:8080'
-factorsbt health
-factorsbt --base-url http://localhost:8080 health
+& $cliExe health
+& $cliExe --base-url http://localhost:8080 health
 ~~~
 
 Each HTTP request uses the SDK's 5 second timeout. `run wait` and `replay wait` default to a 60 second local polling deadline and a 0.25 second polling interval. `--timeout` must be a positive finite number. Expiration and Ctrl+C stop local waiting only; they do not cancel backend work.
@@ -34,17 +36,18 @@ Each HTTP request uses the SDK's 5 second timeout. `run wait` and `replay wait` 
 Copy the shared valid configuration and adjust its local model endpoint to the model fixture you started alongside the backend:
 
 ~~~powershell
-Copy-Item contracts/examples/instruments/minimal-valid-spot-run.json .\run.json
-factorsbt run submit .\run.json
+$cliConfig = Join-Path $env:TEMP 'factorsbt-run.json'
+Copy-Item contracts/examples/instruments/minimal-valid-spot-run.json $cliConfig
+& $cliExe run submit $cliConfig
 ~~~
 
 The response includes `submission_id`, `run_id`, and the queued status. Use the IDs to recover or follow the job:
 
 ~~~powershell
-factorsbt run lookup <submission-id>
-factorsbt run status <run-id>
-factorsbt run wait <run-id> --timeout 60
-factorsbt run result <run-id>
+& $cliExe run lookup <submission-id>
+& $cliExe run status <run-id>
+& $cliExe run wait <run-id> --timeout 60
+& $cliExe run result <run-id>
 ~~~
 
 If a submit acknowledgment is lost, the CLI prints the ID and lookup command to stderr. It never retries the POST automatically. Save the run ID from the acknowledgment; lookup by submission ID returns the associated run ID.
@@ -56,13 +59,13 @@ Keep the submission ID before recovery and use the same running backend process.
 After a successful or failed run has sealed its evidence, submit a recorded replay. Replay reads the recorded model exchange and does not invoke fresh inference:
 
 ~~~powershell
-factorsbt replay submit <source-run-id>
-factorsbt replay status <replay-id>
-factorsbt replay wait <replay-id> --timeout 60
-factorsbt replay report <replay-id>
+& $cliExe replay submit <source-run-id>
+& $cliExe replay status <replay-id>
+& $cliExe replay wait <replay-id> --timeout 60
+& $cliExe replay report <replay-id>
 ~~~
 
-Replay keeps the Phase C compatibility checks: the same executable digest and contract version are required. A report with `matched: false` is still a successfully retrieved report and exits with code 0; inspect `first_mismatch` to see where it diverged.
+Replay keeps the Phase C compatibility checks: the same executable digest and contract version are required. A report with `matched: false` is still a successfully retrieved report and exits with code 0; inspect `first_mismatch` to see where it diverged. A wait deadline does not cancel replay; if wait exits with code 4, use the retained replay ID with `replay status` or `replay report` later.
 
 ## Output and exit codes
 
