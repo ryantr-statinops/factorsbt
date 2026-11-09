@@ -10,6 +10,8 @@ The canonical schemas are [inference request](../../contracts/schemas/model-requ
 
 Each request carries `contract_version`, a unique `inference_id`, `run_id`, `scenario_id`, `step_id`, `snapshot_id`, configured `model_id` and `model_version`, `requested_at`, and `simulation_time`. It includes the selected decision policy, IDs eligible for a new decision, the run's instrument catalog, and the complete snapshot inline.
 
+After close-time settlement, expired futures and options remain in the catalog and evidence but are omitted from `eligible_instrument_ids`. Scores and market intents can reference only eligible IDs. The catalog retains the expired contract so a targets response can express its required zero position.
+
 The request's correlation IDs and simulation time must exactly match the nested snapshot. `requested_at` is wall-clock processing time; `simulation_time` controls data visibility and is not advanced by HTTP latency. The model fixture is stateless: it receives the snapshot and policy on every call and does not carry a portfolio or prior request state between steps.
 
 ## Response variants

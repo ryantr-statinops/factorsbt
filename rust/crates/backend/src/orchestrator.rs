@@ -442,6 +442,15 @@ where
                 let mut eligible_instrument_ids = configuration
                     .instruments
                     .iter()
+                    .filter(|instrument| match instrument {
+                        Instrument::Spot(_) => true,
+                        Instrument::LinearFuture(value) => {
+                            compare_utc_timestamps(&event.at, &value.expiry_at).is_lt()
+                        }
+                        Instrument::Option(value) => {
+                            compare_utc_timestamps(&event.at, &value.expiry_at).is_lt()
+                        }
+                    })
                     .map(|instrument| InstrumentId::new(instrument_id(instrument)))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|error| OrchestrationError::at("eligible instruments", error))?;
@@ -1160,6 +1169,115 @@ mod tests {
             axum::serve(listener, router).await.unwrap();
         });
         (format!("http://{address}/infer"), task)
+    }
+
+    async fn expiry_model_response(Json(request): Json<ModelRequest>) -> Json<Value> {
+        let future_eligible = request
+            .eligible_instrument_ids
+            .iter()
+            .any(|id| id.as_str() == "FUT_A");
+        let (response_type, outputs) = match request.decision_policy.output_mode {
+            factorsbt_contracts::model::OutputMode::Scores => {
+                let mut scores = vec![json!({"instrument_id":"SPOT_A","score":"0"})];
+                if future_eligible {
+                    scores.push(json!({"instrument_id":"FUT_A","score":"1"}));
+                }
+                ("scores", json!({"scores":scores}))
+            }
+            factorsbt_contracts::model::OutputMode::Targets => (
+                "targets",
+                json!({"spot_weights":[],"derivative_contracts":[{"instrument_id":"FUT_A","contracts":if future_eligible {1} else {0}}]}),
+            ),
+            factorsbt_contracts::model::OutputMode::OrderIntents => {
+                ("order_intents", json!({"orders":[]}))
+            }
+        };
+        Json(json!({
+            "contract_version":request.contract_version,
+            "inference_id":request.inference_id,
+            "run_id":request.run_id,
+            "scenario_id":request.scenario_id,
+            "step_id":request.step_id,
+            "snapshot_id":request.snapshot_id,
+            "model_id":request.model_id,
+            "model_version":request.model_version,
+            "responded_at":system_utc_timestamp().unwrap(),
+            "response_type":response_type,
+            "outputs":outputs,
+        }))
+    }
+
+    #[tokio::test]
+    async fn expired_future_is_settled_and_excluded_in_each_output_mode() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        let fixture = FixtureRegistry::load(root)
+            .unwrap()
+            .get_by("mvp-settle-01", "v1")
+            .unwrap()
+            .as_ref()
+            .clone();
+        for mode in [
+            factorsbt_contracts::model::OutputMode::Scores,
+            factorsbt_contracts::model::OutputMode::Targets,
+            factorsbt_contracts::model::OutputMode::OrderIntents,
+        ] {
+            let mut config = configuration();
+            config.data.fixture_id = Identifier::new("mvp-settle-01").unwrap();
+            config.instruments.push(serde_json::from_str(
+                r#"{"instrument_id":"FUT_A","instrument_type":"linear_future","quote_currency":"USD","price_tick":"0.01","quantity_step":"1","contract_multiplier":"1","fee_bps":"0","fee_per_unit":"0","slippage_bps":"0","underlying_id":"SPOT_A","expiry_at":"2026-01-06T16:00:00Z","initial_margin_per_contract":"100","maintenance_margin_per_contract":"80"}"#,
+            ).unwrap());
+            config
+                .initial_portfolio
+                .positions
+                .push(serde_json::from_str(r#"{"instrument_id":"FUT_A","quantity":"1"}"#).unwrap());
+            config.decision_policy.output_mode = mode;
+            if mode == factorsbt_contracts::model::OutputMode::Scores {
+                let score_policy = config.decision_policy.score_policy.as_mut().unwrap();
+                score_policy.derivative_score_targets.push(
+                    factorsbt_contracts::model::DerivativeScoreTarget {
+                        instrument_id: InstrumentId::new("FUT_A").unwrap(),
+                        contracts: 1,
+                    },
+                );
+            } else {
+                config.decision_policy.score_policy = None;
+            }
+            let (endpoint, server) =
+                serve(Router::new().route("/infer", post(expiry_model_response))).await;
+            let report = run_simulation(
+                &ModelHttpClient::new().unwrap(),
+                &endpoint,
+                Duration::from_secs(2),
+                &config,
+                &fixture,
+                RunIdentity {
+                    run_id: Uuid::new("a1139f93-8119-4be6-8c84-b6835fb3647e").unwrap(),
+                    scenario_id: Identifier::new("baseline").unwrap(),
+                },
+            )
+            .await
+            .unwrap();
+            server.abort();
+            assert_eq!(report.cycles.len(), 2);
+            assert_eq!(report.cycles[0].request.eligible_instrument_ids.len(), 2);
+            assert_eq!(report.cycles[1].request.eligible_instrument_ids.len(), 1);
+            assert_eq!(report.cycles[1].request.instruments.len(), 2);
+            assert!(report
+                .settlement_events
+                .iter()
+                .any(|event| event["instrument_id"] == "FUT_A" && event["expired"] == true));
+            assert_eq!(
+                report
+                    .final_portfolio
+                    .positions
+                    .iter()
+                    .find(|position| position.instrument_id.as_str() == "FUT_A")
+                    .unwrap()
+                    .quantity
+                    .as_str(),
+                "0"
+            );
+        }
     }
 
     #[tokio::test]
