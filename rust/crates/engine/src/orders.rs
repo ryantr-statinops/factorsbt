@@ -287,6 +287,24 @@ pub fn execute_pending_group(
             .then_with(|| left.0.cmp(&right.0))
     });
 
+    let (candidate, fills) =
+        stage_group_fills(portfolio, fill_orders, &price_by_id, execution_time)?;
+    *portfolio = candidate;
+
+    Ok(ExecutedOrderGroup {
+        step_id: group.step_id.clone(),
+        execution_time: execution_time.clone(),
+        admission_adjustments: admission.adjustments,
+        fills,
+    })
+}
+
+fn stage_group_fills(
+    portfolio: &PortfolioState,
+    fill_orders: Vec<(String, Decimal, Decimal)>,
+    price_by_id: &HashMap<String, &ExecutionPrice>,
+    execution_time: &UtcTimestamp,
+) -> Result<(PortfolioState, Vec<ExecutionFill>), PendingOrderError> {
     let mut candidate = portfolio.clone();
     let mut fills = Vec::new();
     for (id, _, quantity) in fill_orders {
@@ -338,14 +356,7 @@ pub fn execute_pending_group(
             instrument_id: "<group>".to_owned(),
             source,
         })?;
-    *portfolio = candidate;
-
-    Ok(ExecutedOrderGroup {
-        step_id: group.step_id.clone(),
-        execution_time: execution_time.clone(),
-        admission_adjustments: admission.adjustments,
-        fills,
-    })
+    Ok((candidate, fills))
 }
 
 fn reduces_exposure(current: Decimal, target: Decimal) -> bool {
