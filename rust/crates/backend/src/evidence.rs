@@ -108,8 +108,21 @@ pub fn read_evidence_index(
     evidence_root: impl AsRef<Path>,
     run_id: &Uuid,
 ) -> Result<EvidenceIndex, EvidenceError> {
-    let runs = fs::canonicalize(evidence_root.as_ref().join("runs"))
-        .map_err(|_| EvidenceError::RunNotFound)?;
+    let (run_directory, index) = read_validated_manifest(evidence_root.as_ref(), run_id)?;
+    let artifact_count = index.artifacts.len() - 1;
+    verify_artifacts(&run_directory, &index.artifacts[..artifact_count])?;
+    verify_artifacts(&run_directory, &index.artifacts)?;
+    Ok(index)
+}
+
+/// Validate the manifest's identity and references without reading artifact bytes.
+/// The final reference is the manifest itself, which cannot list its own digest.
+fn read_validated_manifest(
+    evidence_root: &Path,
+    run_id: &Uuid,
+) -> Result<(PathBuf, EvidenceIndex), EvidenceError> {
+    let runs =
+        fs::canonicalize(evidence_root.join("runs")).map_err(|_| EvidenceError::RunNotFound)?;
     let run_directory =
         fs::canonicalize(runs.join(run_id.as_str())).map_err(|_| EvidenceError::RunNotFound)?;
     if !run_directory.starts_with(&runs) {
@@ -144,7 +157,6 @@ pub fn read_evidence_index(
             return Err(EvidenceError::ManifestInvalid);
         }
     }
-    verify_artifacts(&run_directory, &artifacts)?;
     let created_at = artifacts[0].created_at.clone();
     artifacts.push(EvidenceArtifactRef {
         artifact_id: artifact_id(&run_directory, "evidence/run-manifest.json"),
@@ -156,13 +168,15 @@ pub fn read_evidence_index(
             .map_err(|_| EvidenceError::ManifestInvalid)?,
         created_at,
     });
-    verify_artifacts(&run_directory, &artifacts)?;
-    Ok(EvidenceIndex {
-        contract_version: "1.0.0".to_owned(),
-        run_id: run_id.clone(),
-        status,
-        artifacts,
-    })
+    Ok((
+        run_directory,
+        EvidenceIndex {
+            contract_version: "1.0.0".to_owned(),
+            run_id: run_id.clone(),
+            status,
+            artifacts,
+        },
+    ))
 }
 
 /// Return the exact bytes whose reference was verified, never a client path.
