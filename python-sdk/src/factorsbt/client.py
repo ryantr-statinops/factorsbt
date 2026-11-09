@@ -44,6 +44,17 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
+def _validate_polling_params(timeout: float, poll_interval: float) -> None:
+    for name, value in (("timeout", timeout), ("poll_interval", poll_interval)):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise ValueError(f"{name} must be a finite number greater than zero")
+
+
 @dataclass(frozen=True)
 class HealthResponse:
     status: str
@@ -189,20 +200,7 @@ class Client:
     ) -> RunStatus:
         """Poll to a terminal status; the local deadline never cancels backend work."""
         key = validate_uuid(run_id)
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout)
-            or timeout <= 0
-        ):
-            raise ValueError("timeout must be a finite number greater than zero")
-        if (
-            isinstance(poll_interval, bool)
-            or not isinstance(poll_interval, (int, float))
-            or not math.isfinite(poll_interval)
-            or poll_interval <= 0
-        ):
-            raise ValueError("poll_interval must be a finite number greater than zero")
+        _validate_polling_params(timeout, poll_interval)
 
         deadline = time.monotonic() + timeout
         last_status: RunStatus | None = None
