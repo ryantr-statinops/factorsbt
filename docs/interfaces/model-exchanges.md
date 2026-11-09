@@ -28,6 +28,8 @@ The schema checks payload shape. It cannot establish eligible IDs, response mode
 
 The backend applies a reply only to the pending inference with the exact inference/run/scenario/step/snapshot identity and expected model/version. A missing field is `MODEL_RESPONSE_SCHEMA_INVALID`. A reply with a different identity is `MODEL_RESPONSE_CORRELATION_MISMATCH`; a response type that differs from the configured mode is `MODEL_RESPONSE_MODE_MISMATCH`. A duplicate or late reply is recorded as `MODEL_RESPONSE_DUPLICATE` or `MODEL_RESPONSE_STALE` and never applied to another step.
 
+A `targets` response may include an expired derivative from the configured catalog only with a zero contract target. Nonzero targets and order intents for expired derivatives are ineligible; ID, instrument-kind, and duplicate checks still apply to the zero entry.
+
 There is one request per decision step and no automatic inference retry. A timeout, transport error, malformed response, or invalid output fails the run with available correlation IDs. The backend does not substitute an empty output, invoke another model, or convert service failure into an engine decision. Processing timeouts do not create an implicit simulated delay.
 
 ## Examples and expected errors

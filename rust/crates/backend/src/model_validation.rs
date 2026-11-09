@@ -1,12 +1,14 @@
 //! Schema and semantic checks for correlated model responses.
 
 use factorsbt_contracts::{
+    compare_utc_timestamps,
     instruments::Instrument,
     model::{ModelRequest, ModelResponse, OutputMode},
     validation::validate_model_response_document,
     InstrumentId,
 };
 use rust_decimal::Decimal;
+use std::cmp::Ordering;
 use std::{collections::HashMap, str::FromStr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,7 +123,30 @@ pub fn validate_model_response(
                 return Err(ModelResponseValidationError::SpotWeightsExceedOne);
             }
             for target in &outputs.derivative_contracts {
-                validate_eligible(&eligible, &target.instrument_id)?;
+                if !eligible.contains(target.instrument_id.as_str())
+                    && !(target.contracts == 0
+                        && request.instruments.iter().any(|instrument| {
+                            let expiry = match instrument {
+                                Instrument::LinearFuture(value)
+                                    if value.instrument_id == target.instrument_id =>
+                                {
+                                    &value.expiry_at
+                                }
+                                Instrument::Option(value)
+                                    if value.instrument_id == target.instrument_id =>
+                                {
+                                    &value.expiry_at
+                                }
+                                _ => return false,
+                            };
+                            compare_utc_timestamps(&request.simulation_time, expiry)
+                                != Ordering::Less
+                        }))
+                {
+                    return Err(ModelResponseValidationError::IneligibleInstrument(
+                        target.instrument_id.as_str().to_owned(),
+                    ));
+                }
                 validate_unique(&mut seen, &target.instrument_id)?;
                 if kinds.get(&target.instrument_id) != Some(&InstrumentKind::Derivative) {
                     return Err(ModelResponseValidationError::WrongInstrumentKind(
@@ -376,6 +401,54 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(validate_model_response(&request, &response), Ok(()));
+    }
+
+    #[test]
+    fn expired_derivative_accepts_only_zero_target_and_keeps_identity_checks() {
+        let mut request = request();
+        request.decision_policy.output_mode = OutputMode::Targets;
+        request.instruments.push(serde_json::from_str(
+            r#"{"instrument_id":"FUT_A","instrument_type":"linear_future","quote_currency":"USD","price_tick":"0.01","quantity_step":"1","contract_multiplier":"1","fee_bps":"0","fee_per_unit":"0","slippage_bps":"0","underlying_id":"SPOT_A","expiry_at":"2026-01-05T16:00:00Z","initial_margin_per_contract":"100","maintenance_margin_per_contract":"80"}"#,
+        ).unwrap());
+        let mut response: ModelResponse = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/model/targets-response.valid-shape.json"
+        ))
+        .unwrap();
+        if let ModelResponse::Targets { outputs, .. } = &mut response {
+            outputs
+                .derivative_contracts
+                .push(factorsbt_contracts::model::DerivativeTarget {
+                    instrument_id: InstrumentId::new("FUT_A").unwrap(),
+                    contracts: 0,
+                });
+        }
+        assert_eq!(validate_model_response(&request, &response), Ok(()));
+        if let ModelResponse::Targets { outputs, .. } = &mut response {
+            outputs.derivative_contracts[0].contracts = 1;
+        }
+        assert!(matches!(
+            validate_model_response(&request, &response),
+            Err(ModelResponseValidationError::IneligibleInstrument(_))
+        ));
+        if let ModelResponse::Targets { outputs, .. } = &mut response {
+            outputs.derivative_contracts[0].contracts = 0;
+            outputs
+                .derivative_contracts
+                .push(outputs.derivative_contracts[0].clone());
+        }
+        assert!(matches!(
+            validate_model_response(&request, &response),
+            Err(ModelResponseValidationError::DuplicateInstrument(_))
+        ));
+        if let ModelResponse::Targets { outputs, .. } = &mut response {
+            outputs.derivative_contracts.pop();
+            outputs.spot_weights.clear();
+            outputs.derivative_contracts[0].instrument_id = InstrumentId::new("SPOT_A").unwrap();
+        }
+        assert!(matches!(
+            validate_model_response(&request, &response),
+            Err(ModelResponseValidationError::WrongInstrumentKind(_))
+        ));
     }
 
     #[test]
