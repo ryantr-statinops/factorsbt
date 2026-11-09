@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from factorsbt import (
     Client, EpisodeReport, ProtocolError, ResearchJobAcknowledgementUnknown,
-    ResearchJobResult, ResearchJobStatus, ResearchReplayReport, RerankingReport,
+    ResearchJobFailed, ResearchJobResult, ResearchJobStatus, ResearchReplayReport,
+    ResearchWaitTimeout, RequestTimeout, RerankingReport,
 )
 
 JOB_ID = "8a2f5ce2-a6b5-4a71-b587-fefdb4a9fbc5"
@@ -37,6 +38,49 @@ def ack(kind="episode"):
 
 
 class ResearchClientTests(unittest.TestCase):
+    def _status(self, state):
+        return ResearchJobStatus.from_wire({
+            "contract_version": "1.0.0", "job_id": JOB_ID, "kind": "episode",
+            "status": state, "submitted_at": "2026-01-05T09:00:00Z",
+            "started_at": None if state == "queued" else "2026-01-05T09:00:01Z",
+            "finished_at": "2026-01-05T09:00:02Z" if state in {"succeeded", "failed"} else None,
+            "failure": {"code": "RESEARCH_EXECUTION_FAILED", "message": "failed"} if state == "failed" else None,
+        })
+
+    def test_wait_research_bounds_requests_and_keeps_last_observed_status(self):
+        client = Client("http://127.0.0.1:8080")
+        for state in ("succeeded", "failed"):
+            with self.subTest(state=state):
+                terminal = self._status(state)
+                with patch.object(Client, "_get_research_job", return_value=terminal) as get_job:
+                    with patch("factorsbt.client.time.monotonic", side_effect=[0, 0, 0.02]):
+                        with self.assertRaises(ResearchWaitTimeout) as caught:
+                            client.wait_research_job(JOB_ID, timeout=0.01)
+                self.assertIs(caught.exception.last_status, terminal)
+                get_job.assert_called_once_with(JOB_ID, request_timeout=0.01)
+
+    def test_wait_research_distinguishes_http_timeout_and_terminal_failure(self):
+        client = Client("http://127.0.0.1:8080")
+        with patch.object(Client, "_get_research_job", side_effect=RequestTimeout("network")):
+            with patch("factorsbt.client.time.monotonic", side_effect=[0, 0, 0.005]):
+                with self.assertRaises(RequestTimeout) as caught:
+                    client.wait_research_job(JOB_ID, timeout=0.01)
+        self.assertNotIsInstance(caught.exception, ResearchWaitTimeout)
+        with patch.object(Client, "_get_research_job", side_effect=RequestTimeout("network")):
+            with patch("factorsbt.client.time.monotonic", side_effect=[0, 0, 0.02]):
+                with self.assertRaises(ResearchWaitTimeout):
+                    client.wait_research_job(JOB_ID, timeout=0.01)
+        with patch.object(Client, "_get_research_job", return_value=self._status("failed")):
+            with patch("factorsbt.client.time.monotonic", side_effect=[0, 0, 0.005]):
+                with self.assertRaises(ResearchJobFailed):
+                    client.wait_research_job(JOB_ID, timeout=0.01)
+
+    def test_wait_research_rejects_nonfinite_and_boolean_parameters(self):
+        client = Client("http://127.0.0.1:8080")
+        for options in ({"timeout": float("nan")}, {"timeout": True}, {"poll_interval": float("inf")}, {"poll_interval": 0}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                client.wait_research_job(JOB_ID, **options)
+
     def test_episode_submission_posts_typed_actions_once(self):
         opener = Opener(Response(ack()))
         with patch("factorsbt.client.build_opener", return_value=opener):

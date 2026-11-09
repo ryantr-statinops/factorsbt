@@ -309,23 +309,32 @@ class Client:
         return accepted
 
     def get_research_job(self, job_id: str) -> ResearchJobStatus:
+        return self._get_research_job(job_id)
+
+    def _get_research_job(self, job_id: str, *, request_timeout: float | None = None) -> ResearchJobStatus:
         key = validate_uuid(job_id)
-        status = ResearchJobStatus.from_wire(self._get_json(f"/v1/research/jobs/{key}"))
+        status = ResearchJobStatus.from_wire(self._get_json(f"/v1/research/jobs/{key}", timeout=request_timeout))
         if status.job_id != key:
             raise ProtocolError("research job response identity does not match requested ID")
         return status
 
     def wait_research_job(self, job_id: str, *, timeout: float = 60.0, poll_interval: float = 0.25) -> ResearchJobStatus:
         key = validate_uuid(job_id)
-        if timeout <= 0 or poll_interval <= 0:
-            raise ValueError("timeout and poll_interval must be greater than zero")
+        _validate_polling_params(timeout, poll_interval)
         deadline = time.monotonic() + timeout
         last_status = None
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ResearchWaitTimeout(key, last_status)
-            last_status = self.get_research_job(key)
+            try:
+                last_status = self._get_research_job(key, request_timeout=min(self.timeout, remaining))
+            except RequestTimeout as exc:
+                if time.monotonic() >= deadline:
+                    raise ResearchWaitTimeout(key, last_status) from exc
+                raise
+            if time.monotonic() >= deadline:
+                raise ResearchWaitTimeout(key, last_status)
             if last_status.status == "succeeded":
                 return last_status
             if last_status.status == "failed":

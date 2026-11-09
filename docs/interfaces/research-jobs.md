@@ -32,6 +32,6 @@ Lifecycle failure and report availability are separate: a failed episode with a 
 
 ## Python SDK usage
 
-`Client` exposes `submit_reranking`, `submit_episode`, `submit_research_replay`, `get_research_job`, `wait_research_job`, and `get_research_result`. If a submit acknowledgement is uncertain, the raised exception retains the job ID for lookup; the SDK does not repeat the POST. A local polling timeout does not cancel the backend job. See [`research_workflows.py`](../../python-sdk/examples/research_workflows.py).
+`Client` exposes `submit_reranking`, `submit_episode`, `submit_research_replay`, `get_research_job`, `wait_research_job`, and `get_research_result`. If a submit acknowledgement is uncertain, the raised exception retains the job ID for lookup; the SDK does not repeat the POST. Each research status request is bounded by the remaining local wait deadline; `ResearchWaitTimeout` retains the last observed status, including a terminal reply that arrived too late. A local polling timeout does not cancel the backend job. See [`research_workflows.py`](../../python-sdk/examples/research_workflows.py).
 
 This interface does not provide online `step()` interaction, policy training, cancellation, random-seed control, hosted persistence, or public API stability. Verification details and compatibility limits are recorded in the [Phase D local verification guide](../development/phase-d-local.md).
