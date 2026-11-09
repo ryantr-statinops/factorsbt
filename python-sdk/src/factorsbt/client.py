@@ -343,8 +343,11 @@ class Client:
         return result
 
     def get_replay(self, replay_id: str) -> ReplayStatus:
+        return self._get_replay(replay_id)
+
+    def _get_replay(self, replay_id: str, *, request_timeout: float | None = None) -> ReplayStatus:
         key = validate_uuid(replay_id)
-        status = ReplayStatus.from_wire(self._get_json(f"/v1/replays/{key}"))
+        status = ReplayStatus.from_wire(self._get_json(f"/v1/replays/{key}", timeout=request_timeout))
         if status.replay_id != key:
             raise ProtocolError("replay status identity does not match requested ID")
         return status
@@ -358,11 +361,20 @@ class Client:
 
     def wait_replay(self, replay_id: str, *, timeout: float = 60.0, poll_interval: float = 0.25) -> ReplayStatus:
         key = validate_uuid(replay_id)
-        if timeout <= 0 or poll_interval <= 0:
-            raise ValueError("timeout and poll_interval must be greater than zero")
+        _validate_polling_params(timeout, poll_interval)
         deadline = time.monotonic() + timeout
         while True:
-            status = self.get_replay(key)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise WaitTimeout(key, None)
+            try:
+                status = self._get_replay(key, request_timeout=min(self.timeout, remaining))
+            except RequestTimeout as exc:
+                if time.monotonic() >= deadline:
+                    raise WaitTimeout(key, None) from exc
+                raise
+            if time.monotonic() >= deadline:
+                raise WaitTimeout(key, None)
             if status.status == "succeeded":
                 return status
             if status.status == "failed":

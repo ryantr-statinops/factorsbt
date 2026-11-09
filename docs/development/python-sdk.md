@@ -81,6 +81,6 @@ report = client.get_replay_report(replay.replay_id)
 print(report.matched)
 ```
 
-The SDK verifies fetched artifact bytes against their typed reference. Failed runs can also expose sealed evidence. `submit_replay` uses recorded inputs, makes no model call and requires the same executable digest and contract. A matched failed source is successful verification, not a successful source backtest. `ReplayAcknowledgementUnknown` retains `replay_id`; `ReplayFailedError` retains status so a divergence report can be read. Replay metadata is process-local.
+The SDK verifies fetched artifact bytes against their typed reference. Failed runs can also expose sealed evidence. `submit_replay` uses recorded inputs, makes no model call and requires the same executable digest and contract. A matched failed source is successful verification, not a successful source backtest. `wait_replay` bounds each status request by the remaining local deadline and raises `WaitTimeout` if a terminal reply arrives after it. `ReplayAcknowledgementUnknown` retains `replay_id`; `ReplayFailedError` retains status so a divergence report can be read. Replay metadata is process-local.
 
 For sequential scenarios use the [comparison guide](comparison.md). For reranking/episodes/research replay use the [research interface and example](../interfaces/research-jobs.md). Research jobs have separate acknowledgment/failure/wait-timeout exceptions and job IDs; run artifact routes do not accept research/replay IDs.
