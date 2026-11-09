@@ -1,7 +1,8 @@
 //! Option premium trades and European cash expiry.
 
 use crate::{
-    futures::{adverse_fill_price, calculate_fee, magnitude},
+    execution::{adverse_fill_price, calculate_fee},
+    futures::magnitude,
     portfolio::{decimal, validate_lot_quantity},
     EngineError, LedgerPosting, PortfolioState,
 };

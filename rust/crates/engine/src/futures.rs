@@ -1,6 +1,7 @@
 //! Linear futures fills and variation settlement.
 
 use crate::{
+    execution::{adverse_fill_price, calculate_fee},
     portfolio::{decimal, validate_quantity},
     EngineError, LedgerPosting, PortfolioState,
 };
@@ -308,77 +309,6 @@ fn settlement_basis_after_trade(
             .ok_or(EngineError::ArithmeticOverflow("weighted futures basis"));
     }
     Ok(current_basis)
-}
-
-pub(super) fn adverse_fill_price(
-    quote: Decimal,
-    signed_quantity: Decimal,
-    tick: Decimal,
-    slippage_bps: Decimal,
-) -> Result<Decimal, EngineError> {
-    if quote <= Decimal::ZERO || tick <= Decimal::ZERO || slippage_bps < Decimal::ZERO {
-        return Err(EngineError::InvalidExecutionPrice);
-    }
-    let rate = slippage_bps
-        .checked_div(Decimal::from(10_000))
-        .ok_or(EngineError::ArithmeticOverflow("slippage rate"))?;
-    let factor = if signed_quantity > Decimal::ZERO {
-        Decimal::ONE
-            .checked_add(rate)
-            .ok_or(EngineError::ArithmeticOverflow("slippage factor"))?
-    } else {
-        Decimal::ONE
-            .checked_sub(rate)
-            .ok_or(EngineError::ArithmeticOverflow("slippage factor"))?
-    };
-    let slipped = quote
-        .checked_mul(factor)
-        .ok_or(EngineError::ArithmeticOverflow("slipped price"))?;
-    if slipped <= Decimal::ZERO {
-        return Err(EngineError::InvalidExecutionPrice);
-    }
-    let strategy = if signed_quantity > Decimal::ZERO {
-        RoundingStrategy::ToPositiveInfinity
-    } else {
-        RoundingStrategy::ToNegativeInfinity
-    };
-    let units = slipped
-        .checked_div(tick)
-        .ok_or(EngineError::ArithmeticOverflow("tick conversion"))?
-        .round_dp_with_strategy(0, strategy);
-    units
-        .checked_mul(tick)
-        .filter(|value| *value > Decimal::ZERO)
-        .ok_or(EngineError::ArithmeticOverflow("tick rounding"))
-}
-
-pub(super) fn calculate_fee(
-    signed_quantity: Decimal,
-    fill_price: Decimal,
-    multiplier: Decimal,
-    fee_bps: Decimal,
-    fee_per_unit: Decimal,
-) -> Result<Decimal, EngineError> {
-    if fee_bps < Decimal::ZERO || fee_per_unit < Decimal::ZERO {
-        return Err(EngineError::InvalidFutureTrade("negative fee".into()));
-    }
-    let notional = magnitude(
-        signed_quantity
-            .checked_mul(fill_price)
-            .and_then(|value| value.checked_mul(multiplier))
-            .ok_or(EngineError::ArithmeticOverflow("futures notional"))?,
-    )?;
-    let proportional = notional
-        .checked_mul(fee_bps)
-        .and_then(|value| value.checked_div(Decimal::from(10_000)))
-        .ok_or(EngineError::ArithmeticOverflow("futures proportional fee"))?;
-    let per_unit = magnitude(signed_quantity)?
-        .checked_mul(fee_per_unit)
-        .ok_or(EngineError::ArithmeticOverflow("futures unit fee"))?;
-    proportional
-        .checked_add(per_unit)
-        .map(|value| value.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven))
-        .ok_or(EngineError::ArithmeticOverflow("futures fee"))
 }
 
 #[cfg(test)]
