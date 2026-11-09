@@ -1,7 +1,7 @@
 //! Load a sealed run from local evidence without relying on process metadata.
 
 use crate::evidence::{
-    executable_sha256, read_evidence_index, read_verified_artifact, EvidenceError, EvidenceIndex,
+    executable_sha256, read_evidence_index, read_verified_reference, EvidenceError, EvidenceIndex,
 };
 use factorsbt_contracts::{RunConfiguration, Uuid};
 use factorsbt_data::Fixture;
@@ -219,6 +219,6 @@ fn artifact(
         .iter()
         .find(|item| item.relative_path == path)
         .ok_or(ReplaySourceError::MissingArtifact("required artifact"))?;
-    let (_, bytes) = read_verified_artifact(root, run_id, &reference.artifact_id)?;
+    let bytes = read_verified_reference(root, run_id, reference)?;
     Ok(bytes)
 }

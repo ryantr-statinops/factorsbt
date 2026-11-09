@@ -1288,6 +1288,55 @@ mod tests {
     }
 
     #[test]
+    fn replay_reuses_its_validated_index_and_rechecks_bytes_when_read() {
+        let root = test_root();
+        let (configuration, fixture, report) = input();
+        let bundle = write_successful_run(&root, &configuration, &fixture, &report).unwrap();
+        let source =
+            crate::replay_source::ReplaySource::load(&root, &report.identity.run_id).unwrap();
+        let selected = source
+            .index
+            .artifacts
+            .iter()
+            .find(|item| item.relative_path == "evidence/configuration.json")
+            .unwrap();
+
+        IO_COUNTS.with(|counts| counts.set((0, 0)));
+        read_verified_artifact(&root, &report.identity.run_id, &selected.artifact_id).unwrap();
+        let before = IO_COUNTS.with(std::cell::Cell::get);
+        IO_COUNTS.with(|counts| counts.set((0, 0)));
+        source
+            .artifact(&root, "evidence/configuration.json")
+            .unwrap();
+        let after = IO_COUNTS.with(std::cell::Cell::get);
+        assert_eq!(before, (2, 2));
+        assert_eq!(after, (1, 1));
+        println!("replay artifact I/O after full index validation: before={before:?}, after={after:?} (reads, hashes)");
+
+        fs::write(
+            bundle.run_directory.join("evidence/summary.json"),
+            b"tampered",
+        )
+        .unwrap();
+        source
+            .artifact(&root, "evidence/configuration.json")
+            .unwrap();
+        assert!(matches!(
+            source.artifact(&root, "evidence/summary.json"),
+            Err(crate::replay_source::ReplaySourceError::Evidence(
+                EvidenceError::ArtifactIntegrity(_)
+            ))
+        ));
+        assert!(matches!(
+            crate::replay_source::ReplaySource::load(&root, &report.identity.run_id),
+            Err(crate::replay_source::ReplaySourceError::Evidence(
+                EvidenceError::ArtifactIntegrity(_)
+            ))
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn persists_partial_failure_and_in_flight_model_exchange() {
         let root = test_root();
         let (configuration, fixture, mut report) = input();

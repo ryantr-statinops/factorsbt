@@ -8,6 +8,8 @@
 
 Replay loads a sealed source run from the configured evidence directory by `source_run_id`, including after backend restart. It accepts a succeeded or failed run only when the full manifest and referenced bytes are present and verified. It checks contract version, internal evidence format, and SHA-256 of the executable against the running backend before admission. Older Phase B manifests lack this fingerprint and return `REPLAY_SOURCE_INCOMPATIBLE`; they are not rewritten.
 
+Admission verifies the whole source bundle. The worker validates it again when the job starts, retains that verified index for the job, and checks each artifact's path, size and SHA-256 when reading its bytes. This detects a source artifact changed after admission without rescanning unrelated files for each read. There is no shared evidence cache across jobs.
+
 The source configuration, fixture bytes, ordered snapshots, model responses, and structured terminal failure (when present) are replay inputs. Current fixture registry contents and model endpoint availability do not replace recorded bytes. Failure to persist or seal source evidence makes that source ineligible.
 
 ## Operations
