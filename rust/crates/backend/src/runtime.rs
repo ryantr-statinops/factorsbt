@@ -6,7 +6,8 @@ use crate::{
     evidence::{write_failed_run, write_successful_run},
     model_client::ModelHttpClient,
     orchestrator::{
-        run_simulation_with_progress, system_utc_timestamp, OrchestrationReport, RunIdentity,
+        run_simulation_with_progress, system_utc_timestamp, OrchestrationReport,
+        RunExecutionFailure, RunIdentity,
     },
     results::build_run_result,
     run_store::{JobId, RunStore},
@@ -363,6 +364,10 @@ async fn execute_replay(
             }
             Err(error) => return Err(error.to_string()),
         };
+        let source_state = summary
+            .as_ref()
+            .map(|summary| source_financial_state(&source, &evidence_root, summary))
+            .transpose()?;
         let terminal_failure = if source.index.status == "failed" {
             Some(
                 serde_json::from_slice::<serde_json::Value>(
@@ -385,9 +390,9 @@ async fn execute_replay(
             None => ModelHttpClient::from_recorded_responses(responses),
         }
         .map_err(|error| error.to_string())?;
-        Ok((source, summary, terminal_failure, provider))
+        Ok((source, summary, source_state, terminal_failure, provider))
     })();
-    let (source, summary, terminal_failure, provider) = match loaded {
+    let (source, summary, source_state, terminal_failure, provider) = match loaded {
         Ok(value) => value,
         Err(message) => {
             let _ = store.mark_replay_terminal(
@@ -431,8 +436,16 @@ async fn execute_replay(
                 );
                 return;
             };
-            let source_state = source_financial_state(&source, &evidence_root, summary);
-            let first_mismatch = replay_mismatch(&replay_state, &source_state);
+            let first_mismatch = if source.index.status == "succeeded" {
+                replay_mismatch(
+                    &replay_state,
+                    source_state
+                        .as_ref()
+                        .expect("successful source has a summary"),
+                )
+            } else {
+                Some("outcome".to_owned())
+            };
             let matched = first_mismatch.is_none();
             let replay_root = evidence_root.join("replays").join(replay_id.as_str());
             let refs = write_successful_run(
@@ -470,65 +483,63 @@ async fn execute_replay(
             );
         }
         Err(error) => {
-            let matched_source_failure = terminal_failure.as_ref().is_some_and(|failure| {
-                failure["stage"] == error.error.stage && failure["reason"] == error.error.reason
+            let first_mismatch = failed_replay_mismatch(
+                &source.index.status,
+                terminal_failure.as_ref(),
+                source_state.as_ref(),
+                &error,
+            );
+            let replay_root = evidence_root.join("replays").join(replay_id.as_str());
+            let evidence_refs = match write_failed_run(
+                &replay_root,
+                &source.configuration,
+                &source.fixture,
+                &error,
+            ) {
+                Ok(bundle) => bundle.artifacts,
+                Err(write_error) => {
+                    let _ = store.mark_replay_terminal(
+                        &replay_id,
+                        timestamp_or(&stored.status.submitted_at),
+                        None,
+                        Some(crate::replay_types::ReplayFailure {
+                            code: "REPLAY_EVIDENCE_FAILED".to_owned(),
+                            message: write_error.to_string(),
+                        }),
+                    );
+                    return;
+                }
+            };
+            let matched = first_mismatch.is_none();
+            let source_transition_count = summary.as_ref().map_or(0, |value| {
+                value["decision_steps"].as_u64().unwrap_or(0) as usize
+                    + value["execution_events"].as_u64().unwrap_or(0) as usize
+                    + value["settlement_events"].as_u64().unwrap_or(0) as usize
             });
-            if matched_source_failure {
-                let replay_root = evidence_root.join("replays").join(replay_id.as_str());
-                let evidence_refs = match write_failed_run(
-                    &replay_root,
-                    &source.configuration,
-                    &source.fixture,
-                    &error,
-                ) {
-                    Ok(bundle) => bundle.artifacts,
-                    Err(write_error) => {
-                        let _ = store.mark_replay_terminal(
-                            &replay_id,
-                            timestamp_or(&stored.status.submitted_at),
-                            None,
-                            Some(crate::replay_types::ReplayFailure {
-                                code: "REPLAY_EVIDENCE_FAILED".to_owned(),
-                                message: write_error.to_string(),
-                            }),
-                        );
-                        return;
-                    }
-                };
-                let replay_report = crate::replay_types::ReplayReport {
-                    contract_version: "1.0.0".to_owned(),
-                    replay_id: replay_id.clone(),
-                    source_run_id: stored.status.source_run_id,
-                    source_outcome: "failed".to_owned(),
-                    matched: true,
-                    first_mismatch: None,
-                    source_transition_count: summary
-                        .as_ref()
-                        .and_then(|value| value["decision_steps"].as_u64())
-                        .unwrap_or(0) as usize,
-                    replay_transition_count: error.partial_report.as_ref().map_or(0, |report| {
-                        report.cycles.len()
-                            + report.execution_events.len()
-                            + report.settlement_events.len()
-                    }),
-                    evidence_refs,
-                };
-                let _ = store.mark_replay_terminal(
-                    &replay_id,
-                    timestamp_or(&stored.status.submitted_at),
-                    Some(replay_report),
-                    None,
-                );
-                return;
-            }
+            let replay_transition_count = error.partial_report.as_ref().map_or(0, |report| {
+                report.cycles.len() + report.execution_events.len() + report.settlement_events.len()
+            });
+            let replay_report = crate::replay_types::ReplayReport {
+                contract_version: "1.0.0".to_owned(),
+                replay_id: replay_id.clone(),
+                source_run_id: stored.status.source_run_id,
+                source_outcome: source.index.status,
+                matched,
+                first_mismatch,
+                source_transition_count,
+                replay_transition_count,
+                evidence_refs,
+            };
+            let failure = (!matched).then(|| crate::replay_types::ReplayFailure {
+                code: "REPLAY_DIVERGED".to_owned(),
+                message: "Replay failure or completed transitions differ from source evidence."
+                    .to_owned(),
+            });
             let _ = store.mark_replay_terminal(
                 &replay_id,
                 timestamp_or(&stored.status.submitted_at),
-                None,
-                Some(crate::replay_types::ReplayFailure {
-                    code: "REPLAY_EXECUTION_FAILED".to_owned(),
-                    message: error.to_string(),
-                }),
+                Some(replay_report),
+                failure,
             );
         }
     }
@@ -570,25 +581,54 @@ fn source_financial_state(
     source: &crate::replay_source::ReplaySource,
     evidence_root: &std::path::Path,
     summary: &serde_json::Value,
-) -> serde_json::Value {
-    serde_json::json!({
+) -> Result<serde_json::Value, String> {
+    let portfolio = &summary["final_portfolio"];
+    if portfolio["cash"].as_str().is_none()
+        || portfolio["nav"].as_str().is_none()
+        || portfolio["snapshot"]["positions"].as_array().is_none()
+    {
+        return Err("source summary lacks a valid final portfolio".to_owned());
+    }
+    let orders = source_financial_rows(source, evidence_root, "evidence/orders.json")?;
+    let orders = orders
+        .as_array()
+        .expect("financial rows were checked")
+        .iter()
+        .map(|row| {
+            if row["orders"].as_array().is_none() || row["target_positions"].as_array().is_none() {
+                return Err("source orders are invalid".to_owned());
+            }
+            Ok(serde_json::json!({
+                "orders": row["orders"], "target_positions": row["target_positions"]
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(serde_json::json!({
         "cash": summary["final_portfolio"]["cash"],
         "nav": summary["final_portfolio"]["nav"],
         "positions": summary["final_portfolio"]["snapshot"]["positions"],
-        "orders": source.artifact(evidence_root, "evidence/orders.json").ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|value| value.as_array().map(|rows| rows.iter().map(|row| serde_json::json!({
-                "orders": row["orders"], "target_positions": row["target_positions"]
-            })).collect::<Vec<_>>())).unwrap_or_default(),
-        "executions": source.artifact(evidence_root, "evidence/executions.json").ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-        "settlements": source.artifact(evidence_root, "evidence/settlements.json").ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-        "admissions": source.artifact(evidence_root, "evidence/admissions.json").ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-        "ledger": source.artifact(evidence_root, "evidence/ledger-postings.json").ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()).unwrap_or_default(),
-    })
+        "orders": orders,
+        "executions": source_financial_rows(source, evidence_root, "evidence/executions.json")?,
+        "settlements": source_financial_rows(source, evidence_root, "evidence/settlements.json")?,
+        "admissions": source_financial_rows(source, evidence_root, "evidence/admissions.json")?,
+        "ledger": source_financial_rows(source, evidence_root, "evidence/ledger-postings.json")?,
+    }))
+}
+
+fn source_financial_rows(
+    source: &crate::replay_source::ReplaySource,
+    evidence_root: &std::path::Path,
+    path: &str,
+) -> Result<serde_json::Value, String> {
+    let bytes = source
+        .artifact(evidence_root, path)
+        .map_err(|error| error.to_string())?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| format!("source {path} is invalid JSON"))?;
+    if !value.is_array() {
+        return Err(format!("source {path} is not an array"));
+    }
+    Ok(value)
 }
 
 fn normalize_replay_value(value: serde_json::Value) -> serde_json::Value {
@@ -638,6 +678,49 @@ fn replay_mismatch(replay: &serde_json::Value, source: &serde_json::Value) -> Op
             != normalize_replay_value(source[*field].clone())
     })
     .map(str::to_owned)
+}
+
+fn failed_replay_mismatch(
+    source_status: &str,
+    source_failure: Option<&serde_json::Value>,
+    source_state: Option<&serde_json::Value>,
+    replay: &RunExecutionFailure,
+) -> Option<String> {
+    if source_status != "failed" {
+        return Some("outcome".to_owned());
+    }
+    let replay_state = replay.partial_report.as_deref().map(replay_financial_state);
+    match (source_state, replay_state.as_ref()) {
+        (Some(source), Some(actual)) => {
+            if let Some(field) = replay_mismatch(actual, source) {
+                return Some(field);
+            }
+        }
+        (None, None) => {}
+        _ => return Some("transitions".to_owned()),
+    }
+    let Some(source_failure) = source_failure else {
+        return Some("failure".to_owned());
+    };
+    if source_failure["stage"].as_str() != Some(replay.error.stage) {
+        return Some("failure.stage".to_owned());
+    }
+    if source_failure["reason"].as_str() != Some(replay.error.reason.as_str()) {
+        return Some("failure.reason".to_owned());
+    }
+    if source_failure["last_valid_portfolio_present"].as_bool()
+        != Some(replay.partial_report.is_some())
+    {
+        return Some("failure.last_valid_portfolio_present".to_owned());
+    }
+    let replay_step = replay
+        .failed_inference
+        .as_ref()
+        .map(|exchange| exchange.request.step_id.as_str());
+    if source_failure["step_id"].as_str() != replay_step {
+        return Some("failure.step_id".to_owned());
+    }
+    None
 }
 
 fn collect_ledger_postings(value: &serde_json::Value) -> Vec<serde_json::Value> {
@@ -854,7 +937,208 @@ fn timestamp_or(fallback: &UtcTimestamp) -> UtcTimestamp {
 mod tests {
     use super::*;
     use crate::{backend_config::BackendConfig, backend_config::QueueLimits};
+    use axum::{extract::Json, http::StatusCode, routing::post, Router};
+    use factorsbt_contracts::{model::ModelRequest, RunConfiguration};
+    use sha2::{Digest, Sha256};
+    use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::net::TcpListener;
+
+    async fn fail_after_one_decision(
+        Json(request): Json<ModelRequest>,
+    ) -> (StatusCode, Json<serde_json::Value>) {
+        if request.step_id.as_str() == "step-0002" {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error":"controlled"})),
+            );
+        }
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "contract_version":request.contract_version,
+                "inference_id":request.inference_id,
+                "run_id":request.run_id,
+                "scenario_id":request.scenario_id,
+                "step_id":request.step_id,
+                "snapshot_id":request.snapshot_id,
+                "model_id":request.model_id,
+                "model_version":request.model_version,
+                "responded_at":system_utc_timestamp().unwrap(),
+                "response_type":"scores",
+                "outputs":{"scores":[{"instrument_id":"SPOT_A","score":"1"}]},
+            })),
+        )
+    }
+
+    #[tokio::test]
+    async fn failed_replay_detects_rehashed_missing_admission_with_same_terminal_error() {
+        let root = std::env::temp_dir().join(format!(
+            "factorsbt-replay-divergence-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let fixture_root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        let fixture = FixtureRegistry::load(fixture_root)
+            .unwrap()
+            .get_by("mvp-synthetic", "v1")
+            .unwrap()
+            .as_ref()
+            .clone();
+        let mut configuration: RunConfiguration = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/instruments/minimal-valid-spot-run.json"
+        ))
+        .unwrap();
+        configuration.simulation.end_at = UtcTimestamp::new("2026-01-06T16:00:00Z").unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/infer", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().route("/infer", post(fail_after_one_decision)),
+            )
+            .await
+            .unwrap();
+        });
+        let source_id = Uuid::new("a1139f93-8119-4be6-8c84-b6835fb3647e").unwrap();
+        let source_failure = run_simulation_with_progress(
+            &ModelHttpClient::new().unwrap(),
+            &endpoint,
+            Duration::from_secs(2),
+            &configuration,
+            &fixture,
+            RunIdentity {
+                run_id: source_id.clone(),
+                scenario_id: Identifier::new("baseline").unwrap(),
+            },
+            |_| {},
+        )
+        .await
+        .unwrap_err();
+        server.abort();
+        assert_eq!(
+            source_failure.partial_report.as_ref().unwrap().cycles.len(),
+            1
+        );
+        let bundle = write_failed_run(&root, &configuration, &fixture, &source_failure).unwrap();
+        let store = RunStore::new(QueueLimits::new(1, 2).unwrap());
+        let first_id = Uuid::new("b2139f93-8119-4be6-8c84-b6835fb3647e").unwrap();
+        store
+            .accept_replay(
+                first_id.clone(),
+                source_id.clone(),
+                system_utc_timestamp().unwrap(),
+            )
+            .unwrap();
+        execute_replay(
+            store.clone(),
+            ModelHttpClient::new().unwrap(),
+            root.clone(),
+            first_id.clone(),
+        )
+        .await;
+        let first = store.get_replay(&first_id).unwrap();
+        assert_eq!(first.status.status, "succeeded");
+        assert!(first.report.unwrap().matched);
+
+        let admissions_path = bundle.run_directory.join("evidence/admissions.json");
+        let admissions: serde_json::Value =
+            serde_json::from_slice(&fs::read(&admissions_path).unwrap()).unwrap();
+        assert_eq!(admissions.as_array().unwrap().len(), 1);
+        let modified = b"[]";
+        fs::write(&admissions_path, modified).unwrap();
+        let manifest_path = bundle.run_directory.join("evidence/run-manifest.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        let reference = manifest["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|reference| reference["relative_path"] == "evidence/admissions.json")
+            .unwrap();
+        reference["size_bytes"] = serde_json::json!(modified.len());
+        reference["sha256"] = serde_json::json!(format!("{:x}", Sha256::digest(modified)));
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        let source = crate::replay_source::ReplaySource::load(&root, &source_id).unwrap();
+        source.verify_replay_eligibility(&root).unwrap();
+
+        let store = RunStore::new(QueueLimits::new(1, 2).unwrap());
+        let replay_id = Uuid::new("c3139f93-8119-4be6-8c84-b6835fb3647e").unwrap();
+        store
+            .accept_replay(
+                replay_id.clone(),
+                source_id,
+                system_utc_timestamp().unwrap(),
+            )
+            .unwrap();
+        execute_replay(
+            store.clone(),
+            ModelHttpClient::new().unwrap(),
+            root.clone(),
+            replay_id.clone(),
+        )
+        .await;
+        let replay = store.get_replay(&replay_id).unwrap();
+        assert_eq!(replay.status.status, "failed");
+        assert_eq!(replay.status.failure.unwrap().code, "REPLAY_DIVERGED");
+        let report = replay.report.unwrap();
+        assert!(!report.matched);
+        assert_eq!(report.first_mismatch.as_deref(), Some("admissions"));
+
+        manifest["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|reference| reference["relative_path"] != "evidence/summary.json");
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        let incomplete =
+            crate::replay_source::ReplaySource::load(&root, &source_failure.identity.run_id)
+                .unwrap();
+        assert!(matches!(
+            incomplete.verify_replay_eligibility(&root),
+            Err(crate::replay_source::ReplaySourceError::Incomplete(
+                "failed run financial trace"
+            ))
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn pre_transition_failure_can_match_without_a_financial_summary() {
+        let replay = RunExecutionFailure {
+            identity: RunIdentity {
+                run_id: Uuid::new("a1139f93-8119-4be6-8c84-b6835fb3647e").unwrap(),
+                scenario_id: Identifier::new("baseline").unwrap(),
+            },
+            error: crate::orchestrator::OrchestrationError {
+                stage: "fixture coverage",
+                reason: "required price is missing".to_owned(),
+            },
+            partial_report: None,
+            failed_inference: None,
+        };
+        let failure = serde_json::json!({
+            "stage":"fixture coverage",
+            "reason":"required price is missing",
+            "last_valid_portfolio_present":false,
+            "step_id":null,
+        });
+        assert_eq!(
+            failed_replay_mismatch("failed", Some(&failure), None, &replay),
+            None
+        );
+    }
 
     #[test]
     fn replay_comparator_reports_first_financial_transition_mismatch() {

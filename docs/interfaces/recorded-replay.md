@@ -22,6 +22,8 @@ Replay jobs share the local worker pool and queue limits with fresh runs. Replay
 
 The replay inference provider uses recorded responses or injects the recorded terminal model failure at its original decision boundary. It makes zero HTTP model calls. Correlation fields are mapped to the replay job's fresh IDs without changing output values. The verifier compares ordered admissions, orders, fills, ledger entries, cash, positions and NAV by financial value. It ignores regenerated IDs, service timestamps and artifact IDs. A mismatch yields `REPLAY_DIVERGED` with a report and leaves the source untouched.
 
+For a failed source, replay also compares every completed transition, the last valid portfolio, and the terminal failure stage, reason and step when recorded. A failed source with a partial portfolio requires its sealed summary and financial trace; a genuine failure before any portfolio transition can have no summary. Matching only the terminal error is insufficient. A failed replay with different completed transitions returns a report with `matched: false` and `first_mismatch`.
+
 This establishes only same-binary, same-contract reproducibility for the controlled fixture path. It does not promise byte-identical artifacts, deterministic fresh inference, or cross-build/platform replay.
 
 See [ADR 0003](../decisions/0003-phase-c-comparison-replay.md) and [Stage 09](../../plan/implementation/09-recorded-replay.md).

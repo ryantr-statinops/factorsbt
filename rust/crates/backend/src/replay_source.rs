@@ -132,6 +132,10 @@ impl ReplaySource {
             if failure["code"] != "RUN_EXECUTION_FAILED"
                 || failure["stage"] != self.manifest["failure"]["stage"]
                 || failure["reason"] != self.manifest["failure"]["reason"]
+                || failure["stage"].as_str().is_none()
+                || failure["reason"].as_str().is_none()
+                || failure["last_valid_portfolio_present"].as_bool().is_none()
+                || failure["response_recorded"].as_bool().is_none()
             {
                 return Err(ReplaySourceError::Incomplete("terminal failure identity"));
             }
@@ -141,6 +145,24 @@ impl ReplaySource {
             .artifacts
             .iter()
             .any(|artifact| artifact.relative_path == "evidence/summary.json");
+        if self.index.status == "failed" && !has_summary {
+            let failure: Value =
+                serde_json::from_slice(&self.artifact(root, "evidence/failure.json")?)
+                    .map_err(|_| ReplaySourceError::Incomplete("terminal failure"))?;
+            let has_financial_trace = self.index.artifacts.iter().any(|artifact| {
+                [
+                    "evidence/admissions.json",
+                    "evidence/orders.json",
+                    "evidence/executions.json",
+                    "evidence/settlements.json",
+                    "evidence/ledger-postings.json",
+                ]
+                .contains(&artifact.relative_path.as_str())
+            });
+            if failure["last_valid_portfolio_present"] == true || has_financial_trace {
+                return Err(ReplaySourceError::Incomplete("failed run financial trace"));
+            }
+        }
         if self.index.status == "succeeded" || has_summary {
             self.artifact(root, "evidence/summary.json")?;
             for path in [
