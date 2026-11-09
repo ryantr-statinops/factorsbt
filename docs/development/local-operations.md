@@ -28,7 +28,7 @@ Queue-full/shutdown admission returns `503 BACKEND_UNAVAILABLE` without new work
 
 ## Evidence and restart
 
-Fresh run evidence is under `<root>/runs/<run-id>/evidence/`. Replay/research evidence uses separate job directories. Keep the complete sealed manifest and referenced bytes together. Run artifact access checks containment, size and SHA-256; this is integrity validation, not authentication or a retention policy. Never edit sealed source files to repair a replay incompatibility.
+Fresh run evidence is under `<root>/runs/<run-id>/evidence/`. Replay/research evidence uses separate job directories. Keep the complete sealed manifest and referenced bytes together. Reading the run evidence index verifies every referenced artifact; downloading a single artifact validates its manifest references and checks the requested file's containment, size and SHA-256 at read time. Replay admission verifies the full source bundle, and the worker rechecks each artifact when it reads it. These checks detect accidental or post-seal changes; they are not authentication or a retention policy. Never edit sealed source files to repair a replay incompatibility.
 
 | Operation after restart | Behavior |
 | --- | --- |

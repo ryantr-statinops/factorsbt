@@ -73,7 +73,7 @@ The lifecycle is `queued → running → succeeded | failed`. `started_at` and `
 
 ### Evidence and artifact responses
 
-Phase C adds evidence enumeration and artifact reads without changing the original result shape. The [evidence guide](results-evidence.md#verified-evidence-access) specifies validation and errors: running evidence requests return `409 RUN_NOT_SUCCEEDED`, unknown sources/artifacts return `404`, and failed integrity checks return `500 EVIDENCE_REFERENCE_INVALID`. Sealed succeeded/failed run evidence can be read from disk after restart; this is separate from metadata recovery. These routes do not apply to replay or research job IDs.
+Phase C adds evidence enumeration and artifact reads without changing the original result shape. The [evidence guide](results-evidence.md#verified-evidence-access) specifies validation and errors: running evidence requests return `409 RUN_NOT_SUCCEEDED`, unknown sources/artifacts return `404`, and failed integrity checks for the requested artifact or full evidence index return `500 EVIDENCE_REFERENCE_INVALID`. Artifact download checks that artifact's bytes; the evidence index checks the whole run bundle. Sealed succeeded/failed run evidence can be read from disk after restart; this is separate from metadata recovery. These routes do not apply to replay or research job IDs.
 
 ## Client behavior and storage boundary
 
