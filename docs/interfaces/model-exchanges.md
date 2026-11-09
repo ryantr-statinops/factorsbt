@@ -20,11 +20,11 @@ A response echoes the inference/run/scenario/step/snapshot IDs and configured mo
 
 | Type | Output shape | Semantic checks |
 |---|---|---|
-| `scores` | One `{instrument_id, score}` per eligible instrument. Scores are finite decimal strings. | No duplicate/unknown/ineligible IDs. Positive scores rank descending; ties use instrument ID. Nonpositive scores are not selected. Top K and derivative sizing follow the submitted policy. |
-| `targets` | `spot_weights` and `derivative_contracts` arrays. | IDs are unique and resolve to the matching instrument type. Omitted configured instruments target zero. Spot weights are nonnegative and total no more than one. Derivative quantities are signed integer contracts. |
+| `scores` | Zero or one `{instrument_id, score}` per eligible instrument. Scores are finite decimal strings. | No duplicate/unknown/ineligible IDs. Omitted and nonpositive scores are not selected. Positive scores rank descending; ties use instrument ID. Top K and derivative sizing follow the submitted policy. |
+| `targets` | `spot_weights` and `derivative_contracts` arrays. | IDs are unique and resolve to the matching instrument type. Omitted configured instruments target zero, including expired derivatives. Spot weights are nonnegative and total no more than one. Derivative quantities are signed integer contracts. |
 | `order_intents` | `orders` array with one market intent per instrument and signed decimal quantity. | No duplicate/unknown IDs, zero quantities, short spot, or unsupported type. Portfolio admission still evaluates the entire group against one snapshot. |
 
-The schema checks payload shape. It cannot establish eligible IDs, response mode equality, score coverage, sum of weights, position limits, contract semantics, or shared-capital feasibility. Those are run validation and engine responsibilities. An accepted model response is a proposal; it is not itself an admitted order or fill.
+The schema checks payload shape. It cannot establish eligible IDs, response mode equality, score eligibility and uniqueness, sum of weights, position limits, contract semantics, or shared-capital feasibility. Those are run validation and engine responsibilities. Full score coverage is not required. An accepted model response is a proposal; it is not itself an admitted order or fill.
 
 ## Correlation and failures
 

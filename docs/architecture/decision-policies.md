@@ -13,8 +13,8 @@ The [MVP scope](../product/mvp-scope.md) defines which output types exist. This 
 ## Scores
 
 1. The run supplies an integer `top_k` from 1 through the configured instrument count.
-2. At a decision step the eligible universe contains configured instruments that have valid close marks and are not expired or otherwise unavailable for new exposure at this time.
-3. A response must supply exactly one finite score for each eligible instrument and no score for an unknown or ineligible ID. Zero and negative scores are ineligible.
+2. After close-time settlement, the request's eligible universe contains configured spot instruments and derivatives whose expiry is later than the decision time. The complete catalog remains in the request. Fixture/snapshot validation is separate from this expiry filter.
+3. A response may supply at most one finite score for each eligible instrument and no score for an unknown or ineligible ID. An omitted, zero, or negative score is not selected.
 4. Order eligible instruments by score descending, then by `instrument_id` ascending. Select the first `min(top_k, count(positive_scores))`; an empty selection is valid.
 5. Each selected spot has target weight `1/top_k` of the pre-decision NAV. If fewer than `top_k` instruments are positive, unused weight remains in cash. Each selected derivative has the target contract quantity configured for that instrument in the run; that value can be signed. Unselected instruments target zero.
 6. The resulting full target is admitted as one decision group. If no score is positive, the full target is zero and closes existing positions as execution rules permit.
@@ -23,7 +23,7 @@ The [MVP scope](../product/mvp-scope.md) defines which output types exist. This 
 
 ## Targets
 
-A `targets` response declares a complete target for every configured instrument: nonnegative decimal spot weights and signed integer derivative contract quantities. Spot weights must sum to at most one. A map with missing or duplicate IDs, a weight below zero, or unknown instrument fails validation. Expired or ineligible derivatives must have target zero. The percentages describe spot NAV weights; derivative entries are contract counts, not weights, notional exposure, or delta.
+A `targets` response may list nonnegative decimal spot weights and signed integer derivative contract quantities for configured instruments. Omitted instruments resolve to a zero target, so omission can close an existing position. Spot weights must sum to at most one. Duplicate IDs, a weight below zero, unknown IDs, or an instrument in the wrong target array fail validation. An expired derivative may be listed only with target `0`; omitting it also resolves to zero. Its ID, kind, and duplicate checks still apply. The percentages describe spot NAV weights; derivative entries are contract counts, not weights, notional exposure, or delta.
 
 ## Order intents
 
@@ -35,7 +35,7 @@ Evaluate the entire response from a single pre-application portfolio and cash sn
 
 For targets, derive position changes from current to desired quantity. For order intents, use signed requested quantity. For scores, derive changes from the complete generated target above. Partition changes into risk-reducing closes and risk-increasing opens. Compute fees, cash use, futures initial margin, written-option margin, delivery reserves, and available buying power using the configured instrument rules. Close-time admission estimates executable prices from the current marks using the same adverse tick, slippage, fee, ledger rounding, and final capacity rules as a fill.
 
-Always admit valid risk-reducing closes before funding increases. Find one shared scale factor `λ` for all risk-increasing changes using exactly 60 binary-search iterations with `λ` represented to 18 decimal places. For each feasibility check, round every scaled increase toward zero to its configured quantity increment, then calculate the full group's resulting buying power, fees, margins, and delivery reserves. Feasibility is monotone in `λ`; retain the highest tested feasible candidate and recompute that candidate once at the end before acceptance. If no risk-increase candidate is feasible, accept valid closes and no increases. Do not change admission based on input-map or asset iteration order.
+Always admit valid risk-reducing closes before funding increases. Find one shared scale factor `λ` for all risk-increasing changes using exactly 60 binary-search iterations with `λ` represented to 18 decimal places. For each feasibility check, round every scaled increase toward zero to its configured quantity increment, then calculate the full group's resulting buying power, fees, margins, and delivery reserves. Retain the highest tested feasible candidate and recompute that candidate once at the end before acceptance. If no risk-increase candidate is feasible, accept valid closes and no increases. Do not change admission based on input-map or asset iteration order.
 
 At the next open, recalculate admission from the actual open prices and validate the staged final portfolio before applying fills. The open-time adjustment records the resulting reduction from the queued quantity. Market order intents use this same open-time funding gate.
 
@@ -44,8 +44,8 @@ Record requested and admitted quantities/targets, `λ`, per-instrument rounding 
 ## Defaults and errors
 
 - The baseline run mode is `scores` with `top_k=2` and derivative quantities of one contract for the four configured options and the future. Other output modes have separate controlled examples.
-- An equal score always resolves by stable ID. Non-finite scores, missing/extra response IDs, incompatible output mode, malformed targets, and repeated response application fail the run with a typed error and step context.
-- If the input snapshot has no valid close mark for any configured instrument required by the selected output, fail with a missing-data error. Do not silently score only an accidental subset.
+- An equal score always resolves by stable ID. Non-finite scores, missing/incorrect correlation IDs, unknown or ineligible instrument IDs, incompatible output mode, malformed targets, and repeated response application fail the run with a typed error and step context. Omitted eligible scores are allowed.
+- If a required fixture price is unavailable, fail with a missing-data error. Do not silently treat absent data as a model decision; an omitted score is an explicit valid response choice.
 - Risk reductions can never bypass required execution prices, valid quantity steps, expiry, or delivery settlement.
 
 ## Scope and extensions
