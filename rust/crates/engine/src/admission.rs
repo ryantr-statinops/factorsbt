@@ -1,11 +1,13 @@
 //! Shared-capital admission for complete, synchronized target groups.
 
 use crate::{
+    orders::project_executable_targets,
     portfolio::{decimal, validate_lot_quantity},
     EngineError, InstrumentTarget, PortfolioState,
 };
 use factorsbt_contracts::instruments::Instrument;
-use rust_decimal::Decimal;
+use factorsbt_contracts::UtcTimestamp;
+use rust_decimal::{Decimal, RoundingStrategy};
 use std::{collections::HashMap, error::Error, fmt};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +64,16 @@ pub fn admit_target_group(
     portfolio: &PortfolioState,
     targets: &[InstrumentTarget],
 ) -> Result<AdmissionResult, AdmissionError> {
+    admit_target_group_at(portfolio, targets, portfolio.start_at())
+}
+
+/// Admit targets at a particular simulated close or open using its current
+/// marked prices as executable quote estimates.
+pub fn admit_target_group_at(
+    portfolio: &PortfolioState,
+    targets: &[InstrumentTarget],
+    at: &UtcTimestamp,
+) -> Result<AdmissionResult, AdmissionError> {
     let mut requested = HashMap::new();
     for target in targets {
         let id = target.instrument_id.as_str().to_owned();
@@ -96,37 +108,49 @@ pub fn admit_target_group(
             base_quantities.insert(id.clone(), current);
         }
     }
-    let reduced_portfolio = portfolio
-        .project_target_positions(&reductions)
+    let reduced_portfolio = project_executable_targets(portfolio, &reductions, at)
         .map_err(AdmissionError::InfeasibleRiskReduction)?;
 
     let full = scaled_targets(&requested, &base_quantities, portfolio, Decimal::ONE)?;
-    if reduced_portfolio.project_target_positions(&full).is_ok() {
-        return Ok(adjustments(&requested, &full, Decimal::ONE));
+    match project_executable_targets(&reduced_portfolio, &full, at) {
+        Ok(_) => return Ok(adjustments(&requested, &full, Decimal::ONE)),
+        Err(error) if is_capacity_error(&error) => {}
+        Err(error) => return Err(AdmissionError::Arithmetic(error)),
     }
 
     let zero_scale = scaled_targets(&requested, &base_quantities, portfolio, Decimal::ZERO)?;
-    if let Err(error) = reduced_portfolio.project_target_positions(&zero_scale) {
+    if let Err(error) = project_executable_targets(&reduced_portfolio, &zero_scale, at) {
         return Err(AdmissionError::InfeasibleRiskReduction(error));
     }
     let mut low = Decimal::ZERO;
     let mut high = Decimal::ONE;
     let mut best = zero_scale;
     for _ in 0..60 {
-        let midpoint = (low + high) / Decimal::from(2);
+        let midpoint =
+            ((low + high) / Decimal::from(2)).round_dp_with_strategy(18, RoundingStrategy::ToZero);
         let candidate = scaled_targets(&requested, &base_quantities, portfolio, midpoint)?;
-        match reduced_portfolio.project_target_positions(&candidate) {
+        match project_executable_targets(&reduced_portfolio, &candidate, at) {
             Ok(_) => {
                 low = midpoint;
                 best = candidate;
             }
-            Err(EngineError::InsufficientCash)
-            | Err(EngineError::InsufficientDeliveryCash)
-            | Err(EngineError::InsufficientUnderlyingCollateral(_)) => high = midpoint,
+            Err(error) if is_capacity_error(&error) => high = midpoint,
             Err(error) => return Err(AdmissionError::Arithmetic(error)),
         }
     }
+    project_executable_targets(&reduced_portfolio, &best, at)
+        .map_err(AdmissionError::InfeasibleRiskReduction)?;
     Ok(adjustments(&requested, &best, low))
+}
+
+fn is_capacity_error(error: &EngineError) -> bool {
+    matches!(
+        error,
+        EngineError::InsufficientCash
+            | EngineError::InsufficientInitialMargin
+            | EngineError::InsufficientDeliveryCash
+            | EngineError::InsufficientUnderlyingCollateral(_)
+    )
 }
 
 fn reduction_quantity(current: Decimal, requested: Decimal) -> Decimal {
@@ -164,7 +188,9 @@ fn scaled_targets(
         let scaled_delta = delta
             .checked_mul(scale)
             .ok_or_else(|| AdmissionError::InvalidTarget(id.clone()))?;
-        let rounded_delta = (scaled_delta / step)
+        let rounded_delta = scaled_delta
+            .checked_div(step)
+            .ok_or_else(|| AdmissionError::InvalidTarget(id.clone()))?
             .trunc()
             .checked_mul(step)
             .ok_or_else(|| AdmissionError::InvalidTarget(id.clone()))?;
@@ -250,5 +276,40 @@ mod tests {
             (first.adjustments[0].common_scale - Decimal::new(5, 1)).abs() < Decimal::new(1, 6)
         );
         assert!(first.adjustments.iter().all(|adjustment| adjustment.scaled));
+    }
+
+    #[test]
+    fn close_admission_includes_fee_and_adverse_tick_price() {
+        let mut config: RunConfiguration = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/instruments/minimal-valid-spot-run.json"
+        ))
+        .unwrap();
+        config.instruments[0] = serde_json::from_str(
+            r#"{"instrument_id":"SPOT_A","instrument_type":"spot","quote_currency":"USD","price_tick":"0.01","quantity_step":"0.001","contract_multiplier":"1","fee_bps":"0","fee_per_unit":"1","slippage_bps":"10"}"#,
+        ).unwrap();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        let registry = FixtureRegistry::load(root).unwrap();
+        let fixture = registry.get_by("mvp-synthetic", "v1").unwrap();
+        let portfolio = PortfolioState::initialize(&config, &fixture).unwrap();
+        let at = UtcTimestamp::new("2026-01-05T16:00:00Z").unwrap();
+        let admission = admit_target_group_at(&portfolio, &[target("SPOT_A", 1000)], &at).unwrap();
+        let adjustment = &admission.adjustments[0];
+        assert!(adjustment.scaled);
+        assert!(adjustment.admitted_quantity < Decimal::from(990));
+        assert!(adjustment.admitted_quantity > Decimal::from(989));
+        assert!(project_executable_targets(
+            &portfolio,
+            &[("SPOT_A".to_owned(), adjustment.admitted_quantity)],
+            &at,
+        )
+        .is_ok());
+        assert!(matches!(
+            project_executable_targets(
+                &portfolio,
+                &[("SPOT_A".to_owned(), Decimal::from(1000))],
+                &at
+            ),
+            Err(EngineError::InsufficientCash)
+        ));
     }
 }

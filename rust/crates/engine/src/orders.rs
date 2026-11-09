@@ -360,6 +360,59 @@ fn stage_group_fills(
     Ok((candidate, fills))
 }
 
+/// Evaluate a target group with the same fill, fee, ledger, and final-capacity
+/// rules as execution, using the portfolio's current marks as provisional quotes.
+/// No fill or portfolio mutation escapes this projection.
+pub(crate) fn project_executable_targets(
+    portfolio: &PortfolioState,
+    targets: &[(String, Decimal)],
+    at: &UtcTimestamp,
+) -> Result<PortfolioState, EngineError> {
+    let mut ordered = targets.to_vec();
+    ordered.sort_by(|left, right| {
+        let left_current = portfolio
+            .position(&left.0)
+            .map(|position| position.quantity);
+        let right_current = portfolio
+            .position(&right.0)
+            .map(|position| position.quantity);
+        match (left_current, right_current) {
+            (Some(left_current), Some(right_current)) => reduces_exposure(right_current, right.1)
+                .cmp(&reduces_exposure(left_current, left.1))
+                .then_with(|| left.0.cmp(&right.0)),
+            _ => left.0.cmp(&right.0),
+        }
+    });
+    let mut candidate = portfolio.clone();
+    candidate.begin_group_staging();
+    for (id, target) in ordered {
+        let current = candidate
+            .position(&id)
+            .ok_or_else(|| EngineError::MissingPosition(id.clone()))?;
+        let delta = target
+            .checked_sub(current.quantity)
+            .ok_or(EngineError::ArithmeticOverflow("target quantity delta"))?;
+        if delta.is_zero() {
+            continue;
+        }
+        let quote = current.mark;
+        match candidate.instruments().get(&id) {
+            Some(Instrument::Spot(_)) => {
+                candidate.execute_spot_trade(&id, delta, quote, "admission-quote", 0)?;
+            }
+            Some(Instrument::LinearFuture(_)) => {
+                candidate.execute_future_trade(&id, delta, quote, "admission-quote", 0)?;
+            }
+            Some(Instrument::Option(_)) => {
+                candidate.execute_option_trade(&id, delta, quote, at, "admission-quote", 0)?;
+            }
+            None => return Err(EngineError::MissingPosition(id)),
+        }
+    }
+    candidate.finish_group_staging()?;
+    Ok(candidate)
+}
+
 fn reduces_exposure(current: Decimal, target: Decimal) -> bool {
     !current.is_zero()
         && (target.is_zero()

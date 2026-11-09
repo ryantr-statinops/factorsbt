@@ -7,7 +7,7 @@ use super::{
 use factorsbt_contracts::{Identifier, InstrumentId, UtcTimestamp};
 use factorsbt_data::{execution_prices_available_at, observations_available_at};
 use factorsbt_engine::{
-    admit_target_group, execute_pending_group, queue_target_group, value_instruments,
+    admit_target_group_at, execute_pending_group, queue_target_group, value_instruments,
     ExecutionFill, InstrumentTarget, PortfolioState,
 };
 use rust_decimal::Decimal;
@@ -182,7 +182,7 @@ where
                     .map_err(|_| EpisodeError::InvalidFixture)?,
                 target_quantity: requested_quantity,
             };
-            let admission = admit_target_group(&portfolio, &[target])
+            let admission = admit_target_group_at(&portfolio, &[target], &decision_time)
                 .map_err(|_| EpisodeError::InsufficientCash)?;
             let step_id = Identifier::new(format!("episode-step-{step}"))
                 .map_err(|_| EpisodeError::InvalidFixture)?;

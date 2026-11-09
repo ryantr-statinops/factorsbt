@@ -16,7 +16,9 @@ mod portfolio;
 mod pricing;
 mod risk;
 
-pub use admission::{admit_target_group, AdmissionAdjustment, AdmissionError, AdmissionResult};
+pub use admission::{
+    admit_target_group, admit_target_group_at, AdmissionAdjustment, AdmissionError, AdmissionResult,
+};
 pub use clock::{ClockError, ClockEvent, SimulationClock, SimulationEventKind, SimulationStep};
 pub use decisions::{
     response_to_proposal, scores_to_targets, DecisionError, DecisionProposal, InstrumentTarget,

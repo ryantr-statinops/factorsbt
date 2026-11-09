@@ -18,7 +18,7 @@ use factorsbt_data::{
     settlement_events_available_at, validate_run_coverage, Fixture, SnapshotContext,
 };
 use factorsbt_engine::{
-    admit_target_group, execute_liquidation_group, execute_pending_group, finalize_run_state,
+    admit_target_group_at, execute_liquidation_group, execute_pending_group, finalize_run_state,
     queue_order_intents, queue_target_group, response_to_proposal, schedule_liquidation,
     value_instruments, AdmissionResult, DecisionProposal, ExecutedOrderGroup, FinalRunStatus,
     LiquidationOutcome, PendingOrderGroup, PortfolioState, RunFinalization, SimulationClock,
@@ -583,7 +583,7 @@ fn queue_decision(
         return Ok((None, None));
     }
     if !proposal.target_positions.is_empty() {
-        let admission = admit_target_group(portfolio, &proposal.target_positions)
+        let admission = admit_target_group_at(portfolio, &proposal.target_positions, decision_time)
             .map_err(|error| OrchestrationError::at("group admission", error))?;
         let group = queue_target_group(portfolio, step_id, decision_time, &eligible_at, &admission)
             .map_err(|error| OrchestrationError::at("target order queue", error))?;

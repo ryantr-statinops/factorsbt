@@ -8,7 +8,7 @@ use super::{
 use factorsbt_contracts::{Identifier, UtcTimestamp};
 use factorsbt_data::{execution_prices_available_at, observations_available_at};
 use factorsbt_engine::{
-    admit_target_group, execute_pending_group, queue_target_group, value_instruments,
+    admit_target_group_at, execute_pending_group, queue_target_group, value_instruments,
     ExecutionFill, InstrumentTarget, PortfolioState,
 };
 use rust_decimal::Decimal;
@@ -146,7 +146,8 @@ fn branch(
                 target_quantity: target_b,
             },
         ];
-        let admission = admit_target_group(&portfolio, &targets).map_err(|e| e.to_string())?;
+        let admission = admit_target_group_at(&portfolio, &targets, &decision_time)
+            .map_err(|e| e.to_string())?;
         let step_id =
             Identifier::new(format!("research-step-{index}")).map_err(|e| e.to_string())?;
         let group = queue_target_group(
