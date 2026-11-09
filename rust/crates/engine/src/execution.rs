@@ -98,7 +98,7 @@ impl PortfolioState {
             .checked_sub(fee)
             .ok_or(EngineError::ArithmeticOverflow("fee cash delta"))?;
         let fee_posting = candidate.apply_ledger_posting(None, negative_fee, Decimal::ZERO)?;
-        if candidate.cash() < Decimal::ZERO {
+        if !candidate.is_group_staging() && candidate.cash() < Decimal::ZERO {
             return Err(EngineError::InsufficientCash);
         }
         *self = candidate;

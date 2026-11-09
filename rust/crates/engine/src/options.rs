@@ -128,13 +128,15 @@ impl PortfolioState {
             .checked_sub(fee)
             .ok_or(EngineError::ArithmeticOverflow("option fee cash"))?;
         let fee_posting = candidate.apply_ledger_posting(None, fee_cash_delta, Decimal::ZERO)?;
-        if candidate.cash() < Decimal::ZERO {
+        if !candidate.is_group_staging() && candidate.cash() < Decimal::ZERO {
             return Err(EngineError::InsufficientCash);
         }
-        if candidate.cash() < candidate.initial_margin_requirement() {
+        if !candidate.is_group_staging()
+            && candidate.cash() < candidate.initial_margin_requirement()
+        {
             return Err(EngineError::InsufficientInitialMargin);
         }
-        if candidate.cash() < candidate.cash_encumbrance() {
+        if !candidate.is_group_staging() && candidate.cash() < candidate.cash_encumbrance() {
             return Err(EngineError::InsufficientDeliveryCash);
         }
         *self = candidate;

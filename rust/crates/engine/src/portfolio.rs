@@ -167,6 +167,7 @@ pub struct PortfolioState {
     maintenance_cash_encumbrance: Decimal,
     pub(super) consumed_settlement_event_ids: HashSet<String>,
     start_at: UtcTimestamp,
+    group_staging: bool,
 }
 
 impl PortfolioState {
@@ -275,6 +276,7 @@ impl PortfolioState {
             maintenance_cash_encumbrance,
             consumed_settlement_event_ids: HashSet::new(),
             start_at: configuration.simulation.start_at.clone(),
+            group_staging: false,
         })
     }
 
@@ -507,12 +509,14 @@ impl PortfolioState {
                 maintenance,
                 None,
             )?;
-        validate_underlying_collateral(
-            &self.instruments,
-            &self.positions,
-            &reserved_underlying,
-            None,
-        )?;
+        if !self.group_staging {
+            validate_underlying_collateral(
+                &self.instruments,
+                &self.positions,
+                &reserved_underlying,
+                None,
+            )?;
+        }
         self.initial_margin_requirement = initial;
         self.maintenance_margin_requirement = maintenance;
         self.reserved_cash = reserved_cash;
@@ -559,6 +563,20 @@ impl PortfolioState {
             return Err(EngineError::InsufficientDeliveryCash);
         }
         Ok(())
+    }
+
+    pub(super) fn begin_group_staging(&mut self) {
+        self.group_staging = true;
+    }
+
+    pub(super) fn finish_group_staging(&mut self) -> Result<(), EngineError> {
+        self.group_staging = false;
+        self.refresh_margin_requirements()?;
+        self.validate_initial_capacity()
+    }
+
+    pub(super) fn is_group_staging(&self) -> bool {
+        self.group_staging
     }
 
     /// Apply a cash and optional position posting atomically. Cash is rounded
@@ -611,12 +629,14 @@ impl PortfolioState {
                 maintenance_margin_requirement,
                 margin_override,
             )?;
-        validate_underlying_collateral(
-            &self.instruments,
-            &self.positions,
-            &reserved_underlying,
-            margin_override,
-        )?;
+        if !self.group_staging {
+            validate_underlying_collateral(
+                &self.instruments,
+                &self.positions,
+                &reserved_underlying,
+                margin_override,
+            )?;
+        }
 
         if let Some((id, _, _)) = position {
             self.positions

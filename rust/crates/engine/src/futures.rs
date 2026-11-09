@@ -8,7 +8,7 @@ use crate::{
 use factorsbt_contracts::{
     compare_utc_timestamps, instruments::Instrument, InstrumentId, UtcTimestamp,
 };
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FutureExecution {

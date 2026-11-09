@@ -306,6 +306,7 @@ fn stage_group_fills(
     execution_time: &UtcTimestamp,
 ) -> Result<(PortfolioState, Vec<ExecutionFill>), PendingOrderError> {
     let mut candidate = portfolio.clone();
+    candidate.begin_group_staging();
     let mut fills = Vec::new();
     for (id, _, quantity) in fill_orders {
         let price = price_by_id
@@ -351,7 +352,7 @@ fn stage_group_fills(
         fills.push(fill);
     }
     candidate
-        .validate_initial_capacity()
+        .finish_group_staging()
         .map_err(|source| PendingOrderError::Execution {
             instrument_id: "<group>".to_owned(),
             source,
@@ -411,6 +412,106 @@ mod tests {
                 },
             ],
         }
+    }
+
+    fn covered_call_portfolio() -> (PortfolioState, factorsbt_data::Fixture) {
+        let mut config: RunConfiguration = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/instruments/minimal-valid-spot-run.json"
+        ))
+        .unwrap();
+        config.instruments.push(serde_json::from_str(
+            r#"{"instrument_type":"option","instrument_id":"AM_CALL_A","quote_currency":"USD","price_tick":"0.01","quantity_step":"1","contract_multiplier":"100","fee_bps":"0","fee_per_unit":"0","slippage_bps":"0","underlying_id":"SPOT_A","option_type":"call","strike":"100","expiry_at":"2026-01-09T16:00:00Z","exercise_style":"american","settlement_style":"physical","valuation_mode":"quote","initial_margin_per_contract":"600","maintenance_margin_per_contract":"500"}"#,
+        ).unwrap());
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        let registry = FixtureRegistry::load(root).unwrap();
+        let fixture = (*registry.get_by("mvp-settle-01", "v1").unwrap()).clone();
+        (
+            PortfolioState::initialize(&config, &fixture).unwrap(),
+            fixture,
+        )
+    }
+
+    fn intent(id: &str, quantity: i64) -> ValidatedOrderIntent {
+        ValidatedOrderIntent {
+            instrument_id: InstrumentId::new(id).unwrap(),
+            signed_quantity: Decimal::from(quantity),
+        }
+    }
+
+    #[test]
+    fn covered_call_group_opens_and_closes_regardless_of_input_order() {
+        let (initial, fixture) = covered_call_portfolio();
+        let close = UtcTimestamp::new("2026-01-05T16:00:00Z").unwrap();
+        let open = UtcTimestamp::new("2026-01-06T09:00:00Z").unwrap();
+        let prices = execution_prices_available_at(&fixture.dataset, &open).unwrap();
+        let step = Identifier::new("covered-call").unwrap();
+        let opening = vec![intent("AM_CALL_A", -1), intent("SPOT_A", 100)];
+        let mut reversed = opening.clone();
+        reversed.reverse();
+        let mut results = Vec::new();
+        for intents in [opening, reversed] {
+            let mut portfolio = initial.clone();
+            let group = queue_order_intents(&step, &close, &open, &intents).unwrap();
+            let executed = execute_pending_group(&mut portfolio, &group, &open, &prices).unwrap();
+            assert_eq!(executed.fills.len(), 2);
+            assert_eq!(
+                portfolio.position("SPOT_A").unwrap().quantity,
+                Decimal::from(100)
+            );
+            assert_eq!(
+                portfolio.position("AM_CALL_A").unwrap().quantity,
+                Decimal::from(-1)
+            );
+            assert_eq!(
+                portfolio.reserved_underlying()["SPOT_A"],
+                Decimal::from(100)
+            );
+
+            let closing = vec![intent("SPOT_A", -100), intent("AM_CALL_A", 1)];
+            let close_group = queue_order_intents(&step, &close, &open, &closing).unwrap();
+            let closed =
+                execute_pending_group(&mut portfolio, &close_group, &open, &prices).unwrap();
+            assert_eq!(closed.fills.len(), 2);
+            assert_eq!(
+                portfolio.position("SPOT_A").unwrap().quantity,
+                Decimal::ZERO
+            );
+            assert_eq!(
+                portfolio.position("AM_CALL_A").unwrap().quantity,
+                Decimal::ZERO
+            );
+            results.push((executed.fills, closed.fills, portfolio.cash()));
+        }
+        assert_eq!(results[0], results[1]);
+    }
+
+    #[test]
+    fn invalid_group_collateral_rolls_back_all_staged_legs() {
+        let (portfolio, fixture) = covered_call_portfolio();
+        let open = UtcTimestamp::new("2026-01-06T09:00:00Z").unwrap();
+        let prices = execution_prices_available_at(&fixture.dataset, &open).unwrap();
+        let price_by_id = prices
+            .iter()
+            .map(|price| (price.instrument_id.as_str().to_owned(), price))
+            .collect::<HashMap<_, _>>();
+        let result = stage_group_fills(
+            &portfolio,
+            vec![("AM_CALL_A".to_owned(), Decimal::from(-1), Decimal::from(-1))],
+            &price_by_id,
+            &open,
+        );
+        assert!(matches!(
+            result,
+            Err(PendingOrderError::Execution {
+                source: EngineError::InsufficientUnderlyingCollateral(_),
+                ..
+            })
+        ));
+        assert_eq!(portfolio.cash(), Decimal::from(100_000));
+        assert_eq!(
+            portfolio.position("AM_CALL_A").unwrap().quantity,
+            Decimal::ZERO
+        );
     }
 
     #[test]
