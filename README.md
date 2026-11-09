@@ -33,7 +33,7 @@ These are local synthetic capabilities, not real-market execution or pricing gua
 
 ## Development and verification
 
-Read [AGENTS.md](AGENTS.md), the relevant role guide and the [development workflow](docs/development/workflow.md) before changing behavior. Current setup and check commands live in the quickstart; milestone-specific evidence is linked from the documentation index. The [acceptance mapping](docs/examples/mvp/acceptance-cases.md#verification-traceability) distinguishes focused tests from full scenario coverage.
+Read [AGENTS.md](AGENTS.md), the relevant role guide and the [development workflow](docs/development/workflow.md) before changing behavior. Current setup and check commands live in the quickstart; the latest executed local checks are in the [regression verification record](docs/development/regression-verification-2026-11-09.md). The [acceptance mapping](docs/examples/mvp/acceptance-cases.md#verification-traceability) distinguishes focused tests from full scenario coverage.
 
 Only describe behavior as Implemented when code and appropriate evidence support it. Preserve temporal visibility, shared-capital consistency, isolated mutable scenario state and the distinction between recorded replay and fresh inference. Use synthetic examples and never commit credentials or private datasets.
 

@@ -20,6 +20,7 @@ The accepted technology direction is a pure Python SDK and a Rust backend/engine
 | Change synthetic datasets safely | [Fixture workflow](../contracts/fixtures/README.md) |
 | Run bounded reranking or fixed-action episodes | [Research interface](interfaces/research-jobs.md) and [example](../python-sdk/examples/research_workflows.py) |
 | Review verification limits | [Acceptance traceability](examples/mvp/acceptance-cases.md#verification-traceability) and phase records below |
+| Check the latest local regression results | [2026-11-09 code verification](development/regression-verification-2026-11-09.md) |
 
 The [root README](../README.md) introduces the repository. Quickstart smoke programs start their own fixtures; SDK/CLI examples using standalone services have explicit prerequisites. No standalone model-fixture launcher is provided.
 
@@ -43,7 +44,7 @@ Contributors should also read [AGENTS.md](../AGENTS.md). Agent-specific responsi
 
 ## Verification records and open distribution decisions
 
-Phase [A](development/phase-a-local.md), [B](development/phase-b-local.md), [C](development/phase-c-local.md), [D](development/phase-d-local.md) and [E](development/phase-e-local.md) records describe historical executed checks, environments and boundaries. Current documentation-refresh checks are in the [documentation verification record](development/documentation-verification.md). Test totals are observations, not proof of unspecified acceptance cases or a platform support matrix.
+Phase [A](development/phase-a-local.md), [B](development/phase-b-local.md), [C](development/phase-c-local.md), [D](development/phase-d-local.md) and [E](development/phase-e-local.md) records describe historical executed checks, environments and boundaries. The [documentation refresh record](development/documentation-verification.md) covers its Markdown and demo checks; the [2026-11-09 regression record](development/regression-verification-2026-11-09.md) records the latest local code suites and smoke checks. Test totals are observations, not proof of unspecified acceptance cases or a platform support matrix.
 
 **Open:** Repository licensing has not been selected. No `LICENSE` or package license grant is supplied by this documentation. Hosted deployment, real-provider integration, durable metadata/recovery and public release decisions remain outside the local verification claim.
 
