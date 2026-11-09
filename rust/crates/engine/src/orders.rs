@@ -1,7 +1,7 @@
 //! Pending decision groups and next-open execution with an actual-price gate.
 
 use crate::{
-    admission::{admit_target_group, AdmissionAdjustment, AdmissionError, AdmissionResult},
+    admission::{admit_target_group_at, AdmissionAdjustment, AdmissionError, AdmissionResult},
     decisions::{InstrumentTarget, ValidatedOrderIntent},
     marks::{MarkProvenance, MarkSource, ValuationMark},
     portfolio::decimal,
@@ -252,7 +252,7 @@ pub fn execute_pending_group(
             instrument_id: "<group>".to_owned(),
             source: error,
         })?;
-    let admission = admit_target_group(&planning_portfolio, &requested_targets)?;
+    let admission = admit_target_group_at(&planning_portfolio, &requested_targets, execution_time)?;
     let mut fill_orders = Vec::new();
     for adjustment in &admission.adjustments {
         let current = portfolio
@@ -565,6 +565,53 @@ mod tests {
             portfolio.position("AM_CALL_A").unwrap().quantity,
             Decimal::ZERO
         );
+    }
+
+    #[test]
+    fn fee_and_gap_reduce_next_open_quantity_before_any_fill_is_published() {
+        let mut config: RunConfiguration = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/instruments/minimal-valid-spot-run.json"
+        ))
+        .unwrap();
+        config.instruments[0] = serde_json::from_str(
+            r#"{"instrument_id":"SPOT_A","instrument_type":"spot","quote_currency":"USD","price_tick":"0.01","quantity_step":"0.001","contract_multiplier":"1","fee_bps":"0","fee_per_unit":"1","slippage_bps":"0"}"#,
+        ).unwrap();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        let registry = FixtureRegistry::load(root).unwrap();
+        let fixture = registry.get_by("mvp-synthetic", "v1").unwrap();
+        let mut portfolio = PortfolioState::initialize(&config, &fixture).unwrap();
+        let close = UtcTimestamp::new("2026-01-05T16:00:00Z").unwrap();
+        let open = UtcTimestamp::new("2026-01-06T09:00:00Z").unwrap();
+        let target = InstrumentTarget {
+            instrument_id: InstrumentId::new("SPOT_A").unwrap(),
+            target_quantity: Decimal::from(1000),
+        };
+        let close_admission = admit_target_group_at(&portfolio, &[target], &close).unwrap();
+        assert_eq!(
+            close_admission.adjustments[0].admitted_quantity,
+            Decimal::new(990099, 3)
+        );
+        let group = queue_target_group(
+            &portfolio,
+            &Identifier::new("fee-gap").unwrap(),
+            &close,
+            &open,
+            &close_admission,
+        )
+        .unwrap();
+        let prices = execution_prices_available_at(&fixture.dataset, &open).unwrap();
+        let result = execute_pending_group(&mut portfolio, &group, &open, &prices).unwrap();
+        assert_eq!(
+            result.admission_adjustments[0].admitted_quantity,
+            Decimal::new(985221, 3)
+        );
+        assert!(result.admission_adjustments[0].scaled);
+        assert_eq!(
+            portfolio.position("SPOT_A").unwrap().quantity,
+            Decimal::new(985221, 3)
+        );
+        assert!(portfolio.cash() >= Decimal::ZERO);
+        assert_eq!(result.fills.len(), 1);
     }
 
     #[test]

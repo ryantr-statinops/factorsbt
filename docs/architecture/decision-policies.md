@@ -37,6 +37,8 @@ For targets, derive position changes from current to desired quantity. For order
 
 Always admit valid risk-reducing closes before funding increases. Find one shared scale factor `λ` for all risk-increasing changes using exactly 60 binary-search iterations with `λ` represented to 18 decimal places. For each feasibility check, round every scaled increase toward zero to its configured quantity increment, then calculate the full group's resulting buying power, fees, margins, and delivery reserves. Feasibility is monotone in `λ`; retain the highest tested feasible candidate and recompute that candidate once at the end before acceptance. If no risk-increase candidate is feasible, accept valid closes and no increases. Do not change admission based on input-map or asset iteration order.
 
+At the next open, recalculate admission from the actual open prices and validate the staged final portfolio before applying fills. The open-time adjustment records the resulting reduction from the queued quantity. Market order intents use this same open-time funding gate.
+
 Record requested and admitted quantities/targets, `λ`, per-instrument rounding or reduction, the funding constraint, and final state. A rejected instrument or whole response group is not an order or a fill. This rule manages synthetic capital feasibility only; it is not a risk guarantee.
 
 ## Defaults and errors
