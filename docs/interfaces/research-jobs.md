@@ -28,7 +28,7 @@ Episode observations contain simulation time, mark, cash, quantity and NAV. Each
 
 The `*-dev` and `*-eval` fixture IDs select separate registered synthetic datasets at version `1.0.0`. Episode evaluation includes fees; development uses zero fees. These fixed datasets are not user-uploadable market data or a general train/evaluation split protocol. Definitions live in [research fixtures](../../rust/crates/backend/src/research/fixtures.rs); the [Phase D record](../development/phase-d-local.md) records controlled expected outcomes.
 
-Lifecycle failure and report availability are separate: a failed episode with a sealed partial report can be read with `get_research_result`, whereas an unsealed/missing report is unavailable. `wait_research_job` raises on failed lifecycle; use its job ID to inspect status and retrieve an available partial report explicitly. A matched replay of such a failed source succeeds as verification and retains `source_outcome: failed`.
+Lifecycle failure and report availability are separate: a failed episode with a sealed partial report can be read with `get_research_result`, whereas an unsealed/missing report returns `409 RESEARCH_RESULT_UNAVAILABLE`. A validation or manifest-write failure records `RESEARCH_EVIDENCE_FAILED` and does not publish the result. `wait_research_job` raises on failed lifecycle; use its job ID to inspect status and retrieve an available partial report explicitly. A matched replay of such a failed source succeeds as verification and retains `source_outcome: failed`.
 
 ## Python SDK usage
 

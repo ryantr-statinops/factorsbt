@@ -228,15 +228,17 @@ async fn execute_research(store: RunStore, evidence_root: PathBuf, job_id: Uuid)
                         &result,
                     )
                 });
-            let failure = if let Err(error) = persisted {
-                Some(crate::research::jobs::ResearchJobFailure {
-                    code: "RESEARCH_EVIDENCE_FAILED".into(),
-                    message: error.to_string(),
-                })
-            } else {
-                execution_failure
+            let (published, failure) = match persisted {
+                Ok(_) => (Some(result), execution_failure),
+                Err(error) => (
+                    None,
+                    Some(crate::research::jobs::ResearchJobFailure {
+                        code: "RESEARCH_EVIDENCE_FAILED".into(),
+                        message: error.to_string(),
+                    }),
+                ),
             };
-            let _ = store.mark_research_terminal(&job_id, finished, Some(result), failure);
+            let _ = store.mark_research_terminal(&job_id, finished, published, failure);
         }
         Err(message) => {
             let _ = store.mark_research_terminal(
@@ -936,13 +938,117 @@ fn timestamp_or(fallback: &UtcTimestamp) -> UtcTimestamp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        api::{run_routes, ApiState},
+        api_errors::request_id_middleware,
+    };
     use crate::{backend_config::BackendConfig, backend_config::QueueLimits};
-    use axum::{extract::Json, http::StatusCode, routing::post, Router};
+    use axum::{
+        body::{to_bytes, Body},
+        extract::Json,
+        http::{Request, StatusCode},
+        middleware,
+        routing::post,
+        Router,
+    };
     use factorsbt_contracts::{model::ModelRequest, RunConfiguration};
     use sha2::{Digest, Sha256};
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::net::TcpListener;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn research_result_is_unavailable_when_evidence_cannot_be_sealed() {
+        let root = std::env::temp_dir().join(format!(
+            "factorsbt-research-seal-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let job_id = Uuid::new("d4139f93-8119-4be6-8c84-b6835fb3647e").unwrap();
+        fs::create_dir_all(root.join("research_jobs").join(job_id.as_str())).unwrap();
+        let request = crate::research::jobs::ResearchJobRequest {
+            contract_version: "1.0.0".to_owned(),
+            kind: crate::research::jobs::ResearchJobKind::Reranking,
+            fixture_id: Some("reranking-eval".to_owned()),
+            fixture_version: Some("1.0.0".to_owned()),
+            actions: None,
+            source_job_id: None,
+        };
+        let store = RunStore::new(QueueLimits::new(1, 2).unwrap());
+        store
+            .accept_research_job(job_id.clone(), request, system_utc_timestamp().unwrap())
+            .unwrap();
+        execute_research(store.clone(), root.clone(), job_id.clone()).await;
+        let stored = store.get_research_job(&job_id).unwrap();
+        assert_eq!(stored.status.status, "failed");
+        assert_eq!(
+            stored.status.failure.unwrap().code,
+            "RESEARCH_EVIDENCE_FAILED"
+        );
+        assert!(stored.result.is_none());
+
+        let fixture_root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/fixtures/data");
+        let fixtures = Arc::new(FixtureRegistry::load(fixture_root).unwrap());
+        let app = run_routes(ApiState::new(store, fixtures, &root))
+            .layer(middleware::from_fn(request_id_middleware));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/research/jobs/{}/result", job_id.as_str()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap())
+                .unwrap();
+        assert_eq!(body["error"]["code"], "RESEARCH_RESULT_UNAVAILABLE");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn sealed_failed_episode_keeps_its_partial_report_readable() {
+        let root = std::env::temp_dir().join(format!(
+            "factorsbt-research-partial-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let mut fixture =
+            crate::research::fixtures::resolve_fixture("episode-eval", "1.0.0").unwrap();
+        fixture.points[2].open_a = rust_decimal::Decimal::ZERO;
+        let request = crate::research::jobs::ResearchJobRequest {
+            contract_version: "1.0.0".to_owned(),
+            kind: crate::research::jobs::ResearchJobKind::Episode,
+            fixture_id: Some("episode-eval".to_owned()),
+            fixture_version: Some("1.0.0".to_owned()),
+            actions: Some(vec!["0.5".to_owned(), "0.5".to_owned()]),
+            source_job_id: None,
+        };
+        let report = crate::research::jobs::execute_with_fixture(&request, &fixture).unwrap();
+        assert!(report["failure"].is_string());
+        assert_eq!(report["transitions"].as_array().unwrap().len(), 1);
+        let job_id = Uuid::new("e5139f93-8119-4be6-8c84-b6835fb3647e").unwrap();
+        let result = crate::research::jobs::ResearchJobResult {
+            contract_version: "1.0.0".to_owned(),
+            job_id: job_id.clone(),
+            kind: request.kind,
+            report,
+        };
+        crate::research::evidence::write_job(&root, &request, &fixture, &result).unwrap();
+        let loaded = crate::research::evidence::load_job(&root, &job_id).unwrap();
+        assert_eq!(loaded.result, result);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     async fn fail_after_one_decision(
         Json(request): Json<ModelRequest>,
