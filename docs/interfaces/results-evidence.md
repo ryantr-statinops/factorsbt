@@ -27,7 +27,7 @@ The artifact digest is SHA-256 of the exact stored artifact bytes. This is disti
 | `GET /v1/runs/{run_id}/evidence` | An [EvidenceIndex](../../contracts/schemas/evidence-index.schema.json) containing run identity, terminal status and verified artifact references, including the run manifest. |
 | `GET /v1/runs/{run_id}/artifacts/{artifact_id}` | Exact stored bytes with the reference's content type, resolved by artifact UUID from that run's manifest. |
 
-The backend checks manifest identity, reference uniqueness, path containment, byte size and SHA-256. It never accepts a client-supplied file path. `Client.get_evidence(run_id)` returns a typed index; `Client.get_artifact(run_id, reference)` returns bytes and independently checks their size/digest. Parse JSON only after this verification.
+The evidence index checks manifest identity, reference uniqueness, path containment, byte size and SHA-256 for the entire run bundle. An artifact download validates the manifest and checks path containment, byte size and SHA-256 for the requested file at read time; unrelated artifacts are checked when the index is read. The backend never accepts a client-supplied file path. `Client.get_evidence(run_id)` returns a typed index; `Client.get_artifact(run_id, reference)` returns bytes and independently checks their size/digest. Parse JSON only after this verification.
 
 Sealed evidence can be read after restart from the same evidence root even though run/submission status metadata is lost. A failed run may have sealed inputs, an error and a partial trace; this does not make `/results` available or promise every event type exists. Failure to persist/seal evidence leaves no readable complete index.
 

@@ -129,7 +129,7 @@ fn read_validated_manifest(
         return Err(EvidenceError::PathEscapesRunRoot);
     }
     let manifest_path = run_directory.join("evidence/run-manifest.json");
-    let manifest_bytes = fs::read(&manifest_path).map_err(|_| EvidenceError::RunNotFound)?;
+    let manifest_bytes = read_bytes(&manifest_path).map_err(|_| EvidenceError::RunNotFound)?;
     let manifest: Value =
         serde_json::from_slice(&manifest_bytes).map_err(|_| EvidenceError::ManifestInvalid)?;
     if manifest["run_id"] != run_id.as_str() {
@@ -149,6 +149,7 @@ fn read_validated_manifest(
     let mut ids = HashSet::new();
     let mut paths = HashSet::new();
     for artifact in &artifacts {
+        safe_relative_path(&artifact.relative_path)?;
         if !ids.insert(artifact.artifact_id.as_str())
             || !paths.insert(artifact.relative_path.as_str())
             || artifact.relative_path == "evidence/run-manifest.json"
@@ -186,12 +187,23 @@ pub fn read_verified_artifact(
     requested_id: &Uuid,
 ) -> Result<(EvidenceArtifactRef, Vec<u8>), EvidenceError> {
     let root = evidence_root.as_ref();
-    let index = read_evidence_index(root, run_id)?;
+    let (_, index) = read_validated_manifest(root, run_id)?;
     let artifact = index
         .artifacts
         .into_iter()
         .find(|reference| &reference.artifact_id == requested_id)
         .ok_or(EvidenceError::ArtifactNotFound)?;
+    let bytes = read_verified_reference(root, run_id, &artifact)?;
+    Ok((artifact, bytes))
+}
+
+/// The caller must have validated this reference through its run manifest or index.
+/// Recheck the selected bytes at read time, including after replay admission.
+pub(crate) fn read_verified_reference(
+    root: &Path,
+    run_id: &Uuid,
+    artifact: &EvidenceArtifactRef,
+) -> Result<Vec<u8>, EvidenceError> {
     let runs = fs::canonicalize(root.join("runs")).map_err(|_| EvidenceError::RunNotFound)?;
     let run_directory =
         fs::canonicalize(runs.join(run_id.as_str())).map_err(|_| EvidenceError::RunNotFound)?;
@@ -206,7 +218,7 @@ pub fn read_verified_artifact(
     if !file.starts_with(&evidence_directory) || !file.is_file() {
         return Err(EvidenceError::PathEscapesRunRoot);
     }
-    let bytes = fs::read(file)
+    let bytes = read_bytes(file)
         .map_err(|_| EvidenceError::ArtifactIntegrity(artifact.relative_path.clone()))?;
     if u64::try_from(bytes.len()).ok() != Some(artifact.size_bytes)
         || sha256(&bytes) != artifact.sha256
@@ -215,7 +227,7 @@ pub fn read_verified_artifact(
             artifact.relative_path.clone(),
         ));
     }
-    Ok((artifact, bytes))
+    Ok(bytes)
 }
 
 #[derive(Debug, Clone)]
@@ -648,7 +660,7 @@ pub fn verify_artifacts(
         if !canonical.starts_with(root.join("evidence")) || !canonical.is_file() {
             return Err(EvidenceError::PathEscapesRunRoot);
         }
-        let bytes = fs::read(&canonical)
+        let bytes = read_bytes(&canonical)
             .map_err(|_| EvidenceError::ArtifactIntegrity(artifact.relative_path.clone()))?;
         if u64::try_from(bytes.len()).ok() != Some(artifact.size_bytes)
             || sha256(&bytes) != artifact.sha256
@@ -936,7 +948,27 @@ fn artifact_id(run_directory: &Path, relative_path: &str) -> Uuid {
 }
 
 fn sha256(bytes: &[u8]) -> String {
+    #[cfg(test)]
+    IO_COUNTS.with(|counts| {
+        let (reads, hashes) = counts.get();
+        counts.set((reads, hashes + 1));
+    });
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn read_bytes(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
+    let bytes = fs::read(path)?;
+    #[cfg(test)]
+    IO_COUNTS.with(|counts| {
+        let (reads, hashes) = counts.get();
+        counts.set((reads + 1, hashes));
+    });
+    Ok(bytes)
+}
+
+#[cfg(test)]
+thread_local! {
+    static IO_COUNTS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
 }
 
 pub fn executable_sha256() -> Result<&'static str, EvidenceError> {
@@ -1114,6 +1146,98 @@ mod tests {
         assert!(matches!(
             verify_artifacts(&bundle.run_directory, &bundle.artifacts),
             Err(EvidenceError::ArtifactIntegrity(_))
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn artifact_download_checks_only_selected_bytes_while_index_checks_bundle() {
+        let root = test_root();
+        let (configuration, fixture, report) = input();
+        let bundle = write_successful_run(&root, &configuration, &fixture, &report).unwrap();
+        let selected = bundle
+            .artifacts
+            .iter()
+            .find(|item| item.relative_path == "evidence/configuration.json")
+            .unwrap();
+        let artifact_count = bundle.artifacts.len() - 1;
+
+        // The previous download path verified the whole index, then selected bytes.
+        IO_COUNTS.with(|counts| counts.set((0, 0)));
+        let index = read_evidence_index(&root, &report.identity.run_id).unwrap();
+        let reference = index
+            .artifacts
+            .iter()
+            .find(|item| item.artifact_id == selected.artifact_id)
+            .unwrap();
+        read_verified_reference(&root, &report.identity.run_id, reference).unwrap();
+        let before = IO_COUNTS.with(std::cell::Cell::get);
+
+        IO_COUNTS.with(|counts| counts.set((0, 0)));
+        let (reference, bytes) =
+            read_verified_artifact(&root, &report.identity.run_id, &selected.artifact_id).unwrap();
+        let after = IO_COUNTS.with(std::cell::Cell::get);
+        assert_eq!(reference.artifact_id, selected.artifact_id);
+        assert_eq!(
+            bytes,
+            fs::read(bundle.run_directory.join("evidence/configuration.json")).unwrap()
+        );
+        assert_eq!(before, (2 * artifact_count + 3, 2 * artifact_count + 3));
+        assert_eq!(after, (2, 2));
+        println!("artifact I/O for {artifact_count} referenced files: before={before:?}, after={after:?} (reads, hashes)");
+
+        fs::write(
+            bundle.run_directory.join("evidence/summary.json"),
+            b"tampered",
+        )
+        .unwrap();
+        read_verified_artifact(&root, &report.identity.run_id, &selected.artifact_id).unwrap();
+        assert!(matches!(
+            read_evidence_index(&root, &report.identity.run_id),
+            Err(EvidenceError::ArtifactIntegrity(_))
+        ));
+        fs::write(
+            bundle.run_directory.join("evidence/configuration.json"),
+            b"tampered",
+        )
+        .unwrap();
+        assert!(matches!(
+            read_verified_artifact(&root, &report.identity.run_id, &selected.artifact_id),
+            Err(EvidenceError::ArtifactIntegrity(_))
+        ));
+        assert!(matches!(
+            read_verified_artifact(
+                &root,
+                &report.identity.run_id,
+                &Uuid::new("3c7344c7-496e-4d84-b183-f006db70a9e9").unwrap(),
+            ),
+            Err(EvidenceError::ArtifactNotFound)
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn artifact_download_rejects_manifest_reference_escaping_run_root() {
+        let root = test_root();
+        let (configuration, fixture, report) = input();
+        let bundle = write_successful_run(&root, &configuration, &fixture, &report).unwrap();
+        let manifest_path = bundle.run_directory.join("evidence/run-manifest.json");
+        let mut manifest: Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        let reference = manifest["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|item| item["relative_path"] == "evidence/configuration.json")
+            .unwrap();
+        let escaped = "evidence/../outside.json";
+        let requested_id = artifact_id(&bundle.run_directory, escaped);
+        reference["relative_path"] = json!(escaped);
+        reference["artifact_id"] = json!(requested_id.as_str());
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        assert!(matches!(
+            read_verified_artifact(&root, &report.identity.run_id, &requested_id),
+            Err(EvidenceError::InvalidRelativePath)
         ));
         fs::remove_dir_all(root).unwrap();
     }
