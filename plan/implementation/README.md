@@ -43,45 +43,56 @@ Khi tiến độ thay đổi, cập nhật hàng stage, số đếm, graph và d
 
 ## Graph tiến độ theo phase
 
-Mũi tên liền biểu thị trình tự triển khai chính; phụ thuộc chi tiết nằm trong từng file stage. Hai nhánh Phase D độc lập nhau. Phase E dùng SDK và replay đã triển khai ở Phase B/C; không phụ thuộc Phase D.
+Mũi tên biểu thị dependency giữa các stage; mũi tên nét liền là cổng/trình tự chính. Stage 00–01 là quyết định thiết kế đã Accepted, các stage còn lại có code và verification. Phase D tách thành hai nhánh nghiên cứu độc lập. Phase E cần SDK Phase B và replay Phase C, không phụ thuộc Phase D.
 
 ```mermaid
 flowchart TD
     subgraph A["Phase A — Thiết kế MVP · 3/3"]
+        direction LR
         A0["00 · Chốt MVP — Accepted"] --> A1["01 · Contracts — Accepted"]
         A1 --> A2["02 · Nền tảng và health flow — verified"]
     end
 
     subgraph B["Phase B — MVP xuyên suốt · 5/5"]
+        direction LR
         B0["03 · Data snapshots — verified"] --> B1["04 · Engine — verified"]
         B1 --> B2["05 · Model orchestration — verified"]
         B2 --> B3["06 · Backend API — verified"]
         B3 --> B4["07 · Python SDK + MVP — verified"]
     end
 
+    MVP["MVP gate · Stage 00–07 · 8/8"]
+
     subgraph C["Phase C — So sánh và replay · 2/2"]
+        direction LR
         C0["08 · Scenario comparison — verified"] --> C1["09 · Recorded replay — verified"]
     end
 
     subgraph D["Phase D — Nghiên cứu mở rộng · 2/2"]
+        direction LR
         D0["10 · Reranking — verified"]
         D1["11 · Fixed-action episode — verified"]
     end
 
     subgraph E["Phase E — CLI local · 1/1"]
+        direction LR
         E0["12 · Backtest và recorded replay — verified"]
     end
 
     A2 --> B0
-    B4 --> C0
+    B4 --> MVP --> C0
     C1 --> D0
     C1 --> D1
     B4 --> E0
     C1 --> E0
 
+    classDef accepted fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef implemented fill:#dcfce7,stroke:#16a34a,color:#14532d
-    class A2,B0,B1,B2,B3,B4,C0,C1,D0,D1,E0 implemented
+    class A0,A1 accepted
+    class A2,B0,B1,B2,B3,B4,MVP,C0,C1,D0,D1,E0 implemented
 ```
+
+Màu xanh lam đánh dấu stage hoàn tất bằng quyết định Accepted; màu xanh lá đánh dấu phần đã triển khai và kiểm chứng. MVP gate nhấn mạnh cổng Phase B, còn các số ở tiêu đề subgraph thể hiện tiến độ theo từng phase.
 
 Phase E không yêu cầu Phase D hoàn thành. Stage 12 là CLI không tương tác dùng Python SDK hiện có cho local backtest và recorded replay; giới hạn và bằng chứng được ghi trong tài liệu Stage 12 và [Phase E verification](../../docs/development/phase-e-local.md).
 
