@@ -1,6 +1,6 @@
 # 1. Dữ liệu thực tế và định dạng
 
-**Status:** Proposed. Provider, format và quy ước thị trường còn Open.
+**Status:** Các quyết định cho lát cắt đầu tiên đã Accepted; implementation chưa bắt đầu. Quyền truy cập account Massive và quyền sử dụng cho mục đích dự kiến chưa được xác minh.
 
 ## Hiện trạng đã rà soát
 
@@ -11,40 +11,39 @@
 
 Tham chiếu: [fixture workflow](../../contracts/fixtures/README.md), [MVP scope](../../docs/product/mvp-scope.md), [data layer](../../rust/crates/data/src/lib.rs).
 
-## Câu hỏi cần quyết định
+## Câu hỏi còn Open ngoài lát cắt đầu tiên
 
-- Thị trường, vendor, quyền sử dụng dữ liệu, loại tài sản, độ phân giải và lịch sử cần hỗ trợ là gì?
-- Chuẩn hóa symbol/instrument, timezone, calendar, event time, availability time, revision và missing data ra sao?
-- Cần ingestion online, truy vấn lịch sử hay cả hai? Dữ liệu được lưu và version theo đơn vị nào?
-- Quy tắc corporate action và futures roll nào áp dụng, nguồn dữ liệu nào là authority, và giá/position được điều chỉnh thế nào?
-- Chọn benchmark và workload nào để xác định có cần columnar storage/reader ngay không?
+- Massive account entitlement and use rights for the actual user/use case remain unverified; a different license may be required for organizational, shared, or commercial use.
+- Chưa chốt permanent security identifiers, ticker changes ngoài năm mã đầu, universal tick/lot/fractional-share rules, hoặc multi-currency.
+- Corporate-action adjustment and futures roll remain outside the first slice; quyết định lại nếu scope mở rộng.
+- Các format/reader thay JSONL chỉ được xem xét khi D4 workload đo được bottleneck cụ thể.
 
 ## Tiêu chí cho lát cắt triển khai
 
 - Adapter ghi rõ nguồn, version, đơn vị, event time và availability time; lỗi, dữ liệu thiếu và dữ liệu rỗng phân biệt được.
-- Snapshot không nhìn thấy quan sát hoặc revision trước thời điểm khả dụng.
+- Snapshot ghi tách event interval, assumed availability và ingestion time; historical snapshot không được tuyên bố là exact point-in-time reconstruction.
 - Quy tắc corporate action/roll được chốt cho instrument và được kiểm tra bằng ví dụ xác định.
 - Thay đổi contract/data format mô tả được ảnh hưởng đến adapter, caller và kết quả đã lưu.
 
-## Kế hoạch thực thi chi tiết — 2026-11-11
+## Kế hoạch thực thi chi tiết — cập nhật 2026-11-16
 
-**Status:** Proposed. Đây là thiết kế task cho triển khai sau; chỉ phần viết kế hoạch được thực hiện trong đợt này. Quy tắc Git, test và dependency chung ở [mục lục](README.md#quy-tắc-thực-thi-workstream-15). Mỗi hàng là một task và một commit dự kiến, bao gồm unit test có ý nghĩa cho hành vi đó.
+**Status:** Phase D0 design documentation is complete. Các lựa chọn và giới hạn được ghi trong [data slice](../../docs/data/README.md), [ADR 0004](../../docs/decisions/0004-massive-historical-rest.md), [temporal semantics](../../docs/data/time-and-session.md), [instrument identity](../../docs/data/instrument-identity.md), và [benchmark/storage](../../docs/data/storage-and-benchmark.md). Chưa có provider account entitlement check hoặc authenticated API request; do đó chưa có online data import và Phase D2 vẫn bị chặn bởi entitlement/license gate. Quy tắc Git, test và dependency chung ở [mục lục](README.md#quy-tắc-thực-thi-workstream-15). Mỗi task code ghép unit test có ý nghĩa; integration kiểm tra cuối phase.
 
 ### Phase D0 — Chốt lát cắt dữ liệu
 
-Phụ thuộc: baseline synthetic hiện có. Cổng: các quyết định thị trường, quyền dữ liệu và semantics cần cho D1 được Accepted; nếu chưa có quyền truy cập thì dùng dữ liệu redistributable đã chọn, không tự lấy dữ liệu bên ngoài.
+Phụ thuộc: baseline synthetic hiện có. **Kết quả:** hoàn thành bằng năm commit tài liệu một-file mỗi commit. Đã chốt US-listed Nasdaq stocks, 1-minute regular-session bars, AAPL/MSFT/AMZN/GOOGL/META, 20 completed sessions, historical-snapshot availability assumption, intraday-only EOD flatten with configured costs, strict-later-bar-open eligibility, raw prices, và JSONL partitions. Massive Stocks Basic historical REST được chọn có điều kiện; entitlement và quyền sử dụng account cụ thể vẫn chưa xác minh. Không có API request đã xác thực hoặc dữ liệu provider nào được tải. D2 online ingestion bị chặn đến khi account access và quyền sử dụng phù hợp được xác nhận. Benchmark synthetic D05 đã đo và ghi trong tài liệu storage.
 
 | ID | Commit dự kiến | Đầu ra / kiểm chứng |
 | --- | --- | --- |
-| D01 | docs(data): define first real-data research slice | Chốt asset, venue, độ phân giải, khoảng lịch sử, quy mô benchmark và người dùng đầu tiên. |
-| D02 | docs(data): select provider and data usage boundary | So sánh nguồn, quyền tải/lưu/chia sẻ fixture, offline replay và secret references; ghi quyết định. |
-| D03 | docs(data): define temporal and session semantics | Chốt timezone, calendar, DST, availability, revisions, thiếu dữ liệu và close/open eligibility. |
-| D04 | docs(data): define instrument and adjustment identity | Chốt symbol mapping, currency, raw/adjusted prices, split/dividend và roll cho asset đã chọn; đánh dấu mục không áp dụng. |
-| D05 | docs(data): choose storage and compatibility boundary | Đo workload JSON hiện tại; chốt reader/storage tối thiểu, migration và version contract/fixture. |
+| D01 | docs(data): define first real-data research slice | `docs/data/README.md`: chốt asset, venue, độ phân giải, 20 phiên, workflow SDK, giới hạn snapshot và intraday-only. |
+| D02 | docs(data): select provider and data usage boundary | ADR 0004: chọn Massive historical REST có điều kiện; ghi rõ quyền cá nhân, không chia sẻ lại và entitlement chưa xác minh. |
+| D03 | docs(data): define temporal and session semantics | `docs/data/time-and-session.md`: UTC intervals, America/New_York calendar, DST, snapshot availability, gaps, flatten và strictly-later open. |
+| D04 | docs(data): define instrument and adjustment identity | `docs/data/instrument-identity.md`: XNAS symbols, USD, raw bars, corporate-action boundaries và assumptions còn Open. |
+| D05 | docs(data): choose storage and compatibility boundary | `docs/data/storage-and-benchmark.md`: JSONL manifest/partitions được chọn sau benchmark synthetic 39k/390k/3.9m. |
 
 ### Phase D1 — Hợp đồng và bộ chuẩn hóa offline
 
-Phụ thuộc: D0. Vùng code dự kiến: contracts, rust/crates/data, Python configuration. Cổng integration: cùng dữ liệu hợp lệ/không hợp lệ được Rust và Python hiểu thống nhất; v1 fixtures vẫn đọc được.
+Phụ thuộc: D0. Vùng code dự kiến: contracts, rust/crates/data, Python configuration. Cổng integration: cùng dữ liệu hợp lệ/không hợp lệ được Rust và Python hiểu thống nhất; v1 fixtures vẫn đọc được. D1a calendar behavior chỉ xuất hiện ở versioned intraday contract.
 
 | ID | Commit dự kiến | Đầu ra / kiểm chứng |
 | --- | --- | --- |
@@ -57,9 +56,22 @@ Phụ thuộc: D0. Vùng code dự kiến: contracts, rust/crates/data, Python c
 | D12 | feat(data): expose data quality diagnostics | Báo gaps, duplicates và rejected rows với provenance an toàn. |
 | D13 | test(data): verify normalized dataset compatibility | Integration schema → normalization → snapshot, gồm v1 regression và lỗi dữ liệu thiếu. |
 
+### Phase D1a — Intraday clock and execution prerequisites
+
+Phụ thuộc: D0 và D1. Phase này đưa calendar/session behavior vào contract mới, trước ingestion online. Không đổi semantics của daily synthetic v1. Cổng integration ở cuối phase bao gồm DST, holiday, early close, missing bars và regression daily-v1.
+
+| ID | Commit dự kiến | Đầu ra / kiểm chứng |
+| --- | --- | --- |
+| D37 | refactor(engine): isolate session schedule from synthetic daily clock | Tách daily-v1 schedule để có thể thêm lịch intraday độc lập mà không đổi event sequence cũ; unit regression cho v1. |
+| D38 | feat(engine): support versioned one-minute session events | Session clock theo America/New_York, UTC event instants, DST và calendar version; unit tests boundary mùa hè/mùa đông. |
+| D39 | feat(data): validate intraday coverage and run bounds | Kiểm tra interval, session date, early close và coverage; phân biệt absent bar với import/request failure; không forward-fill. |
+| D40 | fix(backend): enforce strictly later bar-open execution | Market order chỉ đủ điều kiện nếu bar start `>` decision time; equality không khớp cùng timestamp. |
+| D41 | feat(engine): flatten positions at regular-session close | Flatten tất định ở final bar close với configured costs, hủy order còn pending và fail nếu required close thiếu. |
+| D42 | test(backend): verify minute runs across session boundaries | Integration DST/holiday/early-close/missing-bar và legacy daily-v1; kiểm tra không giữ position/order qua đêm. |
+
 ### Phase D2 — Ingestion và lưu dataset bất biến
 
-Phụ thuộc: D1, quyền truy cập D02. Chỉ reader/provider được chọn mới triển khai; Parquet/Arrow/DuckDB không được tự động thêm cùng lúc. Cổng: import lại có identity rõ, interrupted import không xuất bản dataset nửa chừng.
+Phụ thuộc: D1, D1a và quyền truy cập phù hợp theo ADR 0004. Chỉ reader/provider được chọn mới triển khai; Parquet/Arrow/DuckDB không được tự động thêm cùng lúc. Nếu entitlement hoặc license chưa xác minh, không gọi API và giữ D2 online ingestion blocked; dùng fake adapter cho offline checks. Cổng: import lại có identity rõ, interrupted import không xuất bản dataset nửa chừng.
 
 | ID | Commit dự kiến | Đầu ra / kiểm chứng |
 | --- | --- | --- |
@@ -89,7 +101,7 @@ Phụ thuộc: D04 và D2. Chỉ các nhánh áp dụng được Accepted mới 
 
 ### Phase D4 — Backend, SDK và nghiệm thu dữ liệu
 
-Phụ thuộc: D2 và nhánh D3 áp dụng. Cổng: một thí nghiệm dữ liệu thực đã chọn chạy từ SDK, lưu đủ inputs để replay offline; benchmark được báo bằng số đo, không suy từ ngôn ngữ Rust.
+Phụ thuộc: D1a, D2 và nhánh D3 áp dụng nếu được chọn cho scope mở rộng. Cổng: một thí nghiệm dữ liệu thực đã chọn chạy từ SDK, lưu đủ inputs để replay offline khi license cho phép; benchmark được báo bằng số đo, không suy từ ngôn ngữ Rust. D3 market-action handling không phải điều kiện cho first slice vì vị thế và signal state reset theo session; nếu scope thay đổi thì phải hoàn tất D3 trước acceptance tương ứng.
 
 | ID | Commit dự kiến | Đầu ra / kiểm chứng |
 | --- | --- | --- |
