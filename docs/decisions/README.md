@@ -9,6 +9,7 @@ ADRs capture decisions that shape component boundaries, simulation semantics, in
 | [0001](0001-python-sdk-rust-backend.md) | Accepted | Pure Python SDK, Rust backend/engine, initial HTTP/JSON communication |
 | [0002](0002-phase-a-tooling.md) | Accepted | Phase A Rust/Python module layout and local tooling boundary; Windows build prerequisite resolved in the follow-up verification |
 | [0003](0003-phase-c-comparison-replay.md) | Accepted | Local independent-run comparison, verified artifact access, and same-binary recorded replay |
+| [0004](0004-massive-historical-rest.md) | Accepted with access and rights gates | Massive Stocks Basic historical REST candidate for the first private US equity minute-bar slice |
 
 ## When to write an ADR
 
@@ -26,4 +27,4 @@ An agent must not label a new architecture choice Accepted merely because it aut
 
 ## Current boundary
 
-Tooling and module choices for the Phase A health slice are recorded in ADR 0002. Deployment, persistence, authentication, provider integrations, and later infrastructure choices remain open in the [architecture](../architecture/overview.md), [contracts](../interfaces/service-contracts.md), and [simulation lifecycle](../architecture/simulation-lifecycle.md).
+Tooling and module choices for the Phase A health slice are recorded in ADR 0002. Deployment, persistence, authentication, and later infrastructure choices remain open in the [architecture](../architecture/overview.md), [contracts](../interfaces/service-contracts.md), and [simulation lifecycle](../architecture/simulation-lifecycle.md). ADR 0004 selects a provider candidate only for a private research slice; integration is still unimplemented and gated on account entitlement and applicable data-use rights.
