@@ -45,10 +45,10 @@ Thứ tự triển khai đề xuất được phân rã bên dưới; các quy�
 | Workstream | Phases | Task / commit dự kiến | Vùng sở hữu chính |
 | --- | ---: | ---: | --- |
 | [1 — Data](01-data-layer.md#phase-d0-chốt-lát-cắt-dữ-liệu) | D0, D1, D1a, D2–D4: 6 phases | D01–D42: 42 | contracts, Rust data/engine, backend admission/evidence, SDK |
-| [2 — Persistence](02-persistence-recovery.md#kế-hoạch-thực-thi-chi-tiết--2026-11-11) | P0–P4 | P01–P34: 34 | backend store/runtime, evidence, engine checkpoints |
-| [3 — Execution](03-market-microstructure.md#kế-hoạch-thực-thi-chi-tiết--2026-11-11) | E0–E4 | E01–E35: 35 | contracts, data inputs, engine orders/costs, replay, SDK |
-| [4 — Inference](04-model-inference.md#kế-hoạch-thực-thi-chi-tiết--2026-11-11) | I0–I3 | I01–I28: 28 | model client/guard/orchestrator, evidence, SDK/examples |
-| [5 — Analytics](05-analytics-reporting.md#kế-hoạch-thực-thi-chi-tiết--2026-11-11) | A0–A4 | A01–A34: 34 | contracts, engine valuation, backend series/evidence, SDK/report |
+| [2 — Persistence](02-persistence-recovery.md#kế-hoạch-thực-thi-chi-tiết-2026-11-11) | P0–P4 | P01–P34: 34 | backend store/runtime, evidence, engine checkpoints |
+| [3 — Execution](03-market-microstructure.md#kế-hoạch-thực-thi-chi-tiết-2026-11-11) | E0–E4 | E01–E35: 35 | contracts, data inputs, engine orders/costs, replay, SDK |
+| [4 — Inference](04-model-inference.md#kế-hoạch-thực-thi-chi-tiết-2026-11-11) | I0–I3 | I01–I28: 28 | model client/guard/orchestrator, evidence, SDK/examples |
+| [5 — Analytics](05-analytics-reporting.md#kế-hoạch-thực-thi-chi-tiết-2026-11-11) | A0–A4 | A01–A34: 34 | contracts, engine valuation, backend series/evidence, SDK/report |
 | Tổng | 25 phases | 173 task/commit dự kiến | Bao gồm decision, integration, benchmark và docs tasks |
 
 173 là số task trong bản phân rã workstream 1–5, không phải ước lượng effort, deadline hay số commit bắt buộc. Năm task G01–G05 bên dưới đưa tổng kế hoạch lên 178 task dự kiến. Số thực tế giảm nếu bỏ nhánh có điều kiện, hoặc tăng nếu quyết định sau này cần tách một thay đổi lớn. Không chia thành commit từng câu; thay đổi contract, producer và consumer cần một chuỗi phối hợp có thể review.
