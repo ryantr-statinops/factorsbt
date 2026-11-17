@@ -8,6 +8,7 @@ mod decisions;
 mod execution;
 mod finalize;
 mod futures;
+mod intraday_clock;
 mod liquidation;
 mod marks;
 mod options;
@@ -30,6 +31,9 @@ pub use decisions::{
 pub use execution::SpotExecution;
 pub use finalize::{finalize_run_state, FinalRunStatus, OpenPositionSummary, RunFinalization};
 pub use futures::{FutureExecution, FutureSettlement};
+pub use intraday_clock::{
+    IntradayClock, IntradayClockError, IntradayClockEvent, IntradayEventKind,
+};
 pub use liquidation::{execute_liquidation_group, schedule_liquidation, LiquidationOutcome};
 pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};
 pub use options::{

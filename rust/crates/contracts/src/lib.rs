@@ -79,6 +79,7 @@ pub mod instruments;
 pub mod model;
 pub mod outcomes;
 pub mod run_configuration;
+pub mod session_schedule;
 pub mod temporal;
 pub mod validation;
 
@@ -92,8 +93,9 @@ pub use instruments::{
 pub use model::{ModelRequest, ModelResponse, OutputMode};
 pub use outcomes::{EngineEvent, HealthResponse, RunResult, RunStatus};
 pub use run_configuration::{RunConfiguration, SimulationConfiguration};
+pub use session_schedule::{SessionSchedule, SessionScheduleEntry, SessionType};
 pub use temporal::{DecisionSnapshot, Observation, PortfolioSnapshot};
-pub use validation::validate_historical_data_document;
+pub use validation::{validate_historical_data_document, validate_session_schedule_document};
 
 /// Compare normalized UTC RFC 3339 values, including fractional seconds.
 pub fn compare_utc_timestamps(left: &UtcTimestamp, right: &UtcTimestamp) -> std::cmp::Ordering {

@@ -106,6 +106,14 @@ class ContractExampleTests(unittest.TestCase):
         validator = Draft202012Validator(schema, registry=self.registry, format_checker=FormatChecker())
         self.assertTrue(list(validator.iter_errors(document)))
 
+    def test_versioned_session_schedule_examples_match_schema(self):
+        schema = self.schemas["session-schedule.v1.schema.json"]
+        validator = Draft202012Validator(schema, registry=self.registry, format_checker=FormatChecker())
+        valid = load_document(EXAMPLE_DIR / "data/session-schedule.valid.json")
+        invalid = load_document(EXAMPLE_DIR / "data/session-schedule.unsupported-timezone.schema-invalid.json")
+        self.assertFalse(list(validator.iter_errors(valid)))
+        self.assertTrue(list(validator.iter_errors(invalid)))
+
     def test_replay_contract_schemas_and_openapi_routes_are_wired(self):
         openapi = load_document(ROOT / "contracts" / "openapi.json")
         paths = openapi["paths"]

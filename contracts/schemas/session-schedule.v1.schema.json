@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/data/session-schedule.v1.schema.json",
+  "title": "FactorsBT Intraday Session Schedule Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "calendar_id", "calendar_version", "timezone", "source", "sessions"],
+  "properties": {
+    "contract_version": { "const": "1.0.0" },
+    "calendar_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "calendar_version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "timezone": { "const": "America/New_York" },
+    "source": { "type": "string", "minLength": 1 },
+    "sessions": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["session_date", "open_at", "close_at", "session_type"],
+        "properties": {
+          "session_date": { "type": "string", "format": "date" },
+          "open_at": { "type": "string", "format": "date-time", "pattern": "Z$" },
+          "close_at": { "type": "string", "format": "date-time", "pattern": "Z$" },
+          "session_type": { "enum": ["regular", "early_close"] }
+        }
+      }
+    }
+  }
+}
