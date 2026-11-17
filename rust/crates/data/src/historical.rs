@@ -3,6 +3,8 @@
 use factorsbt_contracts::{
     compare_utc_timestamps, HistoricalBar, HistoricalInstrumentMapping, InstrumentId, UtcTimestamp,
 };
+use rust_decimal::Decimal;
+use std::str::FromStr;
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
@@ -106,6 +108,39 @@ pub fn validate_historical_bar_timestamps(bar: &HistoricalBar) -> Result<(), His
     if compare_utc_timestamps(&bar.available_at, &bar.interval_end) != std::cmp::Ordering::Equal {
         return Err(HistoricalDataError::InvalidBar(
             "snapshot-mode available_at must equal interval_end".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Validate OHLC ordering, positive prices, and nonnegative decimal volume.
+pub fn validate_historical_bar_prices(bar: &HistoricalBar) -> Result<(), HistoricalDataError> {
+    let parse = |field: &str, value: &str| {
+        Decimal::from_str(value)
+            .map_err(|_| HistoricalDataError::InvalidBar(format!("{field} is not a valid decimal")))
+    };
+    let open = parse("open", bar.open.as_str())?;
+    let high = parse("high", bar.high.as_str())?;
+    let low = parse("low", bar.low.as_str())?;
+    let close = parse("close", bar.close.as_str())?;
+    let volume = parse("volume", bar.volume.as_str())?;
+    if open <= Decimal::ZERO
+        || high <= Decimal::ZERO
+        || low <= Decimal::ZERO
+        || close <= Decimal::ZERO
+    {
+        return Err(HistoricalDataError::InvalidBar(
+            "prices must be positive".into(),
+        ));
+    }
+    if high < open.max(close) || low > open.min(close) || low > high {
+        return Err(HistoricalDataError::InvalidBar(
+            "OHLC values are not ordered".into(),
+        ));
+    }
+    if volume < Decimal::ZERO {
+        return Err(HistoricalDataError::InvalidBar(
+            "volume must be nonnegative".into(),
         ));
     }
     Ok(())
@@ -291,5 +326,21 @@ mod tests {
             "2026-03-08T14:30:00Z"
         ))
         .is_err());
+    }
+
+    #[test]
+    fn validates_ohlc_order_and_volume_without_float_conversion() {
+        let mut valid = bar(
+            "2026-03-08T14:30:00Z",
+            "2026-03-08T14:31:00Z",
+            "2026-03-08T14:31:00Z",
+        );
+        valid.open = factorsbt_contracts::DecimalString::new("10.000000000000000001").unwrap();
+        assert!(validate_historical_bar_prices(&valid).is_ok());
+        valid.high = factorsbt_contracts::DecimalString::new("9").unwrap();
+        assert!(validate_historical_bar_prices(&valid).is_err());
+        valid.high = factorsbt_contracts::DecimalString::new("11").unwrap();
+        valid.volume = factorsbt_contracts::DecimalString::new("-1").unwrap();
+        assert!(validate_historical_bar_prices(&valid).is_err());
     }
 }

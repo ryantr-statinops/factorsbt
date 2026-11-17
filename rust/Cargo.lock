@@ -335,6 +335,7 @@ name = "factorsbt-data"
 version = "0.1.0"
 dependencies = [
  "factorsbt-contracts",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2",
