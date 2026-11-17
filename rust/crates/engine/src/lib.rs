@@ -9,6 +9,7 @@ mod execution;
 mod finalize;
 mod futures;
 mod intraday_clock;
+mod intraday_flatten;
 mod liquidation;
 mod marks;
 mod options;
@@ -34,6 +35,7 @@ pub use futures::{FutureExecution, FutureSettlement};
 pub use intraday_clock::{
     IntradayClock, IntradayClockError, IntradayClockEvent, IntradayEventKind,
 };
+pub use intraday_flatten::{flatten_at_session_close, IntradayFlattenError, IntradayFlattenResult};
 pub use liquidation::{execute_liquidation_group, schedule_liquidation, LiquidationOutcome};
 pub use marks::{value_instruments, MarkProvenance, MarkSource, ValuationError, ValuationMark};
 pub use options::{
