@@ -50,13 +50,13 @@ impl Error for ClockError {}
 /// Iterator over a run's event schedule. The run starts at the configured
 /// close; each later calendar day emits open before close.
 #[derive(Debug, Clone)]
-pub struct SimulationClock {
+pub struct DailySimulationClock {
     end_day: i64,
     current_day: i64,
     next_kind: Option<SimulationEventKind>,
 }
 
-impl SimulationClock {
+impl DailySimulationClock {
     pub fn new(
         start_at: &UtcTimestamp,
         end_at: &UtcTimestamp,
@@ -116,6 +116,9 @@ impl SimulationClock {
         })
     }
 }
+
+/// Backward-compatible name for the existing synthetic daily UTC schedule.
+pub type SimulationClock = DailySimulationClock;
 
 fn day_from_timestamp(timestamp: &UtcTimestamp) -> Result<i64, ClockError> {
     let Some((date, time)) = timestamp.as_str().split_once('T') else {
