@@ -746,7 +746,7 @@ mod tests {
         let instrument = first.instrument_id.clone();
         let complete = check_session_coverage(
             &session(),
-            &[instrument.clone()],
+            std::slice::from_ref(&instrument),
             &[first.clone(), final_bar],
             SourceCoverageStatus::Complete,
         )

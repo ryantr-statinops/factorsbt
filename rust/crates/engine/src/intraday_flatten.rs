@@ -88,7 +88,7 @@ pub fn flatten_at_session_close(
     let mut fills = Vec::new();
     for (id, bar) in final_bars {
         let quantity = candidate.position(&id).expect("position exists").quantity;
-        let signed_quantity = Decimal::ZERO.checked_sub(quantity).ok_or_else(|| {
+        let signed_quantity = Decimal::ZERO.checked_sub(quantity).ok_or({
             IntradayFlattenError::Execution(crate::EngineError::ArithmeticOverflow(
                 "session flatten quantity",
             ))
