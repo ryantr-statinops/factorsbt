@@ -84,6 +84,7 @@ pub mod validation;
 
 pub use historical_data::{
     HistoricalDatasetReference, HistoricalInstrumentMapping, HistoricalPartitionReference,
+    HistoricalRevision,
 };
 pub use instruments::{
     Currency, Instrument, LinearFutureInstrument, OptionInstrument, SpotInstrument,

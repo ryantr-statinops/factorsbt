@@ -5,7 +5,8 @@
   "oneOf": [
     { "$ref": "#/$defs/reference" },
     { "$ref": "#/$defs/manifest" },
-    { "$ref": "#/$defs/bar" }
+    { "$ref": "#/$defs/bar" },
+    { "$ref": "#/$defs/revision" }
   ],
   "$defs": {
     "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
@@ -54,12 +55,21 @@
     },
     "bar": {
       "type": "object", "additionalProperties": false,
-      "required": ["instrument_id", "provider_symbol", "interval_start", "interval_end", "available_at", "open", "high", "low", "close", "volume"],
+      "required": ["instrument_id", "provider_symbol", "interval_start", "interval_end", "available_at", "open", "high", "low", "close", "volume", "source_identity", "source_revision"],
       "properties": {
         "instrument_id": { "$ref": "#/$defs/instrumentId" }, "provider_symbol": { "type": "string", "minLength": 1 },
         "interval_start": { "$ref": "#/$defs/utc" }, "interval_end": { "$ref": "#/$defs/utc" }, "available_at": { "$ref": "#/$defs/utc" },
         "open": { "$ref": "#/$defs/decimal" }, "high": { "$ref": "#/$defs/decimal" }, "low": { "$ref": "#/$defs/decimal" },
-        "close": { "$ref": "#/$defs/decimal" }, "volume": { "$ref": "#/$defs/decimal" }
+        "close": { "$ref": "#/$defs/decimal" }, "volume": { "$ref": "#/$defs/decimal" },
+        "source_identity": { "$ref": "#/$defs/identifier" }, "source_revision": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "revision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_identity", "source_revision", "event_time", "available_at"],
+      "properties": {
+        "source_identity": { "$ref": "#/$defs/identifier" }, "source_revision": { "type": "integer", "minimum": 0 },
+        "event_time": { "$ref": "#/$defs/utc" }, "available_at": { "$ref": "#/$defs/utc" }
       }
     }
   }

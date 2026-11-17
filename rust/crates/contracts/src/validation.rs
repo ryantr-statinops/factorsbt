@@ -20,6 +20,8 @@ const FIXTURE_MANIFEST: &str =
     include_str!("../../../../contracts/fixtures/schemas/manifest.v1.schema.json");
 const FIXTURE_DATASET: &str =
     include_str!("../../../../contracts/fixtures/schemas/dataset.v1.schema.json");
+const HISTORICAL_DATA: &str =
+    include_str!("../../../../contracts/schemas/historical-data.v1.schema.json");
 const RESEARCH_JOB_REQUEST: &str =
     include_str!("../../../../contracts/schemas/research-job-request.schema.json");
 const RESEARCH_JOB_STATUS: &str =
@@ -53,6 +55,7 @@ pub fn registry() -> Result<Registry<'static>, SchemaRegistryError> {
         ("engine-outcome.schema.json", ENGINE_OUTCOME),
         ("manifest.v1.schema.json", FIXTURE_MANIFEST),
         ("dataset.v1.schema.json", FIXTURE_DATASET),
+        ("historical-data.v1.schema.json", HISTORICAL_DATA),
         ("research-job-request.schema.json", RESEARCH_JOB_REQUEST),
         ("research-job-status.schema.json", RESEARCH_JOB_STATUS),
         ("research-job-result.schema.json", RESEARCH_JOB_RESULT),
@@ -102,6 +105,10 @@ pub fn validate_fixture_dataset(value: &Value) -> Result<(), Vec<String>> {
     validate_document(FIXTURE_DATASET, "fixture dataset", value)
 }
 
+pub fn validate_historical_data_document(value: &Value) -> Result<(), Vec<String>> {
+    validate_document(HISTORICAL_DATA, "historical data", value)
+}
+
 pub fn validate_research_job_request(value: &Value) -> Result<(), Vec<String>> {
     validate_document(RESEARCH_JOB_REQUEST, "research job request", value)
 }
@@ -149,6 +156,20 @@ mod tests {
     #[test]
     fn accepts_the_shared_valid_run_example() {
         assert_eq!(validate_run_configuration(&minimal_configuration()), Ok(()));
+    }
+
+    #[test]
+    fn validates_historical_revision_examples() {
+        let valid: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/data/revision.valid.json"
+        ))
+        .unwrap();
+        assert_eq!(validate_historical_data_document(&valid), Ok(()));
+        let invalid: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/examples/data/revision.missing-availability.schema-invalid.json"
+        ))
+        .unwrap();
+        assert!(validate_historical_data_document(&invalid).is_err());
     }
 
     #[test]

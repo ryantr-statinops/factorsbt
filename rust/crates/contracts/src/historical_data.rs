@@ -47,6 +47,19 @@ pub struct HistoricalBar {
     pub low: DecimalString,
     pub close: DecimalString,
     pub volume: DecimalString,
+    pub source_identity: Identifier,
+    pub source_revision: u64,
+}
+
+/// A source's revision of one market interval, available to a run only at its
+/// explicit availability instant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalRevision {
+    pub source_identity: Identifier,
+    pub source_revision: u64,
+    pub event_time: UtcTimestamp,
+    pub available_at: UtcTimestamp,
 }
 
 #[cfg(test)]
