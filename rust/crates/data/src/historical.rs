@@ -27,6 +27,20 @@ pub enum DataQualityCode {
     DuplicateInterval,
     RejectedTimestamp,
     RejectedPrice,
+    OutsideSession,
+    SourceRequestIncomplete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceCoverageStatus {
+    Complete,
+    Incomplete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntradayCoverageResult {
+    pub diagnostics: Vec<DataQualityDiagnostic>,
+    pub all_final_closes_available: bool,
 }
 
 /// Safe quality signal. It intentionally omits raw provider responses and credentials.
@@ -90,6 +104,148 @@ pub fn diagnose_historical_bars(
         }
     }
     diagnostics
+}
+
+/// Validate one frozen session without synthesizing missing minute bars.
+/// Incomplete source retrieval is reported separately and is not mislabeled as
+/// a collection of no-trade intervals.
+pub fn check_session_coverage(
+    session: &factorsbt_contracts::SessionScheduleEntry,
+    instruments: &[InstrumentId],
+    records: &[HistoricalBar],
+    source_status: SourceCoverageStatus,
+) -> Result<IntradayCoverageResult, HistoricalDataError> {
+    if source_status == SourceCoverageStatus::Incomplete {
+        return Ok(IntradayCoverageResult {
+            diagnostics: vec![DataQualityDiagnostic {
+                code: DataQualityCode::SourceRequestIncomplete,
+                instrument_id: None,
+                interval_start: None,
+                row_index: None,
+            }],
+            all_final_closes_available: false,
+        });
+    }
+    let open = parse_utc_minute(&session.open_at)?;
+    let close = parse_utc_minute(&session.close_at)?;
+    let mut starts = Vec::new();
+    let mut cursor = open;
+    while timestamp_from_minute(cursor) != session.close_at {
+        starts.push(timestamp_from_minute(cursor));
+        cursor = next_minute(cursor);
+        if starts.len() > 390 {
+            return Err(HistoricalDataError::InvalidBar(
+                "session exceeds 390 one-minute intervals".into(),
+            ));
+        }
+    }
+    if starts.is_empty() || timestamp_from_minute(close) != session.close_at {
+        return Err(HistoricalDataError::InvalidBar(
+            "session schedule is not minute aligned".into(),
+        ));
+    }
+
+    let mut diagnostics = Vec::new();
+    let mut seen = HashMap::<(String, String), usize>::new();
+    let mut usable = std::collections::HashSet::<(String, String)>::new();
+    let instrument_set = instruments
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect::<std::collections::HashSet<_>>();
+    for (row_index, record) in records.iter().enumerate() {
+        let id = record.instrument_id.as_str().to_owned();
+        let start = record.interval_start.as_str().to_owned();
+        if !instrument_set.contains(&id)
+            || compare_utc_timestamps(&record.interval_start, &session.open_at).is_lt()
+            || compare_utc_timestamps(&record.interval_end, &session.close_at).is_gt()
+        {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::OutsideSession,
+                instrument_id: Some(id),
+                interval_start: Some(start),
+                row_index: Some(row_index),
+            });
+            continue;
+        }
+        if seen
+            .insert((id.clone(), start.clone()), row_index)
+            .is_some()
+        {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::DuplicateInterval,
+                instrument_id: Some(id),
+                interval_start: Some(start),
+                row_index: Some(row_index),
+            });
+            continue;
+        }
+        if validate_historical_bar_timestamps(record).is_err() {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::RejectedTimestamp,
+                instrument_id: Some(id),
+                interval_start: Some(start),
+                row_index: Some(row_index),
+            });
+        } else if validate_historical_bar_prices(record).is_err() {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::RejectedPrice,
+                instrument_id: Some(id),
+                interval_start: Some(start),
+                row_index: Some(row_index),
+            });
+        } else {
+            usable.insert((id, start));
+        }
+    }
+    let mut final_close_by_instrument = HashMap::<String, bool>::new();
+    for instrument in instruments {
+        let id = instrument.as_str().to_owned();
+        for start in &starts {
+            if !usable.contains(&(id.clone(), start.as_str().to_owned())) {
+                diagnostics.push(DataQualityDiagnostic {
+                    code: DataQualityCode::MissingInterval,
+                    instrument_id: Some(id.clone()),
+                    interval_start: Some(start.as_str().to_owned()),
+                    row_index: None,
+                });
+            }
+        }
+        final_close_by_instrument.insert(
+            id.clone(),
+            usable.contains(&(id, starts.last().unwrap().as_str().to_owned())),
+        );
+    }
+    Ok(IntradayCoverageResult {
+        all_final_closes_available: !instruments.is_empty()
+            && final_close_by_instrument
+                .values()
+                .all(|available| *available),
+        diagnostics,
+    })
+}
+
+pub fn select_schedule_sessions<'a>(
+    sessions: &'a [factorsbt_contracts::SessionScheduleEntry],
+    start_date: &str,
+    end_date: &str,
+) -> Result<Vec<&'a factorsbt_contracts::SessionScheduleEntry>, HistoricalDataError> {
+    if start_date > end_date {
+        return Err(HistoricalDataError::InvalidBar(
+            "run start date follows end date".into(),
+        ));
+    }
+    let selected = sessions
+        .iter()
+        .filter(|session| {
+            session.session_date.as_str() >= start_date && session.session_date.as_str() <= end_date
+        })
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return Err(HistoricalDataError::InvalidBar(
+            "run interval contains no scheduled sessions".into(),
+        ));
+    }
+    Ok(selected)
 }
 
 impl fmt::Display for HistoricalDataError {
@@ -387,6 +543,15 @@ mod tests {
         }
     }
 
+    fn session() -> factorsbt_contracts::SessionScheduleEntry {
+        factorsbt_contracts::SessionScheduleEntry {
+            session_date: "2026-03-09".into(),
+            open_at: UtcTimestamp::new("2026-03-09T13:30:00Z").unwrap(),
+            close_at: UtcTimestamp::new("2026-03-09T20:00:00Z").unwrap(),
+            session_type: factorsbt_contracts::SessionType::Regular,
+        }
+    }
+
     #[test]
     fn maps_provider_symbol_to_stable_instrument_identity() {
         let mappings = vec![mapping("AAPL", "XNAS_AAPL")];
@@ -564,5 +729,65 @@ mod tests {
         assert!(diagnostics
             .iter()
             .all(|d| d.row_index.is_none_or(|row| row < 3)));
+    }
+
+    #[test]
+    fn session_coverage_keeps_absent_bars_distinct_from_incomplete_source_requests() {
+        let first = bar(
+            "2026-03-09T13:30:00Z",
+            "2026-03-09T13:31:00Z",
+            "2026-03-09T13:31:00Z",
+        );
+        let final_bar = bar(
+            "2026-03-09T19:59:00Z",
+            "2026-03-09T20:00:00Z",
+            "2026-03-09T20:00:00Z",
+        );
+        let instrument = first.instrument_id.clone();
+        let complete = check_session_coverage(
+            &session(),
+            &[instrument.clone()],
+            &[first.clone(), final_bar],
+            SourceCoverageStatus::Complete,
+        )
+        .unwrap();
+        assert!(complete.all_final_closes_available);
+        assert_eq!(
+            complete
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == DataQualityCode::MissingInterval)
+                .count(),
+            388
+        );
+
+        let incomplete = check_session_coverage(
+            &session(),
+            &[instrument],
+            &[first],
+            SourceCoverageStatus::Incomplete,
+        )
+        .unwrap();
+        assert!(!incomplete.all_final_closes_available);
+        assert_eq!(incomplete.diagnostics.len(), 1);
+        assert_eq!(
+            incomplete.diagnostics[0].code,
+            DataQualityCode::SourceRequestIncomplete
+        );
+    }
+
+    #[test]
+    fn schedule_run_bounds_select_only_frozen_sessions() {
+        let mut second = session();
+        second.session_date = "2026-03-10".into();
+        let sessions = vec![session(), second];
+        assert_eq!(
+            select_schedule_sessions(&sessions, "2026-03-10", "2026-03-10")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(select_schedule_sessions(&sessions, "2026-03-11", "2026-03-12").is_err());
+        assert!(select_schedule_sessions(&sessions, "2026-03-12", "2026-03-11").is_err());
     }
 }
