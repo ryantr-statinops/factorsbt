@@ -10,6 +10,7 @@ pub mod dispatcher;
 pub mod evidence;
 pub mod ids;
 pub mod inference_guard;
+pub mod intraday;
 pub mod model_client;
 pub mod model_fixture;
 pub mod model_validation;
