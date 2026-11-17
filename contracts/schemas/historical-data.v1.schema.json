@@ -13,7 +13,7 @@
     "instrumentId": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
     "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "utc": { "type": "string", "format": "date-time", "pattern": "Z$" },
-    "decimal": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,18})?$", "maxLength": 48 },
+    "decimal": { "type": "string", "pattern": "^(?!-0(?:\\.0+)?$)-?(0|[1-9][0-9]*)(\\.[0-9]{1,18})?$", "maxLength": 48 },
     "reference": {
       "type": "object", "additionalProperties": false,
       "required": ["contract_version", "dataset_id", "dataset_version", "manifest_sha256"],
@@ -42,13 +42,14 @@
     },
     "manifest": {
       "type": "object", "additionalProperties": false,
-      "required": ["contract_version", "dataset_id", "dataset_version", "format", "source", "ingested_at", "timezone", "calendar_id", "calendar_version", "mappings", "partitions"],
+      "required": ["contract_version", "dataset_id", "dataset_version", "format", "source", "ingested_at", "timezone", "calendar_id", "calendar_version", "calendar_source", "session_dates", "mappings", "partitions"],
       "properties": {
         "contract_version": { "const": "1.0.0" }, "dataset_id": { "$ref": "#/$defs/identifier" },
         "dataset_version": { "$ref": "#/$defs/identifier" }, "format": { "const": "jsonl-v1" },
-        "source": { "type": "object", "additionalProperties": false, "required": ["provider", "request_parameters"], "properties": { "provider": { "$ref": "#/$defs/identifier" }, "request_parameters": { "type": "object" } } },
+        "source": { "type": "object", "additionalProperties": false, "required": ["provider", "request_parameters"], "properties": { "provider": { "$ref": "#/$defs/identifier" }, "request_parameters": { "type": "object", "additionalProperties": false, "required": ["adjusted"], "properties": { "ticker": { "type": "string", "minLength": 1 }, "from": { "type": "string", "format": "date" }, "to": { "type": "string", "format": "date" }, "adjusted": { "const": false }, "sort": { "enum": ["asc", "desc"] }, "limit": { "type": "integer", "minimum": 1 } } } } },
         "ingested_at": { "$ref": "#/$defs/utc" }, "timezone": { "const": "America/New_York" },
-        "calendar_id": { "$ref": "#/$defs/identifier" }, "calendar_version": { "$ref": "#/$defs/identifier" },
+        "calendar_id": { "$ref": "#/$defs/identifier" }, "calendar_version": { "$ref": "#/$defs/identifier" }, "calendar_source": { "type": "string", "format": "uri" },
+        "session_dates": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "format": "date" } },
         "mappings": { "type": "array", "items": { "$ref": "#/$defs/mapping" } },
         "partitions": { "type": "array", "items": { "$ref": "#/$defs/partition" } }
       }

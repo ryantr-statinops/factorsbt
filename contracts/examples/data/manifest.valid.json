@@ -1,0 +1,28 @@
+{
+  "contract_version": "1.0.0",
+  "dataset_id": "us-equities-1m",
+  "dataset_version": "snapshot-2026-03-09",
+  "format": "jsonl-v1",
+  "source": {
+    "provider": "massive-stocks-rest",
+    "request_parameters": {
+      "ticker": "AAPL",
+      "from": "2026-03-09",
+      "to": "2026-03-09",
+      "adjusted": false,
+      "limit": 50000
+    }
+  },
+  "ingested_at": "2026-03-10T00:00:00Z",
+  "timezone": "America/New_York",
+  "calendar_id": "nasdaq-us-equities",
+  "calendar_version": "2026-1",
+  "calendar_source": "https://www.nasdaq.com/market-activity/stock-market-holiday-schedule",
+  "session_dates": ["2026-03-09"],
+  "mappings": [
+    {"instrument_id":"XNAS_AAPL","provider":"massive-stocks-rest","provider_symbol":"AAPL","exchange_mic":"XNAS","currency":"USD","mapping_version":"v1"}
+  ],
+  "partitions": [
+    {"instrument_id":"XNAS_AAPL","session_date":"2026-03-09","path":"XNAS_AAPL/2026-03-09.jsonl","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size_bytes":0,"row_count":0}
+  ]
+}

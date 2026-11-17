@@ -81,8 +81,10 @@ Commands hiện hành để baseline: [quickstart](../../docs/development/quicks
 
 ## Theo dõi hoàn thành và bàn giao
 
-Mỗi phase khi bắt đầu tạo ledger theo task ID: Proposed/Accepted design, commit hash, kết quả build/unit/integration, environment, benchmark và giới hạn. Phân biệt trạng thái thiết kế với việc task đã đạt gate; chưa có task code nào trong bộ kế hoạch này được đánh dấu Implemented.
+Mỗi phase khi bắt đầu tạo ledger theo task ID: Proposed/Accepted design, commit hash, kết quả build/unit/integration, environment, benchmark và giới hạn. Phân biệt trạng thái thiết kế với việc task đã đạt gate; workstream dữ liệu D1 đã qua gate local, D1a là bước code kế tiếp.
 
 **D0 documentation gate — 2026-11-16:** nine changed Markdown files pass relative-target, heading-anchor, and code-fence checks; four stale workstream anchors found in the plan index were corrected. The production plan has 178 unique task IDs (42 data tasks including D37–D42, plus five G tasks), and eleven local commits each contain exactly one file. `git diff --cached --check` passed for each commit. No Rust/Python runtime suite was run because this phase changed documentation and the plan only; the synthetic format benchmark and its limits are recorded in [the D05 benchmark report](../../docs/data/storage-and-benchmark.md). No authenticated provider request was made and account entitlement/use rights remain unverified, so D2 online ingestion stays blocked. These checks verify the design documentation, not an implemented intraday backtest.
+
+**D1 code gate — passed locally:** See [D1 local verification](../../docs/development/data-d1-local.md). The eight planned tasks have commits on `main`; no provider request was made. The next phase is D1a; D2 remains blocked on provider entitlement and data-use rights.
 
 Trước push nếu được chọn sau này, so remote base, không force-push; remote tiến hoặc push bị từ chối thì dừng push và báo. Khi CI có thật, theo dõi tới kết quả; CI failure dừng theo skill và báo run lỗi, không tự tạo follow-up fix. Nếu không có hoặc không truy cập được thì báo CI unavailable. Bàn giao danh sách task/commit theo phase và số nhánh Deferred, không suy mức hoàn tất từ số file kế hoạch.

@@ -1,6 +1,6 @@
 # First real-data research slice
 
-**Status:** Accepted design; not implemented. The provider account entitlement and the user's applicable data-use classification have not been verified.
+**Status:** D0 design and D1 offline contract/normalization are implemented and locally verified. D1a intraday clock, D2 provider ingestion, and D4 SDK/backend runs are not implemented. The provider account entitlement and the user's applicable data-use classification have not been verified.
 
 This page records the first historical-data slice selected for FactorsBT. It is a private research workflow, not a claim that the repository can redistribute market data or provide a commercial data service. Check the provider terms that apply to the account before downloading or retaining data. Keep credentials and non-redistributable source data outside Git.
 
@@ -34,6 +34,7 @@ See [Massive Custom Bars](https://massive.com/docs/rest/stocks/aggregates/custom
 - [Time, sessions, and availability](time-and-session.md) defines timestamp and session behavior.
 - [Instrument identity and price adjustment](instrument-identity.md) defines raw-price and corporate-action boundaries.
 - [Storage and benchmark](storage-and-benchmark.md) records the candidate local format and measured workload.
+- [Historical data contract v1](historical-contract.md) describes the implemented offline schema and normalization boundary.
 
 ## Implementation boundary
 

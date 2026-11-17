@@ -62,6 +62,12 @@ class ContractExampleTests(unittest.TestCase):
 
     def test_shared_valid_examples_and_semantic_invalid_examples_match_schemas(self):
         cases = [
+            ("historical-data.v1.schema.json", "data/bar.valid.json", True),
+            ("historical-data.v1.schema.json", "data/bar.missing-volume.schema-invalid.json", False),
+            ("historical-data.v1.schema.json", "data/revision.valid.json", True),
+            ("historical-data.v1.schema.json", "data/revision.missing-availability.schema-invalid.json", False),
+            ("historical-data.v1.schema.json", "data/manifest.valid.json", True),
+            ("historical-data.v1.schema.json", "data/manifest.secret-request-field.schema-invalid.json", False),
             ("run-configuration.schema.json", "instruments/minimal-valid-spot-run.json", True),
             ("run-configuration.schema.json", "instruments/unresolved-underlying.semantic-invalid.json", True),
             ("instrument.schema.json", "instruments/spot-missing-fee.schema-invalid.json", False),
@@ -92,6 +98,13 @@ class ContractExampleTests(unittest.TestCase):
         for schema_name, example_name, expected_valid in cases:
             with self.subTest(example=example_name):
                 self.check_example(schema_name, example_name, expected_valid)
+
+    def test_historical_contract_rejects_negative_zero(self):
+        schema = self.schemas["historical-data.v1.schema.json"]
+        document = load_document(EXAMPLE_DIR / "data/bar.valid.json")
+        document["open"] = "-0.00"
+        validator = Draft202012Validator(schema, registry=self.registry, format_checker=FormatChecker())
+        self.assertTrue(list(validator.iter_errors(document)))
 
     def test_replay_contract_schemas_and_openapi_routes_are_wired(self):
         openapi = load_document(ROOT / "contracts" / "openapi.json")

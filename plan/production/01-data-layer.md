@@ -1,6 +1,6 @@
 # 1. Dữ liệu thực tế và định dạng
 
-**Status:** Các quyết định cho lát cắt đầu tiên đã Accepted; implementation chưa bắt đầu. Quyền truy cập account Massive và quyền sử dụng cho mục đích dự kiến chưa được xác minh.
+**Status:** D0 decisions and D1 offline contracts/normalization are Implemented with local verification. D1a clock/execution and later provider/run integration remain unimplemented. Massive account access and applicable data-use rights are unverified.
 
 ## Hiện trạng đã rà soát
 
@@ -55,6 +55,8 @@ Phụ thuộc: D0. Vùng code dự kiến: contracts, rust/crates/data, Python c
 | D11 | feat(data): select point-in-time revisions | Chọn revision theo availability; giữ snapshot cũ bất biến. |
 | D12 | feat(data): expose data quality diagnostics | Báo gaps, duplicates và rejected rows với provenance an toàn. |
 | D13 | test(data): verify normalized dataset compatibility | Integration schema → normalization → snapshot, gồm v1 regression và lỗi dữ liệu thiếu. |
+
+**D1 gate — passed locally:** Historical dataset, manifest, bar and revision schemas are registered for offline Rust validation. Typed references are exposed in Rust/Python; Rust normalization checks mappings, UTC one-minute intervals, snapshot availability, OHLCV values, point-in-time revisions, and safe quality diagnostics. Rust integration verifies the schema-to-normalization path and existing v1 fixture loading. See [D1 local verification](../../docs/development/data-d1-local.md). This does not implement intraday clock behavior, session calendar validation, partition storage, provider ingestion, or end-to-end SDK runs.
 
 ### Phase D1a — Intraday clock and execution prerequisites
 

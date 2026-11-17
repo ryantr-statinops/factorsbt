@@ -22,6 +22,7 @@ The accepted technology direction is a pure Python SDK and a Rust backend/engine
 | Review verification limits | [Acceptance traceability](examples/mvp/acceptance-cases.md#verification-traceability) and phase records below |
 | Check the latest local regression results | [2026-11-09 code verification](development/regression-verification-2026-11-09.md) |
 | Review the selected real-data research slice | [US equity minute bars](data/README.md), [time/session semantics](data/time-and-session.md), and [Massive provider decision](decisions/0004-massive-historical-rest.md) |
+| Review the offline historical data contract | [Contract v1](data/historical-contract.md) and [D1 verification](development/data-d1-local.md) |
 
 The [root README](../README.md) introduces the repository. Quickstart smoke programs start their own fixtures; SDK/CLI examples using standalone services have explicit prerequisites. No standalone model-fixture launcher is provided.
 

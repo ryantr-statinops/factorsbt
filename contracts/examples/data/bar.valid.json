@@ -1,0 +1,14 @@
+{
+  "instrument_id": "XNAS_AAPL",
+  "provider_symbol": "AAPL",
+  "interval_start": "2026-03-09T13:30:00Z",
+  "interval_end": "2026-03-09T13:31:00Z",
+  "available_at": "2026-03-09T13:31:00Z",
+  "open": "100.10",
+  "high": "101.00",
+  "low": "99.50",
+  "close": "100.75",
+  "volume": "1200",
+  "source_identity": "provider-a:AAPL:2026-03-09T13:30:00Z",
+  "source_revision": 0
+}
