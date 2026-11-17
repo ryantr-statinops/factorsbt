@@ -29,6 +29,7 @@ from .errors import (
 from .instruments import LinearFutureInstrument, OptionInstrument, SpotInstrument
 from .configuration import (
     DataFixtureConfiguration,
+    HistoricalDatasetReference,
     DerivativeScoreTarget,
     InitialPortfolio,
     InitialPosition,
@@ -80,6 +81,7 @@ __all__ = [
     "TimelinePoint",
     "ContractValueError",
     "DataFixtureConfiguration",
+    "HistoricalDatasetReference",
     "DataFixtureReference",
     "DerivativeScoreTarget",
     "FactorsBTError",

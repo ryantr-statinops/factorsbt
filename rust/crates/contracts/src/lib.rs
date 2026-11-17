@@ -74,6 +74,7 @@ string_contract_type!(
     "expected an RFC 3339 UTC timestamp ending in Z"
 );
 
+pub mod historical_data;
 pub mod instruments;
 pub mod model;
 pub mod outcomes;
@@ -81,6 +82,9 @@ pub mod run_configuration;
 pub mod temporal;
 pub mod validation;
 
+pub use historical_data::{
+    HistoricalDatasetReference, HistoricalInstrumentMapping, HistoricalPartitionReference,
+};
 pub use instruments::{
     Currency, Instrument, LinearFutureInstrument, OptionInstrument, SpotInstrument,
 };

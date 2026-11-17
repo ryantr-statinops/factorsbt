@@ -79,6 +79,33 @@ class DataFixtureConfiguration:
 
 
 @dataclass(frozen=True)
+class HistoricalDatasetReference:
+    """Reference to an immutable historical dataset; not accepted by run v1."""
+
+    dataset_id: str
+    dataset_version: str
+    manifest_sha256: str
+    contract_version: str = "1.0.0"
+
+    def to_wire(self) -> dict[str, str]:
+        if self.contract_version != "1.0.0":
+            raise ValueError("unsupported historical dataset contract version")
+        dataset_id = validate_identifier(self.dataset_id)
+        dataset_version = validate_identifier(self.dataset_version)
+        if (
+            len(self.manifest_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in self.manifest_sha256)
+        ):
+            raise ValueError("manifest_sha256 must be a lowercase SHA-256 digest")
+        return {
+            "contract_version": self.contract_version,
+            "dataset_id": dataset_id,
+            "dataset_version": dataset_version,
+            "manifest_sha256": self.manifest_sha256,
+        }
+
+
+@dataclass(frozen=True)
 class ModelConfiguration:
     model_id: str
     model_version: str

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.factorsbt.invalid/data/historical-data.v1.schema.json",
+  "title": "FactorsBT Historical Dataset Contract v1",
+  "oneOf": [
+    { "$ref": "#/$defs/reference" },
+    { "$ref": "#/$defs/manifest" },
+    { "$ref": "#/$defs/bar" }
+  ],
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "instrumentId": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "utc": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "decimal": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,18})?$", "maxLength": 48 },
+    "reference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_version", "dataset_id", "dataset_version", "manifest_sha256"],
+      "properties": {
+        "contract_version": { "const": "1.0.0" }, "dataset_id": { "$ref": "#/$defs/identifier" },
+        "dataset_version": { "$ref": "#/$defs/identifier" }, "manifest_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "mapping": {
+      "type": "object", "additionalProperties": false,
+      "required": ["instrument_id", "provider", "provider_symbol", "exchange_mic", "currency", "mapping_version"],
+      "properties": {
+        "instrument_id": { "$ref": "#/$defs/instrumentId" }, "provider": { "$ref": "#/$defs/identifier" },
+        "provider_symbol": { "type": "string", "minLength": 1 }, "exchange_mic": { "type": "string", "pattern": "^[A-Z0-9]{4}$" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }, "mapping_version": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "partition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["instrument_id", "session_date", "path", "sha256", "size_bytes", "row_count"],
+      "properties": {
+        "instrument_id": { "$ref": "#/$defs/instrumentId" }, "session_date": { "type": "string", "format": "date" },
+        "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/digest" },
+        "size_bytes": { "type": "integer", "minimum": 0 }, "row_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_version", "dataset_id", "dataset_version", "format", "source", "ingested_at", "timezone", "calendar_id", "calendar_version", "mappings", "partitions"],
+      "properties": {
+        "contract_version": { "const": "1.0.0" }, "dataset_id": { "$ref": "#/$defs/identifier" },
+        "dataset_version": { "$ref": "#/$defs/identifier" }, "format": { "const": "jsonl-v1" },
+        "source": { "type": "object", "additionalProperties": false, "required": ["provider", "request_parameters"], "properties": { "provider": { "$ref": "#/$defs/identifier" }, "request_parameters": { "type": "object" } } },
+        "ingested_at": { "$ref": "#/$defs/utc" }, "timezone": { "const": "America/New_York" },
+        "calendar_id": { "$ref": "#/$defs/identifier" }, "calendar_version": { "$ref": "#/$defs/identifier" },
+        "mappings": { "type": "array", "items": { "$ref": "#/$defs/mapping" } },
+        "partitions": { "type": "array", "items": { "$ref": "#/$defs/partition" } }
+      }
+    },
+    "bar": {
+      "type": "object", "additionalProperties": false,
+      "required": ["instrument_id", "provider_symbol", "interval_start", "interval_end", "available_at", "open", "high", "low", "close", "volume"],
+      "properties": {
+        "instrument_id": { "$ref": "#/$defs/instrumentId" }, "provider_symbol": { "type": "string", "minLength": 1 },
+        "interval_start": { "$ref": "#/$defs/utc" }, "interval_end": { "$ref": "#/$defs/utc" }, "available_at": { "$ref": "#/$defs/utc" },
+        "open": { "$ref": "#/$defs/decimal" }, "high": { "$ref": "#/$defs/decimal" }, "low": { "$ref": "#/$defs/decimal" },
+        "close": { "$ref": "#/$defs/decimal" }, "volume": { "$ref": "#/$defs/decimal" }
+      }
+    }
+  }
+}

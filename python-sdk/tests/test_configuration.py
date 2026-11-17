@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from factorsbt import (
     DataFixtureConfiguration,
+    HistoricalDatasetReference,
     DerivativeScoreTarget,
     InitialPortfolio,
     InitialPosition,
@@ -45,6 +46,15 @@ def make_run(policy):
 
 
 class RunConfigurationBuilderTests(unittest.TestCase):
+    def test_historical_dataset_reference_is_versioned_and_validated(self):
+        reference = HistoricalDatasetReference("us-equities-1m", "snapshot-1", "a" * 64)
+        self.assertEqual(reference.to_wire()["contract_version"], "1.0.0")
+        self.assertEqual(reference.to_wire()["manifest_sha256"], "a" * 64)
+        with self.assertRaises(ValueError):
+            HistoricalDatasetReference("bad id", "snapshot-1", "a" * 64).to_wire()
+        with self.assertRaises(ValueError):
+            HistoricalDatasetReference("dataset", "v1", "A" * 64).to_wire()
+
     def test_typed_spot_run_matches_shared_run_configuration_example(self):
         example = json.loads(
             (ROOT / "contracts/examples/instruments/minimal-valid-spot-run.json").read_text()
