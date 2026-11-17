@@ -1,6 +1,6 @@
 # First real-data research slice
 
-**Status:** D0 design and D1 offline contract/normalization are implemented and locally verified. D1a intraday clock, D2 provider ingestion, and D4 SDK/backend runs are not implemented. The provider account entitlement and the user's applicable data-use classification have not been verified.
+**Status:** D0 design, D1 offline contract/normalization, and D1a intraday clock/execution prerequisites are implemented and locally verified. D1a does not provide a maintained authoritative calendar catalog or complete intraday run wiring. D2 provider ingestion and D4 SDK/backend runs are not implemented. The provider account entitlement and the user's applicable data-use classification have not been verified.
 
 This page records the first historical-data slice selected for FactorsBT. It is a private research workflow, not a claim that the repository can redistribute market data or provide a commercial data service. Check the provider terms that apply to the account before downloading or retaining data. Keep credentials and non-redistributable source data outside Git.
 
@@ -38,6 +38,6 @@ See [Massive Custom Bars](https://massive.com/docs/rest/stocks/aggregates/custom
 
 ## Implementation boundary
 
-The current Rust clock and coverage validation support a synthetic daily UTC calendar. They do not support exchange-local intraday sessions, DST, holidays, early closes, or minute-level execution eligibility. The existing strict v1 run schemas must remain unchanged. Add a separately versioned intraday contract and clock path in the planned D1a phase; do not silently change v1 behavior.
+The existing synthetic daily UTC run and its strict v1 schema remain unchanged. The separately versioned D1a session schedule and intraday clock support frozen UTC session instants for `America/New_York`, including DST offsets and early closes. Data coverage distinguishes missing intervals from incomplete source retrieval. Backend scheduling requires a strictly later same-session bar open; an engine primitive flattens spot positions with configured costs at session close and fails when a required final close is missing. The schedule is supplied offline and versioned; tests use synthetic dates. This does not implement an authoritative calendar catalog, provider ingestion, or end-to-end SDK/API intraday run submission.
 
-The D1a work items are listed in the [data implementation plan](../../plan/production/01-data-layer.md#phase-d1a-intraday-clock-and-execution-prerequisites). Backend/SDK wiring and end-to-end acceptance remain in D4. This document records a design; it does not mark a feature Implemented.
+The D1a work items and local verification are listed in the [data implementation plan](../../plan/production/01-data-layer.md#phase-d1a-intraday-clock-and-execution-prerequisites) and [D1a verification record](../development/data-d1a-local.md). Backend/SDK wiring and end-to-end acceptance remain in D4.

@@ -10,7 +10,7 @@ Mỗi hạng mục ghi nhận hiện trạng theo code/tài liệu, câu hỏi c
 
 | # | Workstream | Trạng thái | Phạm vi rà soát |
 | --- | --- | --- | --- |
-| 1 | [Dữ liệu thực tế và định dạng](01-data-layer.md) | D0 complete; implementation not started | First private US equity minute-bar slice, provider adapter, immutable data, later corporate-action scope |
+| 1 | [Dữ liệu thực tế và định dạng](01-data-layer.md) | D0–D1a locally verified; D2+ not started | Offline historical contracts and intraday prerequisites complete; provider adapter, immutable ingestion, and later corporate-action scope remain |
 | 2 | [Lưu trữ bền vững và phục hồi](02-persistence-recovery.md) | Proposed | Metadata, queue/worker, restart recovery và checkpoint |
 | 3 | [Market microstructure](03-market-microstructure.md) | Proposed | Order book, partial fills, slippage và market impact |
 | 4 | [Model transport và inference](04-model-inference.md) | Proposed | RPC/IPC và embedded inference |
@@ -63,7 +63,7 @@ Thứ tự triển khai đề xuất được phân rã bên dưới; các quy�
 | W3 — Liên thông và đầu ra | D4 sau D2 và D3 nếu được chọn; E3 nếu chọn → E4; I3; A3 nếu chọn → A4; P3 nếu resume được chọn → P4 | E4 baseline không yêu cầu checkpoint; hỗ trợ checkpoint cho partial execution chỉ được công bố sau P3. I3 dùng restart policy P2; P4 bao gồm backup/restore và cleanup ownership. |
 | W4 — Nghiệm thu tổng | G01–G05 bên dưới | Các nhánh bắt buộc và nhánh được chọn đều có evidence; Deferred/Open được công bố. |
 
-Các phase cùng Wave chỉ có thể làm độc lập khi đã đủ prerequisites ghi trong từng file; bảng này không tự cho phép delegation hoặc chạy mutation song song trên cùng worktree. Phase D0 đã hoàn thành. Điểm bắt đầu tiếp theo của data path là D1/D1a bằng synthetic inputs; chỉ mở online D2 sau khi provider entitlement và rights được xác nhận. Không bắt đầu toàn bộ 173 task cùng lúc.
+Các phase cùng Wave chỉ có thể làm độc lập khi đã đủ prerequisites ghi trong từng file; bảng này không tự cho phép delegation hoặc chạy mutation song song trên cùng worktree. D0–D1a đã hoàn thành với synthetic/offline inputs. D2 online fetch chỉ mở sau khi provider entitlement và rights được xác nhận. Không bắt đầu toàn bộ 173 task cùng lúc.
 
 ## Nghiệm thu tổng — một task / commit dự kiến cho mỗi hàng
 
@@ -81,10 +81,12 @@ Commands hiện hành để baseline: [quickstart](../../docs/development/quicks
 
 ## Theo dõi hoàn thành và bàn giao
 
-Mỗi phase khi bắt đầu tạo ledger theo task ID: Proposed/Accepted design, commit hash, kết quả build/unit/integration, environment, benchmark và giới hạn. Phân biệt trạng thái thiết kế với việc task đã đạt gate; workstream dữ liệu D1 đã qua gate local, D1a là bước code kế tiếp.
+Mỗi phase khi bắt đầu tạo ledger theo task ID: Proposed/Accepted design, commit hash, kết quả build/unit/integration, environment, benchmark và giới hạn. Phân biệt trạng thái thiết kế với việc task đã đạt gate; workstream dữ liệu D1 và D1a đã qua gate local.
 
 **D0 documentation gate — 2026-11-16:** nine changed Markdown files pass relative-target, heading-anchor, and code-fence checks; four stale workstream anchors found in the plan index were corrected. The production plan has 178 unique task IDs (42 data tasks including D37–D42, plus five G tasks), and eleven local commits each contain exactly one file. `git diff --cached --check` passed for each commit. No Rust/Python runtime suite was run because this phase changed documentation and the plan only; the synthetic format benchmark and its limits are recorded in [the D05 benchmark report](../../docs/data/storage-and-benchmark.md). No authenticated provider request was made and account entitlement/use rights remain unverified, so D2 online ingestion stays blocked. These checks verify the design documentation, not an implemented intraday backtest.
 
-**D1 code gate — passed locally:** See [D1 local verification](../../docs/development/data-d1-local.md). The eight planned tasks have commits on `main`; no provider request was made. The next phase is D1a; D2 remains blocked on provider entitlement and data-use rights.
+**D1 code gate — passed locally:** See [D1 local verification](../../docs/development/data-d1-local.md). The eight planned tasks have commits on `main` plus one normalization correction discovered during integration acceptance; no provider request was made.
+
+**D1a code gate — passed locally:** See [D1a local verification](../../docs/development/data-d1a-local.md). All six planned tasks have commits on `main`; no provider request was made. D2 online ingestion remains blocked on provider entitlement and data-use rights.
 
 Trước push nếu được chọn sau này, so remote base, không force-push; remote tiến hoặc push bị từ chối thì dừng push và báo. Khi CI có thật, theo dõi tới kết quả; CI failure dừng theo skill và báo run lỗi, không tự tạo follow-up fix. Nếu không có hoặc không truy cập được thì báo CI unavailable. Bàn giao danh sách task/commit theo phase và số nhánh Deferred, không suy mức hoàn tất từ số file kế hoạch.

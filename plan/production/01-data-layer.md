@@ -1,6 +1,6 @@
 # 1. Dữ liệu thực tế và định dạng
 
-**Status:** D0 decisions and D1 offline contracts/normalization are Implemented with local verification. D1a clock/execution and later provider/run integration remain unimplemented. Massive account access and applicable data-use rights are unverified.
+**Status:** D0 decisions, D1 offline contracts/normalization, and D1a intraday clock/execution prerequisites are Implemented with local verification. D1a does not include a maintained authoritative calendar catalog or complete intraday run wiring. Provider ingestion and later run integration remain unimplemented. Massive account access and applicable data-use rights are unverified.
 
 ## Hiện trạng đã rà soát
 
@@ -56,7 +56,7 @@ Phụ thuộc: D0. Vùng code dự kiến: contracts, rust/crates/data, Python c
 | D12 | feat(data): expose data quality diagnostics | Báo gaps, duplicates và rejected rows với provenance an toàn. |
 | D13 | test(data): verify normalized dataset compatibility | Integration schema → normalization → snapshot, gồm v1 regression và lỗi dữ liệu thiếu. |
 
-**D1 gate — passed locally:** Historical dataset, manifest, bar and revision schemas are registered for offline Rust validation. Typed references are exposed in Rust/Python; Rust normalization checks mappings, UTC one-minute intervals, snapshot availability, OHLCV values, point-in-time revisions, and safe quality diagnostics. Rust integration verifies the schema-to-normalization path and existing v1 fixture loading. See [D1 local verification](../../docs/development/data-d1-local.md). This does not implement intraday clock behavior, session calendar validation, partition storage, provider ingestion, or end-to-end SDK runs.
+**D1 gate — passed locally:** Historical dataset, manifest, bar and revision schemas are registered for offline Rust validation. Typed references are exposed in Rust/Python; Rust normalization checks mappings, UTC one-minute intervals, snapshot availability, OHLCV values, point-in-time revisions, and safe quality diagnostics. Rust integration verifies the schema-to-normalization path and existing v1 fixture loading. See [D1 local verification](../../docs/development/data-d1-local.md). This does not implement partition storage, provider ingestion, or end-to-end SDK runs. Nine commits landed on `main`, including a timestamp normalization correction found during integration acceptance.
 
 ### Phase D1a — Intraday clock and execution prerequisites
 
@@ -70,6 +70,8 @@ Phụ thuộc: D0 và D1. Phase này đưa calendar/session behavior vào contra
 | D40 | fix(backend): enforce strictly later bar-open execution | Market order chỉ đủ điều kiện nếu bar start `>` decision time; equality không khớp cùng timestamp. |
 | D41 | feat(engine): flatten positions at regular-session close | Flatten tất định ở final bar close với configured costs, hủy order còn pending và fail nếu required close thiếu. |
 | D42 | test(backend): verify minute runs across session boundaries | Integration DST/holiday/early-close/missing-bar và legacy daily-v1; kiểm tra không giữ position/order qua đêm. |
+
+**D1a gate — passed locally:** The versioned offline schedule drives a separate UTC one-minute clock; incomplete source requests and confirmed coverage gaps remain distinct; strict-later same-session order scheduling and atomic spot flattening use configured costs and require each final close. Synthetic acceptance covers DST offsets, an omitted holiday date, early close, missing intervals/final close, and daily-v1 event ordering. See [D1a local verification](../../docs/development/data-d1a-local.md). This phase provides prerequisites only: no authoritative maintained calendar catalog, provider ingestion, or SDK/API end-to-end intraday runs are claimed.
 
 ### Phase D2 — Ingestion và lưu dataset bất biến
 
