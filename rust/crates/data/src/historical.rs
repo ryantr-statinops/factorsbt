@@ -184,6 +184,41 @@ pub fn validate_historical_bar_timestamps(bar: &HistoricalBar) -> Result<(), His
     Ok(())
 }
 
+/// Normalize a provider Unix-millisecond aggregate start to a minute-aligned UTC instant.
+pub fn normalize_unix_millis_start(timestamp_ms: i64) -> Result<UtcTimestamp, HistoricalDataError> {
+    if timestamp_ms < 0 || timestamp_ms % 60_000 != 0 {
+        return Err(HistoricalDataError::InvalidBar(
+            "provider timestamp must be a nonnegative minute-aligned Unix millisecond value".into(),
+        ));
+    }
+    let total_minutes = timestamp_ms / 60_000;
+    let (year, month, day) = civil_from_days(total_minutes.div_euclid(1440));
+    let minute_of_day = total_minutes.rem_euclid(1440);
+    UtcTimestamp::new(format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:00Z",
+        minute_of_day / 60,
+        minute_of_day % 60
+    ))
+    .map_err(|_| {
+        HistoricalDataError::InvalidBar("provider timestamp is outside supported UTC range".into())
+    })
+}
+
+fn civil_from_days(day_number: i64) -> (i64, i64, i64) {
+    let shifted = day_number + 719468;
+    let era = shifted.div_euclid(146097);
+    let day_of_era = shifted - era * 146097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    (year, month, day)
+}
+
 /// Validate OHLC ordering, positive prices, and nonnegative decimal volume.
 pub fn validate_historical_bar_prices(bar: &HistoricalBar) -> Result<(), HistoricalDataError> {
     let parse = |field: &str, value: &str| {
@@ -413,6 +448,23 @@ mod tests {
             "2026-03-08T14:31:00Z"
         ))
         .is_ok());
+    }
+
+    #[test]
+    fn normalizes_provider_unix_milliseconds_to_utc_and_rejects_unaligned_values() {
+        assert_eq!(
+            normalize_unix_millis_start(1_773_063_000_000)
+                .unwrap()
+                .as_str(),
+            "2026-03-09T13:30:00Z"
+        );
+        assert_eq!(
+            normalize_unix_millis_start(1_793_629_800_000)
+                .unwrap()
+                .as_str(),
+            "2026-11-02T14:30:00Z"
+        );
+        assert!(normalize_unix_millis_start(1_773_063_000_001).is_err());
     }
 
     #[test]

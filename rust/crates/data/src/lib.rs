@@ -25,9 +25,10 @@ mod snapshot;
 
 pub use coverage::{validate_run_coverage, CoverageIssue, CoverageIssueCode};
 pub use historical::{
-    diagnose_historical_bars, normalize_instrument_id, select_historical_revisions_as_of,
-    validate_historical_bar_prices, validate_historical_bar_timestamps,
-    validate_instrument_mappings, DataQualityCode, DataQualityDiagnostic, HistoricalDataError,
+    diagnose_historical_bars, normalize_instrument_id, normalize_unix_millis_start,
+    select_historical_revisions_as_of, validate_historical_bar_prices,
+    validate_historical_bar_timestamps, validate_instrument_mappings, DataQualityCode,
+    DataQualityDiagnostic, HistoricalDataError,
 };
 pub use inputs::{
     execution_prices_available_at, initial_marks_available_at, settlement_events_available_at,
