@@ -1,6 +1,8 @@
 //! Offline normalization and validation for versioned historical records.
 
-use factorsbt_contracts::{HistoricalInstrumentMapping, InstrumentId};
+use factorsbt_contracts::{
+    compare_utc_timestamps, HistoricalBar, HistoricalInstrumentMapping, InstrumentId, UtcTimestamp,
+};
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
@@ -92,6 +94,110 @@ pub fn normalize_instrument_id(
         })
 }
 
+/// Check canonical UTC minute intervals and historical-snapshot availability.
+/// Session membership is validated against the versioned schedule separately.
+pub fn validate_historical_bar_timestamps(bar: &HistoricalBar) -> Result<(), HistoricalDataError> {
+    let start = parse_utc_minute(&bar.interval_start)?;
+    if bar.interval_end != timestamp_from_minute(next_minute(start)) {
+        return Err(HistoricalDataError::InvalidBar(
+            "interval_end must be exactly one minute after interval_start".into(),
+        ));
+    }
+    if compare_utc_timestamps(&bar.available_at, &bar.interval_end) != std::cmp::Ordering::Equal {
+        return Err(HistoricalDataError::InvalidBar(
+            "snapshot-mode available_at must equal interval_end".into(),
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct UtcMinute {
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+}
+
+fn parse_utc_minute(value: &UtcTimestamp) -> Result<UtcMinute, HistoricalDataError> {
+    let invalid =
+        || HistoricalDataError::InvalidBar("timestamps must be minute-aligned UTC instants".into());
+    let (date, time) = value.as_str().split_once('T').ok_or_else(invalid)?;
+    let time = time.strip_suffix('Z').ok_or_else(invalid)?;
+    let mut date_parts = date.split('-');
+    let (Some(y), Some(m), Some(d), None) = (
+        date_parts.next(),
+        date_parts.next(),
+        date_parts.next(),
+        date_parts.next(),
+    ) else {
+        return Err(invalid());
+    };
+    let mut time_parts = time.split(':');
+    let (Some(h), Some(minute), Some(second), None) = (
+        time_parts.next(),
+        time_parts.next(),
+        time_parts.next(),
+        time_parts.next(),
+    ) else {
+        return Err(invalid());
+    };
+    if second != "00" {
+        return Err(invalid());
+    }
+    let parsed = UtcMinute {
+        year: y.parse().map_err(|_| invalid())?,
+        month: m.parse().map_err(|_| invalid())?,
+        day: d.parse().map_err(|_| invalid())?,
+        hour: h.parse().map_err(|_| invalid())?,
+        minute: minute.parse().map_err(|_| invalid())?,
+    };
+    if !(1..=12).contains(&parsed.month)
+        || !(1..=31).contains(&parsed.day)
+        || parsed.hour > 23
+        || parsed.minute > 59
+    {
+        return Err(invalid());
+    }
+    Ok(parsed)
+}
+
+fn next_minute(mut value: UtcMinute) -> UtcMinute {
+    value.minute += 1;
+    if value.minute == 60 {
+        value.minute = 0;
+        value.hour += 1;
+    }
+    if value.hour == 24 {
+        value.hour = 0;
+        value.day += 1;
+    }
+    let month_days = match value.month {
+        2 if value.year % 400 == 0 || (value.year % 4 == 0 && value.year % 100 != 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if value.day > month_days {
+        value.day = 1;
+        value.month += 1;
+    }
+    if value.month > 12 {
+        value.month = 1;
+        value.year += 1;
+    }
+    value
+}
+
+fn timestamp_from_minute(value: UtcMinute) -> UtcTimestamp {
+    UtcTimestamp::new(format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:00Z",
+        value.year, value.month, value.day, value.hour, value.minute
+    ))
+    .expect("generated UTC timestamp is valid")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +241,55 @@ mod tests {
             ]),
             Err(HistoricalDataError::ProviderSymbolCollision(_))
         ));
+    }
+
+    fn bar(start: &str, end: &str, available: &str) -> HistoricalBar {
+        use factorsbt_contracts::DecimalString;
+        HistoricalBar {
+            instrument_id: InstrumentId::new("XNAS_AAPL").unwrap(),
+            provider_symbol: "AAPL".into(),
+            interval_start: UtcTimestamp::new(start).unwrap(),
+            interval_end: UtcTimestamp::new(end).unwrap(),
+            available_at: UtcTimestamp::new(available).unwrap(),
+            open: DecimalString::new("10").unwrap(),
+            high: DecimalString::new("11").unwrap(),
+            low: DecimalString::new("9").unwrap(),
+            close: DecimalString::new("10").unwrap(),
+            volume: DecimalString::new("1").unwrap(),
+            source_identity: Identifier::new("source:AAPL").unwrap(),
+            source_revision: 0,
+        }
+    }
+
+    #[test]
+    fn validates_utc_minute_boundaries_across_hour_and_day() {
+        assert!(validate_historical_bar_timestamps(&bar(
+            "2026-03-08T23:59:00Z",
+            "2026-03-09T00:00:00Z",
+            "2026-03-09T00:00:00Z"
+        ))
+        .is_ok());
+        assert!(validate_historical_bar_timestamps(&bar(
+            "2026-03-08T14:30:00Z",
+            "2026-03-08T14:31:00Z",
+            "2026-03-08T14:31:00Z"
+        ))
+        .is_ok());
+    }
+
+    #[test]
+    fn rejects_wrong_duration_and_availability_assumption() {
+        assert!(validate_historical_bar_timestamps(&bar(
+            "2026-03-08T14:30:00Z",
+            "2026-03-08T14:32:00Z",
+            "2026-03-08T14:32:00Z"
+        ))
+        .is_err());
+        assert!(validate_historical_bar_timestamps(&bar(
+            "2026-03-08T14:30:00Z",
+            "2026-03-08T14:31:00Z",
+            "2026-03-08T14:30:00Z"
+        ))
+        .is_err());
     }
 }
