@@ -21,6 +21,77 @@ pub enum HistoricalDataError {
     DuplicateRevision(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataQualityCode {
+    MissingInterval,
+    DuplicateInterval,
+    RejectedTimestamp,
+    RejectedPrice,
+}
+
+/// Safe quality signal. It intentionally omits raw provider responses and credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataQualityDiagnostic {
+    pub code: DataQualityCode,
+    pub instrument_id: Option<String>,
+    pub interval_start: Option<String>,
+    pub row_index: Option<usize>,
+}
+
+pub fn diagnose_historical_bars(
+    expected: &[(InstrumentId, UtcTimestamp)],
+    records: &[HistoricalBar],
+) -> Vec<DataQualityDiagnostic> {
+    use std::collections::BTreeSet;
+    let expected_keys = expected
+        .iter()
+        .map(|(id, start)| (id.as_str().to_owned(), start.as_str().to_owned()))
+        .collect::<BTreeSet<_>>();
+    let mut seen = HashMap::<(String, String), usize>::new();
+    let mut diagnostics = Vec::new();
+    for (row_index, record) in records.iter().enumerate() {
+        let key = (
+            record.instrument_id.as_str().to_owned(),
+            record.interval_start.as_str().to_owned(),
+        );
+        if seen.insert(key.clone(), row_index).is_some() {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::DuplicateInterval,
+                instrument_id: Some(key.0),
+                interval_start: Some(key.1),
+                row_index: Some(row_index),
+            });
+            continue;
+        }
+        if validate_historical_bar_timestamps(record).is_err() {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::RejectedTimestamp,
+                instrument_id: Some(key.0),
+                interval_start: Some(key.1),
+                row_index: Some(row_index),
+            });
+        } else if validate_historical_bar_prices(record).is_err() {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::RejectedPrice,
+                instrument_id: Some(key.0),
+                interval_start: Some(key.1),
+                row_index: Some(row_index),
+            });
+        }
+    }
+    for (instrument_id, interval_start) in expected_keys {
+        if !seen.contains_key(&(instrument_id.clone(), interval_start.clone())) {
+            diagnostics.push(DataQualityDiagnostic {
+                code: DataQualityCode::MissingInterval,
+                instrument_id: Some(instrument_id),
+                interval_start: Some(interval_start),
+                row_index: None,
+            });
+        }
+    }
+    diagnostics
+}
+
 impl fmt::Display for HistoricalDataError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -402,5 +473,44 @@ mod tests {
         assert_eq!(before[0].source_revision, 1);
         assert_eq!(after[0].source_revision, 2);
         assert_eq!(after[0].close.as_str(), "12");
+    }
+
+    #[test]
+    fn diagnostics_report_gaps_duplicates_and_invalid_rows_without_payloads() {
+        let first = bar(
+            "2026-03-08T14:30:00Z",
+            "2026-03-08T14:31:00Z",
+            "2026-03-08T14:31:00Z",
+        );
+        let mut invalid = bar(
+            "2026-03-08T14:32:00Z",
+            "2026-03-08T14:33:00Z",
+            "2026-03-08T14:33:00Z",
+        );
+        invalid.low = factorsbt_contracts::DecimalString::new("12").unwrap();
+        let expected = vec![
+            (first.instrument_id.clone(), first.interval_start.clone()),
+            (
+                first.instrument_id.clone(),
+                UtcTimestamp::new("2026-03-08T14:31:00Z").unwrap(),
+            ),
+            (
+                first.instrument_id.clone(),
+                UtcTimestamp::new("2026-03-08T14:32:00Z").unwrap(),
+            ),
+        ];
+        let diagnostics = diagnose_historical_bars(&expected, &[first.clone(), first, invalid]);
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.code == DataQualityCode::DuplicateInterval));
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.code == DataQualityCode::MissingInterval));
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.code == DataQualityCode::RejectedPrice));
+        assert!(diagnostics
+            .iter()
+            .all(|d| d.row_index.is_none_or(|row| row < 3)));
     }
 }
