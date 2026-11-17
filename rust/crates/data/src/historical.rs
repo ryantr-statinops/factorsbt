@@ -146,6 +146,38 @@ pub fn validate_historical_bar_prices(bar: &HistoricalBar) -> Result<(), Histori
     Ok(())
 }
 
+/// Select the greatest eligible revision for each source identity at `as_of`.
+/// The input slice is never mutated, preserving the sealed snapshot.
+pub fn select_historical_revisions_as_of(
+    records: &[HistoricalBar],
+    as_of: &UtcTimestamp,
+) -> Result<Vec<HistoricalBar>, HistoricalDataError> {
+    let mut selected = BTreeMap::<String, HistoricalBar>::new();
+    for record in records {
+        if compare_utc_timestamps(&record.available_at, as_of).is_gt() {
+            continue;
+        }
+        let identity = record.source_identity.as_str().to_owned();
+        match selected.get(&identity) {
+            Some(current) if current.source_revision == record.source_revision => {
+                return Err(HistoricalDataError::DuplicateRevision(identity));
+            }
+            Some(current) if current.source_revision > record.source_revision => {}
+            _ => {
+                selected.insert(identity, record.clone());
+            }
+        }
+    }
+    let mut values = selected.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        left.instrument_id
+            .as_str()
+            .cmp(right.instrument_id.as_str())
+            .then_with(|| compare_utc_timestamps(&left.interval_start, &right.interval_start))
+    });
+    Ok(values)
+}
+
 #[derive(Clone, Copy)]
 struct UtcMinute {
     year: i64,
@@ -342,5 +374,33 @@ mod tests {
         valid.high = factorsbt_contracts::DecimalString::new("11").unwrap();
         valid.volume = factorsbt_contracts::DecimalString::new("-1").unwrap();
         assert!(validate_historical_bar_prices(&valid).is_err());
+    }
+
+    #[test]
+    fn selects_latest_available_revision_without_mutating_source() {
+        let mut first = bar(
+            "2026-03-08T14:30:00Z",
+            "2026-03-08T14:31:00Z",
+            "2026-03-08T14:31:00Z",
+        );
+        let mut revised = first.clone();
+        first.source_revision = 1;
+        first.close = factorsbt_contracts::DecimalString::new("10").unwrap();
+        revised.source_revision = 2;
+        revised.available_at = UtcTimestamp::new("2026-03-09T00:00:00Z").unwrap();
+        revised.close = factorsbt_contracts::DecimalString::new("12").unwrap();
+        let before = select_historical_revisions_as_of(
+            &[first.clone(), revised.clone()],
+            &UtcTimestamp::new("2026-03-08T16:00:00Z").unwrap(),
+        )
+        .unwrap();
+        let after = select_historical_revisions_as_of(
+            &[first, revised],
+            &UtcTimestamp::new("2026-03-09T00:00:00Z").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(before[0].source_revision, 1);
+        assert_eq!(after[0].source_revision, 2);
+        assert_eq!(after[0].close.as_str(), "12");
     }
 }
